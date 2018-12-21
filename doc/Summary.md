@@ -10,8 +10,8 @@ A **value** is a data structure.
 
 There are 2 types of values:
 
-- A **primitive** is a number, string, etc.
-- A **record** consists of a **head** and **properties**. The head is a value, and each property consists of a key (string) and value (a value). For example, the record `Foo[bar: 5]` consists of the head `"Foo"` and a single property, `bar: 5` - the property's key is `bar`, the value is `5`.
+- A **primitive** is a number, string, image, etc.
+- A **record** consists of a **head** and **properties**. The head is a string, and each property consists of a key (string) and value (a value). For example, the record `Foo[bar: 5]` consists of the head `"Foo"` and a single property, `bar: 5` - the property's key is `bar`, the value is `5`.
 
 > A value can encode any type of data. Examples:
 >

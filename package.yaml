@@ -1,0 +1,64 @@
+name:                descript-R
+version:             0.1.0.0
+github:              "jakobeha/descript-R"
+git:                 "https://github.org/jakobeha/descript-R"
+homepage:            "https://github.org/jakobeha/descript-R/src/master/README.md"
+bug-reports:         "https://github.org/jakobeha/descript-R/issues"
+license:             GPL-3
+author:              "Jakob Hain"
+maintainer:          "jakobeha@gmail.com"
+copyright:           "2018 Jakob Hain"
+
+# Metadata used when publishing your package
+synopsis:            A programming language to transform programming languages' source code.
+category:            Language
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/descript-R#readme>
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+extra-doc-files:
+- doc/**
+
+ghc-options: -Wall
+
+dependencies:
+- base >= 4.7 && < 5
+- autoexporter
+- containers
+- text
+
+library:
+  source-dirs: src
+  exposed-modules:
+  - Descript
+
+executables:
+  descript-R-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - descript-R
+
+tests:
+  descript-R-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - '"-with-rtsopts=-N -M128m"'
+    dependencies:
+    - descript-R
+    - hspec
+    - QuickCheck
+    - HUnit

@@ -1,2 +1,8 @@
+# VS Code
 .history
 .vscode
+
+# Stack
+.stack-work/
+descript-R.cabal
+*~
