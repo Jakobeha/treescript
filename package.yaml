@@ -21,15 +21,22 @@ description:         Please see the README on GitHub at <https://github.com/gith
 extra-source-files:
 - README.md
 - ChangeLog.md
+- src/Descript/Ast/Lex/Parse.x
 
 extra-doc-files:
 - doc/**
 
 ghc-options: -Wall
 
+build-tools:
+- alex
+- happy
+
 dependencies:
-- base >= 4.7 && < 5
+- array
 - autoexporter
+- base >= 4.7 && < 5
+- bytestring
 - containers
 - text
 
@@ -37,6 +44,9 @@ library:
   source-dirs: src
   exposed-modules:
   - Descript
+  - Descript.Ast.Lex
+  - Descript.Ast.Sugar
+  - Descript.Ast.Core
 
 executables:
   descript-R-exe:
