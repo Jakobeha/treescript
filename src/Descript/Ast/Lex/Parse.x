@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Descript.Ast.Lex.Parse
-  ( lex
+  ( parse
   ) where
 
 import Descript.Ast.Lex.Types
@@ -20,7 +20,6 @@ import qualified Data.Text.Lazy.Encoding as T.L
 
 %wrapper "monadUserState-bytestring"
 
-$white = [ \t\n\r\f\v]
 $digit = 0-9
 $octit = 0-7
 $hexit = [0-9 A-F a-f]
@@ -30,7 +29,7 @@ $alpha = [$small $large]
 $asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\(\)\,\;\[\]\`\{\}]
 $unicodeSymbol = [] -- TODO
 $symbol = [$asciiSymbol $unicodeSymbol]
-$escapeChar = [abfnrtv\\\"\'\&]
+$escapeChar = [abfnrtv\\\"\'\&\$]
 $stringChar = [$white $digit $alpha $symbol]
 
 @decimal = $digit+
@@ -55,13 +54,14 @@ $control = [$large \@\[\\\]\^\_]
 descript :-
 
 <0> $white+ { skip }
-<0> "//".* { skip }
+<0> \/ \/ .* { skip }
 
-<0> "/*" { enterBlockComment `andBegin` state_comment }
-<0> '\'' { enterCodeBlock True `andBegin` state_code_block }
-<0> "\\(" { enterCodeBlock False `andBegin` state_code_block }
+<0> \/ \* { enterBlockComment `andBegin` state_comment }
+<0> \' { enterCodeBlock True `andBegin` state_code_block }
+<0> \) { enterCodeBlock False `andBegin` state_code_block }
 
 <0> \< { mkPunc PuncAngleBwd }
+<0> \> { mkPunc PuncAngleFwd }
 <0> \? { mkPunc PuncQuestion }
 <0> : { mkPunc PuncColon }
 <0> = { mkPunc PuncEqual }
@@ -77,14 +77,14 @@ descript :-
 <0> @lowerSymbol { mkSymbol SymbolCaseLower }
 <0> @upperSymbol { mkSymbol SymbolCaseUpper }
 
-<state_comment> "/*" { nestBlockComment }
-<state_comment> "*/" { unnestBlockComment }
+<state_comment> \/ \* { nestBlockComment }
+<state_comment> \* \/ { unnestBlockComment }
 <state_comment> . ;
 <state_comment> \n { skip }
 <state_code_block> @escape { addEscapeToCodeBlock }
-<state_code_block> \\ { \_ _ -> lexerError "Illegal escape sequence" }
 <state_code_block> \' { exitCodeBlock True `andBegin` initialState }
-<state_code_block> "\\)" { exitCodeBlock False `andBegin` initialState }
+<state_code_block> \\ \( { exitCodeBlock False `andBegin` initialState }
+<state_code_block> \\ { \_ _ -> lexerError "illegal escape sequence" }
 <state_code_block> [. \n] { addCurrentToCodeBlock }
 
 {
@@ -276,23 +276,29 @@ alexComplementError (Alex al) = Alex al'
 maxErrorInputLength :: Int
 maxErrorInputLength = 32 -- TODO Make a user setting?
 
+getInputErrorDesc :: ByteString.ByteString -> T.Text
+getInputErrorDesc inp
+  | T.null inp' = "end of file"
+  | T.null inp'' = "end of line"
+  | otherwise = "chars \"" <> inp'' <> "\""
+  where inp' = T.filter (/= '\r') $ T.takeWhile (/= '\n') $ convertStr inp
+        inp''
+          | T.length inp' > maxErrorInputLength = T.strip $ T.take maxErrorInputLength inp'
+          | otherwise = T.strip inp'
+
 lexerError :: T.Text -> Alex a
 lexerError msg = do
   (pos, chr, inp, _) <- alexGetInput
   let loc = convertLoc pos
-      inp' = convertStr inp
-      inp'' = T.filter (/= '\r') $ T.takeWhile (/= '\n') inp'
-      inp'''
-        | T.length inp'' > maxErrorInputLength = T.strip $ T.take maxErrorInputLength inp''
-        | otherwise = T.strip inp''
-      dispSuf
-        | T.null inp'' = " at end of file"
-        | T.null inp''' = " before end of line"
-        | otherwise = " on char " <> pprint chr <> " before : '" <> inp''' <> "'"
-      dispPre
-        | T.null msg = "Lexer error"
-        | otherwise = T.strip msg
-  alexError $ T.unpack $ dispPre <> " at " <> pprint loc <> dispSuf
+      inpDesc = getInputErrorDesc inp
+  alexError $ T.unpack $ msg <> " at " <> pprint loc <> " on char " <> pprint chr <> " before " <> inpDesc
+
+unexpectedCharsError :: Alex a
+unexpectedCharsError = do
+  (pos, _, inp, _) <- alexGetInput
+  let loc = convertLoc pos
+      inpDesc = getInputErrorDesc inp
+  alexError $ T.unpack $ "after " <> pprint loc <> " - unexpected " <> inpDesc
 
 scanner :: ByteString.ByteString -> Either String [AnnLexeme]
 scanner str = runAlex str scanRest
@@ -300,17 +306,26 @@ scanner str = runAlex str scanRest
           (tok, errMsgOpt) <- alexComplementError alexMonadScan
           case errMsgOpt of
             Nothing -> pure ()
-            Just errMsg -> lexerError errMsg
+            Just _ -> unexpectedCharsError
           if (annLexeme tok == LexemePunc PuncEof) then do
             inCodeBlock <- getLexerCodeBlockState
             inComment <- (/= 0) <$> getLexerCommentDepth
             case (inCodeBlock, inComment) of
               (True, True) -> error "lexer in multiple states at once"
-              (True, False) -> alexError "Code block not closed at end of file"
-              (False, True) -> alexError "Comment not closed at end of file"
+              (True, False) -> alexError "code block not closed at end of file"
+              (False, True) -> alexError "comment not closed at end of file"
               (False, False) -> return [tok]
           else do
             toks <- scanRest
             return (tok : toks)
 
+parse :: T.Text -> Result Program
+parse str
+  = case scanner $ T.L.encodeUtf8 $ T.L.fromStrict str of
+         Left errMsg
+           -> ResultFail Error
+            { errorStage = StageLexing
+            , errorMsg = T.pack errMsg
+            }
+         Right lexemes -> ResultSuccess $ Program lexemes
 }

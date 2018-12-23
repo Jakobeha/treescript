@@ -1,0 +1,7 @@
+printLex?: Bool
+printSugar?: Bool
+printCore?: Bool
+lexes?: Bool
+parses?: Bool
+valid?: Bool
+error: String

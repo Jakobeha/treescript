@@ -1,0 +1,7 @@
+parses?: false
+error: |
+  Bad.Parse.Extra:1:5:
+    |
+  1 | Foo[bar, bar: ,baz]?
+    |     ^
+  expected property, got symbol

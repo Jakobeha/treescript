@@ -1,0 +1,13 @@
+r'
+for (\(<i=?'is_name($)') in \(<iter=)) {
+  \(<x=?'is_name($) && $ != i')[[\(<?'$ == i')]] <- \(<expr=?'!modifies($, x)')
+}
+': r'
+y <- as.list(x)
+
+for (i in iter) {
+  y[[i]] <- expr
+}
+
+x <- as.data.frame(y)
+';

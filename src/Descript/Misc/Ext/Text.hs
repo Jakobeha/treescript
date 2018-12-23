@@ -4,6 +4,7 @@ module Descript.Misc.Ext.Text
   , parseFloat
   , unescapeString
   , unescapeChar
+  , escapeString
   ) where
 
 import qualified Data.Text as T
@@ -26,3 +27,7 @@ unescapeChar str
   | T.length unescaped == 1 = T.head unescaped
   | otherwise = error "unescapeChar: not a single character"
   where unescaped = unescapeString str
+
+-- | Convert all escapable characters into their escape sequences
+escapeString :: T.Text -> T.Text
+escapeString str = T.drop 1 $ T.dropEnd 1 $ T.pack $ show $ T.unpack str

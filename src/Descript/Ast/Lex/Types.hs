@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Descript.Ast.Lex.Types
   ( module Descript.Ast.Lex.Types
   ) where
@@ -6,9 +8,10 @@ import Descript.Misc
 
 import qualified Data.Text as T
 
--- | Punctuation, used for control flow
+-- | Punctuation, used for control flow.
 data Punc
   = PuncAngleBwd -- ^ @<@
+  | PuncAngleFwd -- ^ @>@
   | PuncQuestion -- ^ @?@
   | PuncColon -- ^ @:@
   | PuncEqual -- ^ @=@
@@ -48,16 +51,94 @@ data Symbol
   , symbolText :: T.Text
   } deriving (Eq, Ord, Read, Show)
 
--- | Lexeme data without source range
+-- | Lexeme data without source range.
 data Lexeme
   = LexemePunc Punc
   | LexemePrim Prim
   | LexemeSymbol Symbol
   deriving (Eq, Ord, Read, Show)
 
--- | Lexeme data with source range
+-- | Lexeme data with source range.
 data AnnLexeme
   = AnnLexeme
   { annLexemeRange :: Range
   , annLexeme :: Lexeme
   } deriving (Eq, Ord, Read, Show)
+
+-- | A full Descript program.
+newtype Program = Program [AnnLexeme]
+
+instance Printable SpliceFrag where
+  pprint (SpliceFrag isStart isEnd content)
+    = pprintStart <> pprint content <> pprintEnd
+    where pprintStart
+            | isStart = "'"
+            | otherwise = ")"
+          pprintEnd
+            | isEnd = "'"
+            | otherwise = "\\("
+
+instance Printable Punc where
+  pprint PuncAngleBwd = "<"
+  pprint PuncAngleFwd = ">"
+  pprint PuncQuestion = "?"
+  pprint PuncColon = ":"
+  pprint PuncEqual = "="
+  pprint PuncPeriod = "."
+  pprint PuncSemicolon = ";"
+  pprint PuncOpenBracket = "["
+  pprint PuncCloseBracket = "]"
+  pprint PuncEof = ""
+
+instance Printable Prim where
+  pprint (PrimInteger int) = pprint int
+  pprint (PrimFloat float) = pprint float
+  pprint (PrimString str) = pprint str
+  pprint (PrimCode frag) = pprint frag
+
+instance Printable Symbol where
+  pprint = symbolText
+
+instance Printable Lexeme where
+  pprint (LexemePunc punc) = pprint punc
+  pprint (LexemePrim prim) = pprint prim
+  pprint (LexemeSymbol sym) = pprint sym
+
+instance Printable AnnLexeme where
+  pprint = pprint . annLexeme
+
+instance Printable Program where
+  pprint (Program lexemes) = T.concat $ map pprint lexemes
+
+instance ReducePrintable SpliceFrag where
+  reducePrint (SpliceFrag isStart isEnd content)
+    = reducePrintStart <> reducePrint content <> reducePrintEnd
+    where reducePrintStart
+            | isStart = "'"
+            | otherwise = ")"
+          reducePrintEnd
+            | isEnd = "'"
+            | otherwise = "\\("
+
+instance ReducePrintable Punc where
+  reducePrint = pprint
+
+instance ReducePrintable Prim where
+  reducePrint (PrimInteger int) = reducePrint int
+  reducePrint (PrimFloat float) = reducePrint float
+  reducePrint (PrimString str) = reducePrint str
+  reducePrint (PrimCode frag) = reducePrint frag
+
+instance ReducePrintable Symbol where
+  reducePrint = symbolText
+
+instance ReducePrintable Lexeme where
+  reducePrint (LexemePunc punc) = reducePrint punc
+  reducePrint (LexemePrim prim) = reducePrint prim
+  reducePrint (LexemeSymbol sym) = reducePrint sym
+
+instance ReducePrintable AnnLexeme where
+  reducePrint = reducePrint . annLexeme
+
+instance ReducePrintable Program where
+  reducePrint (Program lexemes) = T.concat $ map reducePrint lexemes

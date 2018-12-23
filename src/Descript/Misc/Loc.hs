@@ -27,7 +27,7 @@ data Range
   } deriving (Eq, Ord, Read, Show)
 
 instance Printable Loc where
-  pprint loc = pprint (locLine loc) <> pprint (locColumn loc)
+  pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
 
 -- | Advance location past the given text.
 advanceLoc :: Loc -> T.Text -> Loc

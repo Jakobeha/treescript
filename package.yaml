@@ -22,6 +22,9 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 - src/Descript/Ast/Lex/Parse.x
+# - src/Descript/Ast/Sugar/Parse.y
+- test-resources/examples/*.dscr
+- test-resources/examples/*.out.yaml
 
 extra-doc-files:
 - doc/**
@@ -38,6 +41,7 @@ dependencies:
 - base >= 4.7 && < 5
 - bytestring
 - containers
+- filepath
 - text
 
 library:
@@ -69,6 +73,10 @@ tests:
     - '"-with-rtsopts=-N -M128m"'
     dependencies:
     - descript-R
+    - containers
+    - directory
+    - filepath
     - hspec
-    - QuickCheck
     - HUnit
+    - QuickCheck
+    - yaml

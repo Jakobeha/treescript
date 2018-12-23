@@ -3,59 +3,64 @@ module Descript.Ast.Sugar.Types
   ( module Descript.Ast.Sugar.Types
   ) where
 
+import Descript.Misc
+
 import qualified Data.Text as T
-import Data.Void
 
 -- | Declares a type of record.
-data RecordDecl
+data RecordDecl an
   = RecordDecl
-  { recordDeclHead :: T.Text
+  { recordDeclAnn :: an
+  , recordDeclHead :: T.Text
   , recordDeclProps :: [T.Text]
   }
 
 -- | The type of a primitive.
-data PrimitiveType
-  = Raw T.Text -- ^ Represented as a backend literal.
-  | Splice PrimitiveType -- ^ @Splice<...>@.
+data PrimitiveType an
+  = Raw an T.Text -- ^ Represented as a backend literal.
+  | Splice an (PrimitiveType an) -- ^ @Splice<...>@.
 
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
-data Primitive
+data Primitive an
   = Primitive
-  { primitiveCode :: T.Text
-  , primitiveType :: PrimitiveType
+  { primitiveAnn :: an
+  , primitiveCode :: T.Text
+  , primitiveType :: PrimitiveType an
   }
 
 -- | Contains a key and value. A record property.
-data Property abs
+data Property abs an
   = Property
-  { propertyKey :: T.Text
-  , propertyValue :: Value abs
+  { propertyAnn :: an
+  , propertyKey :: T.Text
+  , propertyValue :: Value abs an
   }
 
 -- | Contains a head and properties. A parent in the AST.
-data Record abs
+data Record abs an
   = Record
-  { recordHead :: T.Text
-  , recordProps :: [Property abs]
+  { recordAnn :: an
+  , recordHead :: T.Text
+  , recordProps :: [Property abs an]
   }
 
 -- | An input abstraction. Matches a value against a predicate, or matches any value (if the predicate is 'None').
-newtype Matcher = Matcher (Maybe OutValue)
+data Matcher an = Matcher an (Maybe (OutValue an))
 
 -- | An element in a path. Makes the path refer to a property.
-newtype PathElem = PathElem T.Text
+data PathElem an = PathElem an T.Text
 
 -- | An output abstraction. Refers to the whole or part of the value which was matched.
-newtype Path = Path [PathElem]
+data Path an = Path an [PathElem an]
 
 -- | Type of data in Descript. @abs@ is the abstraction which the value can encode, if any.
-data Value abs
-  = ValuePrimitive Primitive
-  | ValueRecord (Record abs)
-  | ValueAbstraction abs
+data Value abs an
+  = ValuePrimitive (Primitive an)
+  | ValueRecord (Record abs an)
+  | ValueAbstraction (abs an)
 
 -- | A value with no abstractions.
-type RegValue = Value Void
+type RegValue = Value Void1
 
 -- | A value with matcher abstractions.
 type InValue = Value Matcher
@@ -64,15 +69,17 @@ type InValue = Value Matcher
 type OutValue = Value Path
 
 -- | Transforms a value into a different value. Like a "function".
-data Reducer
+data Reducer an
   = Reducer
-  { reducerInput :: InValue
-  , reducerOutput :: OutValue
+  { reducerAnn :: an
+  , reducerInput :: InValue an
+  , reducerOutput :: OutValue an
   }
 
 -- | A full Descript program.
-data Program
+data Program an
   = Program
-  { programRecordDecls :: [RecordDecl]
-  , programReducers :: [Reducer]
+  { programAnn :: an
+  , programRecordDecls :: [RecordDecl an]
+  , programReducers :: [Reducer an]
   }

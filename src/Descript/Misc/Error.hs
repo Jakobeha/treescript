@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Data types for errors.
 module Descript.Misc.Error
@@ -8,6 +9,7 @@ module Descript.Misc.Error
   , eitherToResult
   ) where
 
+import Descript.Misc.Print
 import qualified Data.Text as T
 
 -- | A step in compiling.
@@ -27,6 +29,17 @@ data Result a
   = ResultFail Error
   | ResultSuccess a
   deriving (Functor)
+
+instance Printable Stage where
+  pprint StageLexing = "lexing"
+  pprint StageParsing = "parsing"
+
+instance Printable Error where
+  pprint (Error stage msg) = "while " <> pprint stage <> " - " <> msg
+
+instance (Printable a) => Printable (Result a) where
+  pprint (ResultFail err) = "Error: " <> pprint err
+  pprint (ResultSuccess res) = pprint res
 
 instance Applicative Result where
   pure = ResultSuccess
