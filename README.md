@@ -89,8 +89,8 @@ A typical Descript program will now:
 
 ```descript
 r'
-for (\(<i=?'is_name($)') in \(<iter=)) {
-  \(<?'is_name($) && $ != i'=x)[[\(<?'$ == i')]] <- \(<?'!modifies($, x)'=expr)
+for (\(<i?'is_name($)') in \(<iter)) {
+  \(<x?'is_name($)')[[i]] <- \(<expr)
 }
 ': r'
 y <- as.list(x)

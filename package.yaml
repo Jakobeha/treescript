@@ -22,7 +22,7 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 - src/Descript/Ast/Lex/Parse.x
-# - src/Descript/Ast/Sugar/Parse.y
+- src/Descript/Ast/Sugar/Parse.y
 - test-resources/examples/*.dscr
 - test-resources/examples/*.out.yaml
 

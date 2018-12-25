@@ -50,7 +50,7 @@ spec = do
           denoteFailIn ("file " <> fileName (testFileSrcFile file)) $ withMVar xVar $ \case
             Nothing -> pure ()
             Just val -> f file val
-      forExampleLex :: (TestFile -> L.Program -> IO ()) -> IO ()
+      forExampleLex :: (TestFile -> L.Program Range -> IO ()) -> IO ()
       forExampleLex = forExampleIntermediateIn exampleLexVars
       forExampleSugar :: (TestFile -> S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars
@@ -59,16 +59,34 @@ spec = do
 
   describe "Read" $ do
     it "Lexes" $
-      forExampleFile $ \(TestFile srcFile testInfo) -> do
+      forExampleFile $ \file@(TestFile srcFile testInfo) -> do
         let fileStr = fileContents srcFile
+            lexRes = L.parse fileStr
         if testInfoIsLexable testInfo then do
-          let lexRes = L.parse fileStr
           when (testInfoPrintLex testInfo) $ do
             T.putStrLn $ fileName srcFile <> ":"
             T.putStrLn $ pprint lexRes
           case lexRes of
             ResultFail lexErr -> assertFailureText $ errorMsg lexErr
-            ResultSuccess lexSuc -> reducePrint lexSuc `shouldBeReducePrintOf` fileStr
+            ResultSuccess lexSrc -> do
+              insertVarMap exampleLexVars file lexSrc
+              reducePrint lexSrc `shouldBeReducePrintOf` fileStr
         else
           unless (T.null $ testInfoErrorMsg testInfo) $ do
-            L.parse fileStr `shouldFailTo` testInfoErrorMsg testInfo
+            lexRes `shouldFailTo` testInfoErrorMsg testInfo
+    it "Parses" $
+      forExampleLex $ \file@(TestFile srcFile testInfo) lexSrc -> do
+        let fileStr = fileContents srcFile
+            sugarRes = S.parse lexSrc
+        if testInfoIsParseable testInfo then do
+          when (testInfoPrintSugar testInfo) $ do
+            T.putStrLn $ fileName srcFile <> ":"
+            T.putStrLn $ pprint sugarRes
+          case sugarRes of
+            ResultFail sugarErr -> assertFailureText $ errorMsg sugarErr
+            ResultSuccess sugarSrc -> do
+              insertVarMap exampleSugarVars file sugarSrc
+              reducePrint sugarSrc `shouldBeReducePrintOf` fileStr
+        else
+          unless (T.null $ testInfoErrorMsg testInfo) $ do
+            sugarRes `shouldFailTo` testInfoErrorMsg testInfo

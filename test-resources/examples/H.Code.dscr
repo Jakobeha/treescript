@@ -1,6 +1,6 @@
 r'
-for (\(<i=?'is_name($)') in \(<iter=)) {
-  \(<x=?'is_name($) && $ != i')[[\(<?'$ == i')]] <- \(<expr=?'!modifies($, x)')
+for (\(<i?c'is_name($)') in \(<iter)) {
+  \(<x?c'is_name($)')[[i]] <- \(<expr)
 }
 ': r'
 y <- as.list(x)

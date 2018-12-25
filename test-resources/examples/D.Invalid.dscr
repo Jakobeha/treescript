@@ -1,0 +1,12 @@
+Zero[].
+Succ[prev].
+Succ[prev]. //Duplicate record
+Add[a; b].
+Add[a; c]. //*Not* duplicate record
+
+Add[a: <a; b: Zero[]; b: <b]: >b; //Duplicate property, undeclared record
+Add[b: <b; b: Zeroo[]; c: <c]: >a; //Undeclared record, undeclared record, bad path
+Add[b: <b; b: <b]: >c; //Undeclared record, duplicate property, undeclared property
+Add[]: App[]; //Undeclared record, undeclared record
+Add[a: <a; b: <]: Add[a: >b]; //Undeclared record, bad path
+Add[a: Succ[prev: <prev_a]; c: >b]: Add[a: >prev_a; b: Succ[prev: <b]]; //Path in place of matcher, matcher in place of path

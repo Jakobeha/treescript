@@ -1,3 +1,10 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Descript.Ast.Lex.Types
@@ -7,36 +14,36 @@ module Descript.Ast.Lex.Types
 import Descript.Misc
 
 import qualified Data.Text as T
+import GHC.Generics
 
 -- | Punctuation, used for control flow.
-data Punc
-  = PuncAngleBwd -- ^ @<@
-  | PuncAngleFwd -- ^ @>@
-  | PuncQuestion -- ^ @?@
-  | PuncColon -- ^ @:@
-  | PuncEqual -- ^ @=@
-  | PuncPeriod -- ^ @.@
-  | PuncSemicolon -- ^ @;@
-  | PuncOpenBracket -- ^ @[@
-  | PuncCloseBracket -- ^ @]@
-  | PuncEof -- ^ End of file
-  deriving (Eq, Ord, Read, Show)
+data Punc an
+  = PuncAngleBwd an -- ^ @<@
+  | PuncAngleFwd an -- ^ @>@
+  | PuncQuestion an -- ^ @?@
+  | PuncColon an -- ^ @:@
+  | PuncPeriod an -- ^ @.@
+  | PuncSemicolon an -- ^ @;@
+  | PuncOpenBracket an -- ^ @[@
+  | PuncCloseBracket an -- ^ @]@
+  | PuncEof an -- ^ End of file
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Fragment of a code block (in the future might also handle strings) which might contain splices.
-data SpliceFrag
+data SpliceFrag an
   = SpliceFrag
-  { spliceFragStart :: Bool -- ^ Does this start the text block, or end a splice?
+  { spliceFragContent :: (Annd T.Text an) -- ^ Text in between the start and end of this enclosure, and the entire enclosure's annotation __(structured this way for the Happy parser)__.
+  , spliceFragStart :: Bool -- ^ Does this start the text block, or end a splice?
   , spliceFragEnd :: Bool -- ^ Does this end the text block, or start a splice?
-  , spliceFragContent :: T.Text -- ^ Text in between the start and end of this enclosure.
-  } deriving (Eq, Ord, Read, Show)
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Primitive
-data Prim
-  = PrimInteger Int
-  | PrimFloat Float
-  | PrimString T.Text
-  | PrimCode SpliceFrag
-  deriving (Eq, Ord, Read, Show)
+data Primitive an
+  = PrimInteger (Annd Int an)
+  | PrimFloat (Annd Float an)
+  | PrimString (Annd T.Text an)
+  | PrimCode (SpliceFrag an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Whether the symbol starts with an uppercase character (e.g. record head) or lowercase character (e.g. record property).
 data SymbolCase
@@ -45,32 +52,37 @@ data SymbolCase
   deriving (Eq, Ord, Read, Show)
 
 -- | Symbol
-data Symbol
+data Symbol an
   = Symbol
-  { symbolCase :: SymbolCase
-  , symbolText :: T.Text
-  } deriving (Eq, Ord, Read, Show)
+  { symbolText :: Annd T.Text an
+  , symbolCase :: SymbolCase
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Lexeme data without source range.
-data Lexeme
-  = LexemePunc Punc
-  | LexemePrim Prim
-  | LexemeSymbol Symbol
-  deriving (Eq, Ord, Read, Show)
-
--- | Lexeme data with source range.
-data AnnLexeme
-  = AnnLexeme
-  { annLexemeRange :: Range
-  , annLexeme :: Lexeme
-  } deriving (Eq, Ord, Read, Show)
+data Lexeme an
+  = LexemePunc (Punc an)
+  | LexemePrim (Primitive an)
+  | LexemeSymbol (Symbol an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full Descript program.
-newtype Program = Program [AnnLexeme]
+newtype Program an = Program (Annd [Lexeme an] an) deriving (Eq, Ord, Read, Show)
 
-instance Printable SpliceFrag where
-  pprint (SpliceFrag isStart isEnd content)
-    = pprintStart <> pprint content <> pprintEnd
+instance Functor Program where
+  fmap f (Program (Annd ann lexemes)) = Program $ Annd (f ann) (map (fmap f) lexemes)
+
+instance Foldable Program where
+  foldMap f (Program (Annd ann lexemes)) = f ann <> foldMap (foldMap f) lexemes
+
+instance Traversable Program where
+  traverse f (Program (Annd ann lexemes)) = fmap Program $ Annd <$> f ann <*> traverse (traverse f) lexemes
+
+instance Annotatable Program where
+  getAnn (Program lexemes) = getAnn lexemes
+
+instance Printable (SpliceFrag an) where
+  pprint (SpliceFrag content isStart isEnd)
+    = pprintStart <> pprint (annd content) <> pprintEnd
     where pprintStart
             | isStart = "'"
             | otherwise = ")"
@@ -78,41 +90,37 @@ instance Printable SpliceFrag where
             | isEnd = "'"
             | otherwise = "\\("
 
-instance Printable Punc where
-  pprint PuncAngleBwd = "<"
-  pprint PuncAngleFwd = ">"
-  pprint PuncQuestion = "?"
-  pprint PuncColon = ":"
-  pprint PuncEqual = "="
-  pprint PuncPeriod = "."
-  pprint PuncSemicolon = ";"
-  pprint PuncOpenBracket = "["
-  pprint PuncCloseBracket = "]"
-  pprint PuncEof = ""
+instance Printable (Punc an) where
+  pprint (PuncAngleBwd _) = "<"
+  pprint (PuncAngleFwd _) = ">"
+  pprint (PuncQuestion _) = "?"
+  pprint (PuncColon _) = ":"
+  pprint (PuncPeriod _) = "."
+  pprint (PuncSemicolon _) = ";"
+  pprint (PuncOpenBracket _) = "["
+  pprint (PuncCloseBracket _) = "]"
+  pprint (PuncEof _) = ""
 
-instance Printable Prim where
-  pprint (PrimInteger int) = pprint int
-  pprint (PrimFloat float) = pprint float
-  pprint (PrimString str) = pprint str
+instance Printable (Primitive an) where
+  pprint (PrimInteger int) = pprint $ annd int
+  pprint (PrimFloat float) = pprint $ annd float
+  pprint (PrimString str) = pprint $ annd str
   pprint (PrimCode frag) = pprint frag
 
-instance Printable Symbol where
-  pprint = symbolText
+instance Printable (Symbol an) where
+  pprint = annd . symbolText
 
-instance Printable Lexeme where
+instance Printable (Lexeme an) where
   pprint (LexemePunc punc) = pprint punc
   pprint (LexemePrim prim) = pprint prim
   pprint (LexemeSymbol sym) = pprint sym
 
-instance Printable AnnLexeme where
-  pprint = pprint . annLexeme
+instance Printable (Program an) where
+  pprint (Program lexemes) = T.concat $ map pprint $ annd lexemes
 
-instance Printable Program where
-  pprint (Program lexemes) = T.concat $ map pprint lexemes
-
-instance ReducePrintable SpliceFrag where
-  reducePrint (SpliceFrag isStart isEnd content)
-    = reducePrintStart <> reducePrint content <> reducePrintEnd
+instance ReducePrintable (SpliceFrag an) where
+  reducePrint (SpliceFrag content isStart isEnd)
+    = reducePrintStart <> reducePrint (annd content) <> reducePrintEnd
     where reducePrintStart
             | isStart = "'"
             | otherwise = ")"
@@ -120,25 +128,22 @@ instance ReducePrintable SpliceFrag where
             | isEnd = "'"
             | otherwise = "\\("
 
-instance ReducePrintable Punc where
+instance ReducePrintable (Punc an) where
   reducePrint = pprint
 
-instance ReducePrintable Prim where
-  reducePrint (PrimInteger int) = reducePrint int
-  reducePrint (PrimFloat float) = reducePrint float
-  reducePrint (PrimString str) = reducePrint str
+instance ReducePrintable (Primitive an) where
+  reducePrint (PrimInteger int) = reducePrint $ annd int
+  reducePrint (PrimFloat float) = reducePrint $ annd float
+  reducePrint (PrimString str) = reducePrint $ annd str
   reducePrint (PrimCode frag) = reducePrint frag
 
-instance ReducePrintable Symbol where
-  reducePrint = symbolText
+instance ReducePrintable (Symbol an) where
+  reducePrint = annd . symbolText
 
-instance ReducePrintable Lexeme where
+instance ReducePrintable (Lexeme an) where
   reducePrint (LexemePunc punc) = reducePrint punc
   reducePrint (LexemePrim prim) = reducePrint prim
   reducePrint (LexemeSymbol sym) = reducePrint sym
 
-instance ReducePrintable AnnLexeme where
-  reducePrint = reducePrint . annLexeme
-
-instance ReducePrintable Program where
-  reducePrint (Program lexemes) = T.concat $ map reducePrint lexemes
+instance ReducePrintable (Program an) where
+  reducePrint (Program lexemes) = T.concat $ map reducePrint $ annd lexemes

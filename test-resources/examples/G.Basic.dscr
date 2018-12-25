@@ -5,5 +5,5 @@ Succ[prev]. //1 + prev - in other languages this would be an ADT, structure, or 
 Add[a; b]. //a + b - in other languages this would be a function.
 
 //Reducers. Reducers are like function implementations. These reducers "implement" Add.
-Add[a: Zero[]; b]: >b; //Adding 0 to anything produces 0.
-Add[a: Succ[prev]; b]: Add[a: >a>prev; b: Succ[prev: >b]]; //Adding 1 + n to anything produces n + (1 + anything).
+Add[a: Zero[]; b: <b]: >b; //Adding 0 to anything produces 0.
+Add[a: Succ[prev: <a_prev]; b: <b]: Add[a: >a_prev; b: Succ[prev: >b]]; //Adding 1 + n to anything produces n + (1 + anything).

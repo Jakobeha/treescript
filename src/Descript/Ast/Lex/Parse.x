@@ -64,15 +64,14 @@ descript :-
 <0> \> { mkPunc PuncAngleFwd }
 <0> \? { mkPunc PuncQuestion }
 <0> : { mkPunc PuncColon }
-<0> = { mkPunc PuncEqual }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
 <0> \[ { mkPunc PuncOpenBracket }
 <0> \] { mkPunc PuncCloseBracket }
 
-<0> @integer { mkPrim (PrimInteger . T.parseInt) }
-<0> @float { mkPrim (PrimFloat . T.parseFloat) }
-<0> \" @string \" { mkPrim (PrimString . T.unescapeString) }
+<0> @integer { mkPrim (PrimInteger . mapAnnd T.parseInt) }
+<0> @float { mkPrim (PrimFloat . mapAnnd T.parseFloat) }
+<0> \" @string \" { mkPrim (PrimString . mapAnnd T.unescapeString) }
 
 <0> @lowerSymbol { mkSymbol SymbolCaseLower }
 <0> @upperSymbol { mkSymbol SymbolCaseUpper }
@@ -89,7 +88,7 @@ descript :-
 
 {
 
-type Action = AlexAction AnnLexeme
+type Action = AlexAction (Lexeme Range)
 
 -- ** Conversion helpers
 
@@ -107,6 +106,10 @@ convertStr = T.L.toStrict . T.L.decodeUtf8
 convertInput :: AlexInput -> Int64 -> (Loc, T.Text)
 convertInput (pos, _, str, _) len
   = (convertLoc pos, convertStr $ ByteString.take (fromIntegral len) str)
+
+inputRange :: AlexInput -> Int64 -> Range
+inputRange inp len = mkRange loc str
+  where (loc, str) = convertInput inp len
 
 -- ** States
 
@@ -171,40 +174,30 @@ addCharToLexerCodeBlockValue chr = do
 
 -- ** Lexeme Constructors
 
-alexEOF :: Alex AnnLexeme
-alexEOF
-  = return AnnLexeme
-  { annLexemeRange = undefined
-  , annLexeme = LexemePunc $ PuncEof
-  }
+alexEOF :: Alex (Lexeme Range)
+alexEOF = do
+  (pos, _, _, _) <- alexGetInput
+  return $ LexemePunc $ PuncEof $ singletonRange $ convertLoc pos
 
-mkPunc :: Punc -> Action
+mkPunc :: (Range -> Punc Range) -> Action
 mkPunc punc inp len
-  = return AnnLexeme
-  { annLexemeRange = mkRange loc str
-  , annLexeme = LexemePunc punc
-  }
-  where (loc, str) = convertInput inp len
+  = return $ LexemePunc $ punc range
+  where range = inputRange inp len
 
-mkPrim :: (T.Text -> Prim) -> Action
+mkPrim :: (Annd T.Text Range -> Primitive Range) -> Action
 mkPrim mk inp len
-  = return AnnLexeme
-  { annLexemeRange = mkRange loc str
-  , annLexeme = LexemePrim (mk str)
-  }
+  = return $ LexemePrim $ mk $ Annd range str
   where (loc, str) = convertInput inp len
+        range = mkRange loc str
 
 mkSymbol :: SymbolCase -> Action
 mkSymbol cas inp len
-  = return AnnLexeme
-  { annLexemeRange = mkRange loc str
-  , annLexeme
-      = LexemeSymbol Symbol
+  = return $ LexemeSymbol Symbol
       { symbolCase = cas
-      , symbolText = str
+      , symbolText = Annd range str
       }
-  }
   where (loc, str) = convertInput inp len
+        range = mkRange loc str
 
 -- *** State-changing Constructors
 
@@ -233,7 +226,7 @@ enterCodeBlock isStart _ _ = do
   setLexerCodeBlockValue ""
   alexMonadScan
 
-addCharToCodeBlock :: Char -> Alex AnnLexeme
+addCharToCodeBlock :: Char -> Alex (Lexeme Range)
 addCharToCodeBlock chr = do
   addCharToLexerCodeBlockValue chr
   alexMonadScan
@@ -253,15 +246,11 @@ exitCodeBlock isEnd inp len = do
   contentStr <- T.pack . reverse <$> getLexerCodeBlockValue
   setLexerCodeBlockState False
   isStart <- getLexerCodeBlockStart
-  let (loc, rawStr) = convertInput inp len
-  return AnnLexeme
-    { annLexemeRange = mkRange loc rawStr
-    , annLexeme
-        = LexemePrim $ PrimCode $ SpliceFrag
-        { spliceFragStart = isStart
-        , spliceFragEnd = isEnd
-        , spliceFragContent = contentStr
-        }
+  let range = inputRange inp len
+  return $ LexemePrim $ PrimCode SpliceFrag
+    { spliceFragStart = isStart
+    , spliceFragEnd = isEnd
+    , spliceFragContent = Annd range contentStr
     }
 
 -- ** Execution
@@ -289,37 +278,38 @@ getInputErrorDesc inp
 lexerError :: T.Text -> Alex a
 lexerError msg = do
   (pos, chr, inp, _) <- alexGetInput
-  let loc = convertLoc pos
-      inpDesc = getInputErrorDesc inp
+  let inpDesc = getInputErrorDesc inp
+      loc = convertLoc pos
   alexError $ T.unpack $ msg <> " at " <> pprint loc <> " on char " <> pprint chr <> " before " <> inpDesc
 
 unexpectedCharsError :: Alex a
 unexpectedCharsError = do
   (pos, _, inp, _) <- alexGetInput
-  let loc = convertLoc pos
-      inpDesc = getInputErrorDesc inp
+  let inpDesc = getInputErrorDesc inp
+      loc = convertLoc pos
   alexError $ T.unpack $ "after " <> pprint loc <> " - unexpected " <> inpDesc
 
-scanner :: ByteString.ByteString -> Either String [AnnLexeme]
+scanner :: ByteString.ByteString -> Either String [Lexeme Range]
 scanner str = runAlex str scanRest
   where scanRest = do
           (tok, errMsgOpt) <- alexComplementError alexMonadScan
           case errMsgOpt of
             Nothing -> pure ()
             Just _ -> unexpectedCharsError
-          if (annLexeme tok == LexemePunc PuncEof) then do
-            inCodeBlock <- getLexerCodeBlockState
-            inComment <- (/= 0) <$> getLexerCommentDepth
-            case (inCodeBlock, inComment) of
-              (True, True) -> error "lexer in multiple states at once"
-              (True, False) -> alexError "code block not closed at end of file"
-              (False, True) -> alexError "comment not closed at end of file"
-              (False, False) -> return [tok]
-          else do
-            toks <- scanRest
-            return (tok : toks)
+          case tok of
+            LexemePunc (PuncEof _) -> do
+              inCodeBlock <- getLexerCodeBlockState
+              inComment <- (/= 0) <$> getLexerCommentDepth
+              case (inCodeBlock, inComment) of
+                (True, True) -> error "lexer in multiple states at once"
+                (True, False) -> alexError "code block not closed at end of file"
+                (False, True) -> alexError "comment not closed at end of file"
+                (False, False) -> return [tok]
+            _ -> do
+              toks <- scanRest
+              return (tok : toks)
 
-parse :: T.Text -> Result Program
+parse :: T.Text -> Result (Program Range)
 parse str
   = case scanner $ T.L.encodeUtf8 $ T.L.fromStrict str of
          Left errMsg
@@ -327,5 +317,6 @@ parse str
             { errorStage = StageLexing
             , errorMsg = T.pack errMsg
             }
-         Right lexemes -> ResultSuccess $ Program lexemes
+         Right lexemes -> ResultSuccess $ Program $ Annd range lexemes
+           where range = mkRange loc1 str
 }

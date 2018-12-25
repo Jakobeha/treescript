@@ -4,11 +4,15 @@
 module Descript.Misc.Loc
   ( Loc (..)
   , Range (..)
+  , loc1
   , mkRange
+  , singletonRange
+  , boundingRange
   ) where
 
 import Descript.Misc.Print
 
+import qualified Data.List.NonEmpty as N
 import qualified Data.Text as T
 
 -- | A location in text.
@@ -28,6 +32,15 @@ data Range
 
 instance Printable Loc where
   pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
+
+-- | Line 1, column 1
+loc1 :: Loc
+loc1
+  = Loc
+  { locOffset = 0
+  , locLine = 1
+  , locColumn = 1
+  }
 
 -- | Advance location past the given text.
 advanceLoc :: Loc -> T.Text -> Loc
@@ -51,3 +64,20 @@ mkRange loc text
   { rangeStart = loc
   , rangeEnd = advanceLoc loc text
   }
+
+-- | Create a range starting and ending at the same location
+singletonRange :: Loc -> Range
+singletonRange loc
+  = Range
+  { rangeStart = loc
+  , rangeEnd = loc
+  }
+
+-- | The smallest range containing all sub-ranges.
+boundingRange :: N.NonEmpty Range -> Range
+boundingRange = foldr1 boundingRange2
+  where boundingRange2 (Range xStart xEnd) (Range yStart yEnd)
+          = Range
+          { rangeStart = min xStart yStart
+          , rangeEnd = max xEnd yEnd
+          }
