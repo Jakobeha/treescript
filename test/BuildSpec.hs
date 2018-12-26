@@ -68,8 +68,9 @@ spec = do
             T.putStrLn $ pprint lexRes
           case lexRes of
             ResultFail lexErr -> assertFailureText $ errorMsg lexErr
-            ResultSuccess lexSrc -> do
+            Result lexErrs lexSrc -> do
               insertVarMap exampleLexVars file lexSrc
+              assertNoErrors lexErrs
               reducePrint lexSrc `shouldBeReducePrintOf` fileStr
         else
           unless (T.null $ testInfoErrorMsg testInfo) $ do
@@ -84,8 +85,9 @@ spec = do
             T.putStrLn $ pprint sugarRes
           case sugarRes of
             ResultFail sugarErr -> assertFailureText $ errorMsg sugarErr
-            ResultSuccess sugarSrc -> do
+            Result sugarErrs sugarSrc -> do
               insertVarMap exampleSugarVars file sugarSrc
+              assertNoErrors sugarErrs
               reducePrint sugarSrc `shouldBeReducePrintOf` fileStr
         else
           unless (T.null $ testInfoErrorMsg testInfo) $ do

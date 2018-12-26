@@ -2,6 +2,7 @@
 
 module Core.Test.Descript.Spec
   ( assertFailureText
+  , assertNoErrors
   , shouldFailTo
   , shouldBeReducePrintOf
   ) where
@@ -18,10 +19,16 @@ import Test.HUnit
 assertFailureText :: (HasCallStack) => T.Text -> Expectation
 assertFailureText = assertFailure . T.unpack
 
--- | Asserts the result should be a failure, and the error should have the given message.
+-- | Asserts that the input is empty.
+assertNoErrors :: (HasCallStack) => [Error] -> Expectation
+assertNoErrors [] = pure ()
+assertNoErrors errs
+  = assertFailureText $ T.unlines $ "Unexpected errors:\n" : map pprint errs
+
+-- | Asserts the result should be a fatal error with the given message.
 shouldFailTo :: (HasCallStack, Printable a) => Result a -> T.Text -> Expectation
 shouldFailTo (ResultFail aerr) eerr = errorMsg aerr `shouldBe` eerr
-shouldFailTo (ResultSuccess val) _ = assertFailureText $ "Unexpected success: " <> pprint val
+shouldFailTo res@(Result _ _) _ = assertFailureText $ "Unexpected non-fatal result: " <> pprint res
 
 -- | Specifies that the left string should be a subsequence of the right.
 shouldBeReducePrintOf :: (HasCallStack) => T.Text -> T.Text -> Expectation

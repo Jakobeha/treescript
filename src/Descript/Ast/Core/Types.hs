@@ -76,3 +76,17 @@ data Program
   { programRecordDecls :: [RecordDecl]
   , programReducers :: [Reducer]
   }
+
+instance Semigroup Program where
+  Program xDecls xReds <> Program yDecls yReds
+    = Program
+    { programRecordDecls = xDecls <> yDecls
+    , programReducers = xReds <> yReds
+    }
+
+instance Monoid Program where
+  mempty
+    = Program
+    { programRecordDecls = mempty
+    , programReducers = mempty
+    }

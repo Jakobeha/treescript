@@ -317,6 +317,6 @@ parse str
             { errorStage = StageLexing
             , errorMsg = T.pack errMsg
             }
-         Right lexemes -> ResultSuccess $ Program $ Annd range lexemes
+         Right lexemes -> Result [] $ Program $ Annd range lexemes
            where range = mkRange loc1 str
 }

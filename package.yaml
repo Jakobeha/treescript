@@ -10,7 +10,7 @@ maintainer:          "jakobeha@gmail.com"
 copyright:           "2018 Jakob Hain"
 
 # Metadata used when publishing your package
-synopsis:            A programming language to transform programming languages' source code.
+synopsis:            A language to transform source code from/between different languages.
 category:            Language
 
 # To avoid duplicated efforts in documentation and dealing with the
@@ -42,7 +42,9 @@ dependencies:
 - bytestring
 - containers
 - filepath
+- mtl
 - text
+- transformers
 
 library:
   source-dirs: src
