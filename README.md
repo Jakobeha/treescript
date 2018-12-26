@@ -30,7 +30,7 @@ Like before, matchers and paths should encapsulate all abstraction. Additionally
 Steps to compile Descript text into a backend (C++) program:
 
 - Descript text is parsed into an AST, which contains records, target language code blocks, and backend language code blocks.
-- The AST is partially desugared - splices become explicit (e.g. `Assign[lhs: <x=?'is_label($)'; rhs: <?'$ == x']` becomes `Assign[lhs: <?'{ .fill = (x) => is_label(x) }:Descript::Splice<bool>'; rhs: <?#Splice[outer: '{ .fill = (x) => { .fill = (y) => y == x } }:Descript::Splice<Descript::Splice<bool>>'; inner: >lhs]]`), but target language code blocks remain.
+- The AST is partially desugared - splices become explicit (e.g. `Assign[lhs: <x?'is_label($)'; rhs: <?'$ == x']` becomes `Assign[lhs: <?'{ .fill = (x) => is_label(x) }:Descript::Splice<bool>'; rhs: <?#Splice[outer: '{ .fill = (x) => { .fill = (y) => y == x } }:Descript::Splice<Descript::Splice<bool>>'; inner: >lhs]]`), but target language code blocks remain.
 - Target language code blocks are desugared. They're parsed into instances of `<target>::Value`, *using the C++ language parser library at compile-time*. This library is linked with a universal program which expects some `value.serialize...()` methods and `<target>::serializationHeader` and uses them to export the values into data, which the Descript compiler imports and replaces the code blocks with.
 - The compiler starts with the source code to define `class Descript::Value`:
   - The compiler defines `class Descipt::Primitive` and `class Descript::Record`

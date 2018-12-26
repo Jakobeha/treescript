@@ -21,6 +21,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 extra-source-files:
 - README.md
 - ChangeLog.md
+- resources/syntaxes/*.json
 - src/Descript/Ast/Lex/Parse.x
 - src/Descript/Ast/Sugar/Parse.y
 - test-resources/examples/*.dscr
