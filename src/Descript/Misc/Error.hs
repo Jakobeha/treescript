@@ -9,9 +9,11 @@ module Descript.Misc.Error
   , MonadResult (..)
   , isSuccess
   , eitherToResult
+  , traverseDropFatals
   ) where
 
 import qualified Descript.Misc.Ext.Text as T
+import Descript.Misc.Loc
 import Descript.Misc.Print
 
 import qualified Data.Text as T
@@ -25,8 +27,9 @@ data Stage
 -- | An error which can occur while compiling a program. Fatal and nonfatal errors share this type.
 data Error
   = Error
-  { errorStage :: Stage
-  , errorMsg :: T.Text
+  { errorStage :: Stage -- ^ Compile stage the error occurred.
+  , errorRange :: Range -- ^ Where the error occurred. A singleton range if it occurred at a location.
+  , errorMsg :: T.Text -- ^ Text displayed to the user.
   }
 
 -- | A value which can fail to be created because of a fatal error, or it can be created but have nonfatal errors.
@@ -51,7 +54,7 @@ instance Printable Stage where
   pprint StageExtracting = "extracting"
 
 instance Printable Error where
-  pprint (Error stage msg) = "while " <> pprint stage <> " - " <> msg
+  pprint (Error stage _ msg) = "while " <> pprint stage <> " - " <> msg
 
 instance (Printable a) => Printable (Result a) where
   pprint (ResultFail err) = "fatal error: " <> pprint err
@@ -95,3 +98,16 @@ eitherToResult stage (Left msg)
   , errorMsg = msg
   }
 eitherToResult _ (Right res) = Result [] res
+
+-- | Like 'traverse', but when an element raises a fatal error, instead of completely failing, the element is removed and the error becomes nonfatal.
+traverseDropFatals :: (a -> Result b) -> [a] -> Result [b]
+traverseDropFatals _ [] = pure []
+traverseDropFatals f (x : xs)
+  = case f x of
+      ResultFail err -> do
+        tellError err
+        ys
+      Result yErrs y -> do
+        tellErrors yErrs
+        (y :) <$> ys
+  where ys = traverseDropFatals f xs

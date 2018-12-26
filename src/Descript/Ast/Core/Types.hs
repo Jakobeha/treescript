@@ -21,8 +21,8 @@ data PrimitiveType
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
 data Primitive
   = Primitive
-  { primitiveCode :: T.Text
-  , primitiveType :: PrimitiveType
+  { primitiveType :: PrimitiveType
+  , primitiveCode :: T.Text
   }
 
 -- | Contains a key and value. A record property.
