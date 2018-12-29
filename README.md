@@ -240,12 +240,12 @@ This simple Descript program will "interpret" lambda calculus programs written i
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg]
-Subst[Scheme_Var[\old]; \old; \new]: \new
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)'
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))'
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))'
-Subst[\body; \; \]: \body
+scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+Subst[Scheme_Var[\old]; \old; \new]: \new;
+Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
+Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[\body; \; \]: \body;
 ```
 
 It gets desugared into something like (technically invalid syntax, good for the example):
@@ -254,12 +254,12 @@ It gets desugared into something like (technically invalid syntax, good for the 
 Subst[body; old; new].
 
 //Lambda application
-Scheme_App[Scheme_Lambda[\0; \1]; \2]: Subst[\1; \0; \2]
-Subst[Scheme_Var[\0]; \0; \1]: Scheme_Var[\1]
-Subst[Scheme_Lambda[\0; \1]; \0; \]: Scheme_Lambda[\0; \1]
-Subst[Scheme_Lambda[\0; \1]; \2; \3]: Scheme_Lambda[\0; Subst[\1; \2; \3]]
-Subst[Scheme_App[\0; \1]; \2; \3]: Scheme_App[Subst[\0; \1; \3]; Subst[\2; \2; \3]]
-Subst[\0; \1; \2]: \0
+Scheme_App[Scheme_Lambda[\0; \1]; \2]: Subst[\1; \0; \2];
+Subst[Scheme_Var[\0]; \0; \1]: Scheme_Var[\1];
+Subst[Scheme_Lambda[\0; \1]; \0; \]: Scheme_Lambda[\0; \1];
+Subst[Scheme_Lambda[\0; \1]; \2; \3]: Scheme_Lambda[\0; Subst[\1; \2; \3]];
+Subst[Scheme_App[\0; \1]; \2; \3]: Scheme_App[Subst[\0; \1; \3]; Subst[\2; \2; \3]];
+Subst[\0; \1; \2]: \0;
 ```
 
 And compiled into somthing like (pseudocode, not actual output):
@@ -276,15 +276,15 @@ This example is broken - it uses a builtin function to allow integer addition.
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg]
-Subst[Scheme_Var[\old]; \old; \new]: \new
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)'
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))'
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))'
-Subst[\body; \; \]: \body
+scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+Subst[Scheme_Var[\old]; \old; \new]: \new;
+Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
+Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[\body; \; \]: \body;
 
 //Addition
-scheme'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]]
+scheme'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
 ```
 
 However, it misses some cases, e.g. `(((lambda (f) ((f x) x)) +) 2)` should reduce to `4` but doesn't. This example handles addition properly:
@@ -294,16 +294,16 @@ Add[lhs].
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg]
-Subst[Scheme_Var[\old]; \old; \new]: \new
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)'
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))'
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))'
-Subst[\body; \; \]: \body
+scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+Subst[Scheme_Var[\old]; \old; \new]: \new;
+Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
+Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[\body; \; \]: \body;
 
 //Addition
-scheme'(+ \(Scheme_Integer[\x])': Add[\x]
-scheme'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]]
+scheme'(+ \(Scheme_Integer[\x])': Add[\x];
+scheme'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
 ```
 
 ### Optimization

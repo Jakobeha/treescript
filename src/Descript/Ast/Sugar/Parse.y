@@ -18,9 +18,9 @@ import qualified Data.List.NonEmpty as N
 %monad { Result }
 %tokentype { L.Lexeme Range }
 %token
-  '<' { L.LexemePunc (L.PuncAngleBwd $$) }
-  '>' { L.LexemePunc (L.PuncAngleFwd $$) }
-  '=' { L.LexemePunc (L.PuncEqual $$) }
+  '=>' { L.LexemePunc (L.PuncEqArrow $$) }
+  '|' { L.LexemePunc (L.PuncVertLine $$) }
+  '\\' { L.LexemePunc (L.PuncBackSlash $$) }
   ':' { L.LexemePunc (L.PuncColon $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }
@@ -36,6 +36,7 @@ import qualified Data.List.NonEmpty as N
   codeEnd { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False True)) }
   upperSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseUpper) }
   lowerSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseLower) }
+  splicedBind { L.LexemeSplicedBind $$ }
 
 %%
 
@@ -54,14 +55,26 @@ Reducer : Value ':' Value ';' { Reducer (boundingRange [getAnn $1, $2, getAnn $3
         ;
 Value : Primitive { ValuePrimitive $1 }
       | Record { ValueRecord $1 }
-      | Matcher { ValueMatcher $1 }
-      | Path { ValuePath $1 }
+      | Bind { ValueBind $1 }
+      | SpliceCode { ValueSpliceCode $1 }
       ;
 Primitive : int { PrimInteger (getAnn $1) (annd $1) }
           | float { PrimFloat (getAnn $1) (annd $1) }
           | string { PrimString (getAnn $1) (annd $1) }
-          | SpliceCode { PrimCode $1 }
           ;
+Record : UpperSym '[' ']' { Record (boundingRange [getAnn $1, $2, $3]) $1 [] }
+       | UpperSym '[' NonEmptyGenProperties ']' { Record (boundingRange $ (getAnn $1) N.<| $2 N.<| $4 N.:| map getAnn $3) $1 (reverse $3) }
+       ;
+NonEmptyGenProperties : GenProperty { [$1] }
+                      | NonEmptyGenProperties ';' GenProperty { $3 : $1 }
+                      ;
+GenProperty : LowerSym { GenPropertyDecl $1 }
+            | Value { GenProperty $1 }
+            ;
+Bind : '\\' { Bind $1 Nothing }
+     | '\\' LowerSym { Bind (boundingRange [$1, getAnn $2]) (Just $2) }
+     | splicedBind { Bind (getAnn $1) (fmap (Symbol (getAnn $1)) (annd $1)) }
+     ;
 SpliceCode : LowerSym SpliceText { SpliceCode (boundingRange [getAnn $1, getAnn $2]) $1 $2 }
            ;
 SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
@@ -70,23 +83,6 @@ SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
 SpliceTextTail : codeEnd { SpliceTextNil (getAnn $1) (annd $1) }
                | codeMiddle Value SpliceTextTail { SpliceTextCons (boundingRange [getAnn $1, getAnn $2, getAnn $3]) (annd $1) $2 $3 }
                ;
-Record : UpperSym '[' ']' { Record (boundingRange [getAnn $1, $2, $3]) $1 [] }
-       | UpperSym '[' NonEmptyGenProperties ']' { Record (boundingRange $ (getAnn $1) N.<| $2 N.<| $4 N.:| map getAnn $3) $1 (reverse $3) }
-       ;
-NonEmptyGenProperties : GenProperty { [$1] }
-                      | NonEmptyGenProperties ';' GenProperty { $3 : $1 }
-                      ;
-GenProperty : LowerSym { GenPropertyDecl $1 }
-            | Property { GenProperty $1 }
-            ;
-Property : LowerSym ':' Value { Property (boundingRange [getAnn $1, $2, getAnn $3]) $1 $3 }
-Matcher : '<' { Matcher $1 Nothing Nothing }
-        | '<' LowerSym { Matcher (boundingRange [$1, getAnn $2]) (Just $2) Nothing }
-        | '<' '?' Value { Matcher (boundingRange [$1, $2, getAnn $3]) Nothing (Just $3) }
-        | '<' LowerSym '?' Value { Matcher (boundingRange [$1, getAnn $2, $3, getAnn $4]) (Just $2) (Just $4) }
-        ;
-Path : '>' LowerSym { Path (boundingRange [$1, getAnn $2]) $2 }
-     ;
 LowerSym : lowerSym { Symbol (getAnn $1) (annd $1) }
          ;
 UpperSym : upperSym { Symbol (getAnn $1) (annd $1) }

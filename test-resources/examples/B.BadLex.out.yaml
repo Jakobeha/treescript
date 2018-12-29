@@ -1,2 +1,2 @@
 lexes?: false
-error: "after 1:8 - unexpected chars \", baz: «]?\""
+error: 'after 1:8 - unexpected chars: , baz: «]?'

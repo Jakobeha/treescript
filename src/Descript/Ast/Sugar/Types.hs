@@ -64,27 +64,19 @@ data Record an
   , recordProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | In an input value, assigns an identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be empty in an input value, in which case the value is discarded, but not in an output value.
-data Matcher an
-  = Matcher
-  { matcherAnn :: an
-  , matcherBind :: Maybe (Symbol an) -- ^ The symbol which refers to the matched value in an output path or code block.
-  , matcherPred :: Maybe (Value an) -- ^ The predicate the value is matched against.
+-- | In an input value, assigns a string identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be 'Nothing' in an input value, in which case the value is discarded, but not in an output value.
+data Bind an
+  = Bind
+  { bindAnn :: an
+  , bindSymbol :: Maybe (Symbol an) -- ^ The bound symbol, or "nil" for no binding.
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | An output abstraction. Refers to the whole or part of the value which was matched.
-data Path an
-  = Path
-  { pathAnn :: an
-  , pathBind :: Symbol an -- ^ The symbol of the matcher which the path refers to.
-  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Type of data in Descript. This is a liberal grammar, so any value can encode any abstraction.
+-- | Type of data in Descript.
 data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
-  | ValueMatcher (Matcher an)
-  | ValuePath (Path an)
+  | ValueBind (Bind an)
+  | ValueSpliceCode (SpliceCode an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a "function".
@@ -117,7 +109,9 @@ instance TreePrintable SpliceText where
   treePrint par leaf spliceText = "'" <> printRest spliceText
     where printRest (SpliceTextNil _ txt) = leaf txt <> "'"
           printRest (SpliceTextCons _ txt val rst)
-            = leaf txt <> "\\(" <> par val <> ")" <> printRest rst
+            = leaf txt <> printSpliced val <> printRest rst
+          printSpliced val@(ValueBind _) = par val
+          printSpliced val = "\\(" <> par val <> ")"
 
 instance TreePrintable SpliceCode where
   treePrint par _ (SpliceCode _ lang txt) = par lang <> par txt
@@ -126,14 +120,9 @@ instance TreePrintable Primitive where
   treePrint _ leaf (PrimInteger _ int) = leaf int
   treePrint _ leaf (PrimFloat _ float) = leaf float
   treePrint _ leaf (PrimString _ string) = leaf string
-  treePrint par _ (PrimCode code) = par code
 
 instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
-
-instance TreePrintable Property where
-  treePrint par _ (Property _ key value)
-    = par key <> ": " <> par value
 
 instance TreePrintable GenProperty where
   treePrint par _ (GenPropertyDecl key) = par key
@@ -143,22 +132,15 @@ instance TreePrintable Record where
   treePrint par _ (Record _ head' props)
     = par head' <> "[" <> mintercalate "; " (map par props) <> "]"
 
-instance TreePrintable Matcher where
-  treePrint par _ (Matcher _ bind pred)
-    = "<" <> printBind bind <> printPred pred
-    where printBind Nothing = mempty
-          printBind (Just bind') = par bind'
-          printPred Nothing = mempty
-          printPred (Just pred') = "?" <> par pred'
-
-instance TreePrintable Path where
-  treePrint par _ (Path _ bind) = ">" <> par bind
+instance TreePrintable Bind where
+  treePrint par _ (Bind _ sym)
+    = "\\" <> foldMap par sym
 
 instance TreePrintable Value where
   treePrint par _ (ValuePrimitive prim) = par prim
   treePrint par _ (ValueRecord record) = par record
-  treePrint par _ (ValueMatcher matcher) = par matcher
-  treePrint par _ (ValuePath path) = par path
+  treePrint par _ (ValueBind bind) = par bind
+  treePrint par _ (ValueSpliceCode code) = par code
 
 instance TreePrintable Reducer where
   treePrint par _ (Reducer _ input output)

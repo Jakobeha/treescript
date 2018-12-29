@@ -13,6 +13,7 @@ module Descript.Ast.Lex.Types
 
 import Descript.Misc
 
+import Data.Maybe
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -63,6 +64,7 @@ data Lexeme an
   = LexemePunc (Punc an)
   | LexemePrim (Primitive an)
   | LexemeSymbol (Symbol an)
+  | LexemeSplicedBind (Annd (Maybe T.Text) an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full Descript program.
@@ -114,6 +116,7 @@ instance Printable (Lexeme an) where
   pprint (LexemePunc punc) = pprint punc
   pprint (LexemePrim prim) = pprint prim
   pprint (LexemeSymbol sym) = pprint sym
+  pprint (LexemeSplicedBind txt) = "\\" <> T.empty `fromMaybe` annd txt
 
 instance Printable (Program an) where
   pprint (Program lexemes) = T.concat $ map pprint $ annd lexemes
@@ -123,10 +126,10 @@ instance ReducePrintable (SpliceFrag an) where
     = reducePrintStart <> reducePrint (annd content) <> reducePrintEnd
     where reducePrintStart
             | isStart = "'"
-            | otherwise = ")"
+            | otherwise = ""
           reducePrintEnd
             | isEnd = "'"
-            | otherwise = "\\("
+            | otherwise = "\\"
 
 instance ReducePrintable (Punc an) where
   reducePrint = pprint
@@ -144,6 +147,7 @@ instance ReducePrintable (Lexeme an) where
   reducePrint (LexemePunc punc) = reducePrint punc
   reducePrint (LexemePrim prim) = reducePrint prim
   reducePrint (LexemeSymbol sym) = reducePrint sym
+  reducePrint (LexemeSplicedBind txt) = T.empty `fromMaybe` annd txt
 
 instance ReducePrintable (Program an) where
   reducePrint (Program lexemes) = T.concat $ map reducePrint $ annd lexemes

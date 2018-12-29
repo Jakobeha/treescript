@@ -5,6 +5,7 @@ module Descript.Misc.Loc
   ( Loc (..)
   , Range (..)
   , loc1
+  , advanceLoc
   , mkRange
   , singletonRange
   , boundingRange

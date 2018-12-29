@@ -1,9 +1,9 @@
 Subst[body; old; new].
 
 //Function application
-Scheme_App[Scheme_Lambda[\x; \body]; \arg]: Subst[\body; \x; \arg]
-Subst[Scheme_Var[\old]; \old; \new]: \new
-Subst[Scheme_Lambda[\old; \body]; \old; \]: Scheme_Lambda[\old; \body]
-Subst[Scheme_Lambda[\x; \body]; \old; \new]: Scheme_Lambda[\x; Subst[\body; \old; \new]]
-Subst[Scheme_App[\f; \x]; \old; \new]: Scheme_App[Subst[\f; \old; \new]; Subst[\x; \old; \new]]
-Subst[\body; \; \]: \body
+Scheme_App[Scheme_Lambda[\x; \body]; \arg]: Subst[\body; \x; \arg];
+Subst[Scheme_Var[\old]; \old; \new]: \new;
+Subst[Scheme_Lambda[\old; \body]; \old; \]: Scheme_Lambda[\old; \body];
+Subst[Scheme_Lambda[\x; \body]; \old; \new]: Scheme_Lambda[\x; Subst[\body; \old; \new]];
+Subst[Scheme_App[\f; \x]; \old; \new]: Scheme_App[Subst[\f; \old; \new]; Subst[\x; \old; \new]];
+Subst[\body; \; \]: \body;

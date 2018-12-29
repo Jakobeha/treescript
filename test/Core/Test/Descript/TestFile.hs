@@ -28,7 +28,7 @@ data TestInfo
   , testInfoPrintCore :: Bool
   , testInfoIsLexable :: Bool
   , testInfoIsParseable :: Bool
-  , testInfoIsValid :: Bool
+  , testInfoIsDesugarable :: Bool
   , testInfoErrorMsg :: T.Text
   } deriving (Eq, Ord, Read, Show)
 
@@ -39,7 +39,7 @@ instance FromJSON TestInfo where
     <*> x .:? "printCore?" .!= False
     <*> x .:? "lexes?" .!= True
     <*> x .:? "parses?" .!= True
-    <*> x .:? "valid?" .!= True
+    <*> x .:? "desugars?" .!= True
     <*> x .:? "error" .!= ""
 
 stripSuffix :: (Eq a) => [a] -> [a] -> Maybe [a]
@@ -73,5 +73,6 @@ loadTestFileInDir dir name'
 loadFilesInDir :: FilePath -> IO [TestFile]
 loadFilesInDir dir
     = traverse (loadTestFileInDir dir)
+    . sort
     . mapMaybe (stripSuffix ".dscr")
   =<< listDirectory dir

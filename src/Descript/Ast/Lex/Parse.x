@@ -29,7 +29,7 @@ $alpha = [$small $large]
 $asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\(\)\,\;\[\]\`\{\}]
 $unicodeSymbol = [] -- TODO
 $symbol = [$asciiSymbol $unicodeSymbol]
-$escapeChar = [abfnrtv\\\"\'\&\$]
+$escapeChar = [abfnrtv\\\"\'\&]
 $stringChar = [$white $digit $alpha $symbol]
 
 @decimal = $digit+
@@ -71,7 +71,7 @@ descript :-
 
 <0> @integer { mkPrim (PrimInteger . mapAnnd T.parseInt) }
 <0> @float { mkPrim (PrimFloat . mapAnnd T.parseFloat) }
-<0> \" @string \" { mkPrim (PrimString . mapAnnd T.unescapeString) }
+<0> \" @string* \" { mkPrim (PrimString . mapAnnd (T.pack . read . T.unpack)) }
 
 <0> @lowerSymbol { mkSymbol SymbolCaseLower }
 <0> @upperSymbol { mkSymbol SymbolCaseUpper }
@@ -86,7 +86,8 @@ descript :-
 <state_code_block> \\ \\ { addCharToCodeBlock '\\' }
 <state_code_block> \\ { exitCodeBlock False `andBegin` state_code_block_bind }
 <state_code_block> [. \n] { addCurrentToCodeBlock }
-<state_code_block_bind> @lowerSymbol { exitCodeBlockBind `andBegin  state_code_block }
+<state_code_block_bind> @lowerSymbol { exitCodeBlockBind True `andBegin` state_code_block }
+<state_code_block_bind> $white { exitCodeBlockBind False `andBegin` state_code_block }
 
 {
 
@@ -109,6 +110,10 @@ convertInput :: AlexInput -> Int64 -> (Loc, T.Text)
 convertInput (pos, _, str, _) len
   = (convertLoc pos, convertStr $ ByteString.take (fromIntegral len) str)
 
+inputEndLoc :: AlexInput -> Int64 -> Loc
+inputEndLoc inp len = advanceLoc loc str
+  where (loc, str) = convertInput inp len
+
 inputRange :: AlexInput -> Int64 -> Range
 inputRange inp len = mkRange loc str
   where (loc, str) = convertInput inp len
@@ -124,6 +129,7 @@ data AlexUserState
   = AlexUserState
   { lexerCommentDepth  :: Int
   , lexerCodeBlockState :: Bool
+  , lexerCodeBlockStartLoc :: Loc
   , lexerCodeBlockStart :: Bool
   , lexerCodeBlockValue :: String
   }
@@ -133,6 +139,7 @@ alexInitUserState
   = AlexUserState
   { lexerCommentDepth = 0
   , lexerCodeBlockState = False
+  , lexerCodeBlockStartLoc = undefined
   , lexerCodeBlockStart = undefined
   , lexerCodeBlockValue = undefined
   }
@@ -156,6 +163,12 @@ getLexerCodeBlockState = getUserStateProp lexerCodeBlockState
 
 setLexerCodeBlockState :: Bool -> Alex ()
 setLexerCodeBlockState new = setUserStateProp $ \ust -> ust{ lexerCodeBlockState = new }
+
+getLexerCodeBlockStartLoc :: Alex Loc
+getLexerCodeBlockStartLoc = getUserStateProp lexerCodeBlockStartLoc
+
+setLexerCodeBlockStartLoc :: Loc -> Alex ()
+setLexerCodeBlockStartLoc new = setUserStateProp $ \ust -> ust{ lexerCodeBlockStartLoc = new }
 
 getLexerCodeBlockStart :: Alex Bool
 getLexerCodeBlockStart = getUserStateProp lexerCodeBlockStart
@@ -183,23 +196,23 @@ alexEOF = do
 
 mkPunc :: (Range -> Punc Range) -> Action
 mkPunc punc inp len
-  = return $ LexemePunc $ punc range
-  where range = inputRange inp len
+  = return $ LexemePunc $ punc rng
+  where rng = inputRange inp len
 
 mkPrim :: (Annd T.Text Range -> Primitive Range) -> Action
 mkPrim mk inp len
-  = return $ LexemePrim $ mk $ Annd range str
+  = return $ LexemePrim $ mk $ Annd rng str
   where (loc, str) = convertInput inp len
-        range = mkRange loc str
+        rng = mkRange loc str
 
 mkSymbol :: SymbolCase -> Action
 mkSymbol cas inp len
   = return $ LexemeSymbol Symbol
       { symbolCase = cas
-      , symbolText = Annd range str
+      , symbolText = Annd rng str
       }
   where (loc, str) = convertInput inp len
-        range = mkRange loc str
+        rng = mkRange loc str
 
 -- *** State-changing Constructors
 
@@ -221,15 +234,17 @@ unnestBlockComment input len = do
   when (depth == 1) $ alexSetStartCode initialState
   skip input len
 
-enterCodeBlockDirect :: Bool -> Alex (Lexeme Range)
-enterCodeBlockDirect isStart = do
+enterCodeBlockDirect :: Bool -> Loc -> Alex ()
+enterCodeBlockDirect isStart startLoc = do
   setLexerCodeBlockState True
+  setLexerCodeBlockStartLoc startLoc
   setLexerCodeBlockStart isStart
   setLexerCodeBlockValue ""
-  alexMonadScan
 
 enterCodeBlock :: Bool -> Action
-enterCodeBlock isStart _ _ = enterCodeBlockDirect isStart
+enterCodeBlock isStart (pos, _, _, _) _ = do
+  enterCodeBlockDirect isStart $ convertLoc pos
+  alexMonadScan
 
 addCharToCodeBlockDirect :: Char -> Alex (Lexeme Range)
 addCharToCodeBlockDirect chr = do
@@ -237,7 +252,7 @@ addCharToCodeBlockDirect chr = do
   alexMonadScan
 
 addCharToCodeBlock :: Char -> Action
-addCharToCodeBlock chr _ len = addCharToCodeBlockDirect chr
+addCharToCodeBlock chr _ _ = addCharToCodeBlockDirect chr
 
 addCurrentToCodeBlock :: Action
 addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlockDirect chr
@@ -245,26 +260,29 @@ addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlockDirect chr
           | len == 1 = B.C.head str
           | otherwise = error "addCurrentToCodeBlock: not a single character"
 
-addEscapeToCodeBlock :: Action
-addEscapeToCodeBlock (_, _, strAll, _) len = addCharToCodeBlock $ T.unescapeChar str
-  where str = convertStr $ ByteString.take (fromIntegral len) strAll
-
 exitCodeBlock :: Bool -> Action
 exitCodeBlock isEnd inp len = do
   contentStr <- T.pack . reverse <$> getLexerCodeBlockValue
   setLexerCodeBlockState False
+  startLoc <- getLexerCodeBlockStartLoc
   isStart <- getLexerCodeBlockStart
-  let range = inputRange inp len
+  let rng = Range{ rangeStart = startLoc, rangeEnd = inputEndLoc inp len }
   return $ LexemePrim $ PrimCode SpliceFrag
     { spliceFragStart = isStart
     , spliceFragEnd = isEnd
-    , spliceFragContent = Annd range contentStr
+    , spliceFragContent = Annd rng contentStr
     }
 
-exitCodeBlockBind :: Action
-exitCodeBlockBind inp len = do
-  mkSymbol SymbolCaseLower inp len
-  enterCodeBlockDirect False
+exitCodeBlockBind :: Bool -> Action
+exitCodeBlockBind hasSym inp len = do
+  let (loc, str) = convertInput inp len
+      rng = mkRange loc str
+      sb
+        | hasSym = Annd rng $ Just str
+        | otherwise = Annd (singletonRange $ rangeStart rng) Nothing
+  enterCodeBlockDirect False $ rangeEnd rng
+  return $ LexemeSplicedBind sb
+
 
 -- ** Execution
 
@@ -282,7 +300,7 @@ getInputErrorDesc :: ByteString.ByteString -> T.Text
 getInputErrorDesc inp
   | T.null inp' = "end of file"
   | T.null inp'' = "end of line"
-  | otherwise = "chars \"" <> inp'' <> "\""
+  | otherwise = "chars: " <> inp''
   where inp' = T.filter (/= '\r') $ T.takeWhile (/= '\n') $ convertStr inp
         inp''
           | T.length inp' > maxErrorInputLength = T.strip $ T.take maxErrorInputLength inp'
@@ -330,6 +348,6 @@ parse str
             { errorStage = StageLexing
             , errorMsg = T.pack errMsg
             }
-         Right lexemes -> Result [] $ Program $ Annd range lexemes
-           where range = mkRange loc1 str
+         Right lexemes -> Result [] $ Program $ Annd rng lexemes
+           where rng = mkRange loc1 str
 }

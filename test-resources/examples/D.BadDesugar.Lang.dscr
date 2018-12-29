@@ -1,2 +1,2 @@
-foo'while (true) { \expr }': foo'forever { \expr }' //Unknown language
-scheme'while (true) { \expr }': scheme'forever { \expr }' //Bad syntax in known language
+foo'while (true) { \expr }': foo'forever { \expr }'; //Unknown language
+scheme'while (true) { \expr }': scheme'forever { \expr }'; //Bad syntax in known language

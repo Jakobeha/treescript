@@ -4,7 +4,6 @@ module Descript.Ast.Core.Types
   ) where
 
 import qualified Data.Text as T
-import Data.Void
 
 -- | Declares a type of record.
 data RecordDecl
@@ -13,61 +12,33 @@ data RecordDecl
   , recordDeclProps :: [T.Text]
   }
 
--- | The type of a primitive.
-data PrimitiveType
-  = Raw T.Text -- ^ Represented as a backend literal.
-  | Splice PrimitiveType -- ^ @Splice<...>@.
-
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
 data Primitive
-  = Primitive
-  { primitiveCode :: T.Text
-  , primitiveType :: PrimitiveType
-  }
-
--- | Contains a key and value. A record property.
-data Property abs
-  = Property
-  { propertyKey :: T.Text
-  , propertyValue :: Value abs
-  }
+  = PrimInteger Int
+  | PrimFloat Float
+  | PrimString T.Text
 
 -- | Contains a head and properties. A parent in the AST.
-data Record abs
+data Record
   = Record
   { recordHead :: T.Text
-  , recordProps :: [Property abs]
+  , recordProps :: [Value]
   }
 
--- | An input abstraction. Matches a value against a predicate, or matches any value (if the predicate is 'None').
-newtype Matcher = Matcher (Maybe OutValue)
-
--- | An element in a path. Makes the path refer to a property.
-newtype PathElem = PathElem T.Text
-
--- | An output abstraction. Refers to the whole or part of the value which was matched.
-newtype Path = Path [PathElem]
+-- | In an input value, assigns an index identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be '0' in an input value, in which case the value is discarded, but not in an output value.
+newtype Bind = Bind Int
 
 -- | Type of data in Descript. @abs@ is the abstraction which the value can encode, if any.
-data Value abs
+data Value
   = ValuePrimitive Primitive
-  | ValueRecord (Record abs)
-  | ValueAbstraction abs
-
--- | A value with no abstractions.
-type RegValue = Value Void
-
--- | A value with matcher abstractions.
-type InValue = Value Matcher
-
--- | A value with path abstractions
-type OutValue = Value Path
+  | ValueRecord Record
+  | ValueBind Bind
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer
   = Reducer
-  { reducerInput :: InValue
-  , reducerOutput :: OutValue
+  { reducerInput :: Value
+  , reducerOutput :: Value
   }
 
 -- | A full Descript program.
