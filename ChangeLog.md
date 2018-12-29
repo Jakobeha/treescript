@@ -40,4 +40,12 @@ Some docs
 - Code design
 - Changelog
 
+## 12/29/18
+
+Significantly changed specification, slightly changed lexing and parsing
+
+- Mainly made specification much more precise, and figured out how to implement
+- Updated README, lexing, parsing, and tests
+- `Sugar` and `Core` ASTs don't have guard support yet, but `Lex` AST has guard lexemes
+
 ## Unreleased changes
