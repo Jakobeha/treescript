@@ -60,9 +60,9 @@ descript :-
 <0> \' { enterCodeBlock True `andBegin` state_code_block }
 <0> \) { enterCodeBlock False `andBegin` state_code_block }
 
-<0> \< { mkPunc PuncAngleBwd }
-<0> \> { mkPunc PuncAngleFwd }
-<0> \? { mkPunc PuncQuestion }
+<0> \= \> { mkPunc PuncEqArrow }
+<0> \| { mkPunc PuncVertLine }
+<0> \\ { mkPunc PuncBackSlash }
 <0> : { mkPunc PuncColon }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
@@ -80,11 +80,13 @@ descript :-
 <state_comment> \* \/ { unnestBlockComment }
 <state_comment> . ;
 <state_comment> \n { skip }
-<state_code_block> @escape { addEscapeToCodeBlock }
 <state_code_block> \' { exitCodeBlock True `andBegin` initialState }
 <state_code_block> \\ \( { exitCodeBlock False `andBegin` initialState }
-<state_code_block> \\ { \_ _ -> lexerError "illegal escape sequence" }
+<state_code_block> \\ \' { addCharToCodeBlock '\'' }
+<state_code_block> \\ \\ { addCharToCodeBlock '\\' }
+<state_code_block> \\ { exitCodeBlock False `andBegin` state_code_block_bind }
 <state_code_block> [. \n] { addCurrentToCodeBlock }
+<state_code_block_bind> @lowerSymbol { exitCodeBlockBind `andBegin  state_code_block }
 
 {
 
@@ -219,20 +221,26 @@ unnestBlockComment input len = do
   when (depth == 1) $ alexSetStartCode initialState
   skip input len
 
-enterCodeBlock :: Bool -> Action
-enterCodeBlock isStart _ _ = do
+enterCodeBlockDirect :: Bool -> Alex (Lexeme Range)
+enterCodeBlockDirect isStart = do
   setLexerCodeBlockState True
   setLexerCodeBlockStart isStart
   setLexerCodeBlockValue ""
   alexMonadScan
 
-addCharToCodeBlock :: Char -> Alex (Lexeme Range)
-addCharToCodeBlock chr = do
+enterCodeBlock :: Bool -> Action
+enterCodeBlock isStart _ _ = enterCodeBlockDirect isStart
+
+addCharToCodeBlockDirect :: Char -> Alex (Lexeme Range)
+addCharToCodeBlockDirect chr = do
   addCharToLexerCodeBlockValue chr
   alexMonadScan
 
+addCharToCodeBlock :: Char -> Action
+addCharToCodeBlock chr _ len = addCharToCodeBlockDirect chr
+
 addCurrentToCodeBlock :: Action
-addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlock chr
+addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlockDirect chr
   where chr
           | len == 1 = B.C.head str
           | otherwise = error "addCurrentToCodeBlock: not a single character"
@@ -252,6 +260,11 @@ exitCodeBlock isEnd inp len = do
     , spliceFragEnd = isEnd
     , spliceFragContent = Annd range contentStr
     }
+
+exitCodeBlockBind :: Action
+exitCodeBlockBind inp len = do
+  mkSymbol SymbolCaseLower inp len
+  enterCodeBlockDirect False
 
 -- ** Execution
 

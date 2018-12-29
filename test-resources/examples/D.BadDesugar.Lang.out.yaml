@@ -1,4 +1,4 @@
-valid?: false
+desugars?: false
 problems:
 - 'line 3, columns 1 to 31: duplicate record declaration: Succ[prev].'
 - 'line 7, columns 1 to 21: undeclared record type: Add[a, b, b]'

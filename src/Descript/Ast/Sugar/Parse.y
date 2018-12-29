@@ -20,7 +20,7 @@ import qualified Data.List.NonEmpty as N
 %token
   '<' { L.LexemePunc (L.PuncAngleBwd $$) }
   '>' { L.LexemePunc (L.PuncAngleFwd $$) }
-  '?' { L.LexemePunc (L.PuncQuestion $$) }
+  '=' { L.LexemePunc (L.PuncEqual $$) }
   ':' { L.LexemePunc (L.PuncColon $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }

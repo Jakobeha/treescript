@@ -41,7 +41,6 @@ data Primitive an
   = PrimInteger an Int
   | PrimFloat an Float
   | PrimString an T.Text
-  | PrimCode (SpliceCode an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | An identifier, such as sa record head or property key.
@@ -51,18 +50,10 @@ data Symbol an
   , symbol :: T.Text
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | A record property.
-data Property an
-  = Property
-  { propertyAnn :: an
-  , propertyKey :: Symbol an
-  , propertyValue :: Value an
-  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Either a record property or property declaration (record declaration property).
+-- | Either a record property value ("regular" property) or property declaration (record declaration property).
 data GenProperty an
   = GenPropertyDecl (Symbol an)
-  | GenProperty (Property an)
+  | GenProperty (Value an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
@@ -73,7 +64,7 @@ data Record an
   , recordProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | An input abstraction. Matches a value against a predicate, or matches any value (if the predicate is 'None').
+-- | In an input value, assigns an identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be empty in an input value, in which case the value is discarded, but not in an output value.
 data Matcher an
   = Matcher
   { matcherAnn :: an

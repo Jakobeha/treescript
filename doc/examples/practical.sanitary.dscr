@@ -1,0 +1,17 @@
+r'
+for (\i in \iter) {
+  \x[[\i]] <- \expr
+}
+' | \i => R_Var[\; \];
+  | \x => R_Var[\; "data.frame"];
+  | #Includes[\iter; \x] => False[];
+  | R_Var[#FreeId[]; "data.list"] => \y
+  : r'
+\y <- as.list(\x)
+
+for (\i in \iter) {
+  \y[[\i]] <- \expr
+}
+
+\x <- as.data.frame(\y)
+';

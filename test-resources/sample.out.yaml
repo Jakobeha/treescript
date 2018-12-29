@@ -3,5 +3,5 @@ printSugar?: Bool
 printCore?: Bool
 lexes?: Bool
 parses?: Bool
-valid?: Bool
+desugars?: Bool
 error: String

@@ -1,0 +1,9 @@
+Zero[].
+Succ[prev].
+Succ[prev]. //Duplicate record
+Add[left; right].
+Add[lhs; Rhs[]]. //Declaration with value property. Duplicate record
+
+Zero[1]: 0 //Wrong number of arguments
+Succ[x]: Add[\x; 1] //Value with declaration property. Unbound output
+Add[\left; \right]: Subtract[Neg[\left]; Neg[\right]] //Undeclared records

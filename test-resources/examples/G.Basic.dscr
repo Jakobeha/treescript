@@ -1,9 +1,0 @@
-//Records. These are data structures and function signatures.
-//These records define natural numbers and addition.
-Zero[]. //0 - in other languages this would be an ADT or singleton.
-Succ[prev]. //1 + prev - in other languages this would be an ADT, structure, or object.
-Add[a; b]. //a + b - in other languages this would be a function.
-
-//Reducers. Reducers are like function implementations. These reducers "implement" Add.
-Add[a: Zero[]; b: <b]: >b; //Adding 0 to anything produces 0.
-Add[a: Succ[prev: <a_prev]; b: <b]: Add[a: >a_prev; b: Succ[prev: >b]]; //Adding 1 + n to anything produces n + (1 + anything).
