@@ -93,15 +93,15 @@ parse :: L.Program Range -> Result (Program Range)
 parse (L.Program lexemes) = parseSequence $ annd lexemes
 
 parseError :: [L.Lexeme Range] -> Result a
-parseError rem
+parseError [] = error "unexpected parse error without leftover lexemes - should at least have EOF"
+parseError (nextLex : _)
   = ResultFail Error
   { errorStage = StageParsing
-  , errorMsg = errorDesc rem
+  , errorRange = nextLexRange
+  , errorMsg = "gave up at " <> locDesc
   }
-  where errorDesc rem = "gave up at " <> locDesc rem
-        locDesc [] = "end of file (not finished?)"
-        locDesc (lexeme : _)
-          = pprint (rangeStart (getAnn lexeme)) <> " (" <> lexDesc lexeme <> ")"
+  where nextLexRange = getAnn nextLex
+        locDesc = pprint (rangeStart nextLexRange) <> " (" <> lexDesc nextLex <> ")"
         lexDesc (L.LexemePunc (L.PuncEof _)) = "end of file - not finished?"
         lexDesc lexeme = "before \"" <> pprint lexeme <> "\""
 }

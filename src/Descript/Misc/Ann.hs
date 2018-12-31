@@ -11,6 +11,7 @@ module Descript.Misc.Ann
   ( Annd (..)
   , Annotatable (..)
   , mapAnnd
+  , remAnns
   ) where
 
 import GHC.Generics
@@ -57,3 +58,7 @@ instance (Annotatable f) => Annotatable' (Rec1 f) where
 -- | Transform the annotated value.
 mapAnnd :: (a -> b) -> Annd a an -> Annd b an
 mapAnnd f (Annd ann x) = Annd ann $ f x
+
+-- | Remove all annotations.
+remAnns :: (Annotatable f) => f an -> f ()
+remAnns x = () <$ x

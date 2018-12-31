@@ -93,7 +93,7 @@ descript :-
 
 type Action = AlexAction (Lexeme Range)
 
--- ** Conversion helpers
+-- = Conversion helpers
 
 convertLoc :: AlexPosn -> Loc
 convertLoc (AlexPn off line col)
@@ -118,12 +118,12 @@ inputRange :: AlexInput -> Int64 -> Range
 inputRange inp len = mkRange loc str
   where (loc, str) = convertInput inp len
 
--- ** States
+-- = States
 
 initialState :: Int
 initialState = 0
 
--- *** User State Monad
+-- == User State Monad
 
 data AlexUserState
   = AlexUserState
@@ -187,7 +187,7 @@ addCharToLexerCodeBlockValue chr = do
   str <- getLexerCodeBlockValue
   setLexerCodeBlockValue $ chr : str
 
--- ** Lexeme Constructors
+-- = Lexeme Constructors
 
 alexEOF :: Alex (Lexeme Range)
 alexEOF = do
@@ -214,7 +214,7 @@ mkSymbol cas inp len
   where (loc, str) = convertInput inp len
         rng = mkRange loc str
 
--- *** State-changing Constructors
+-- == State-changing Constructors
 
 enterBlockComment :: Action
 enterBlockComment input len = do
@@ -284,7 +284,7 @@ exitCodeBlockBind hasSym inp len = do
   return $ LexemeSplicedBind sb
 
 
--- ** Execution
+-- = Execution
 
 alexComplementError :: Alex a -> Alex (a, Maybe T.Text)
 alexComplementError (Alex al) = Alex al'
@@ -308,17 +308,16 @@ getInputErrorDesc inp
 
 lexerError :: T.Text -> Alex a
 lexerError msg = do
-  (pos, chr, inp, _) <- alexGetInput
-  let inpDesc = getInputErrorDesc inp
-      loc = convertLoc pos
-  alexError $ T.unpack $ msg <> " at " <> pprint loc <> " on char " <> pprint chr <> " before " <> inpDesc
+  (pos, _, _, _) <- alexGetInput
+  let loc = convertLoc pos
+  alexError $ show loc ++ T.unpack msg
 
 unexpectedCharsError :: Alex a
 unexpectedCharsError = do
   (pos, _, inp, _) <- alexGetInput
   let inpDesc = getInputErrorDesc inp
       loc = convertLoc pos
-  alexError $ T.unpack $ "after " <> pprint loc <> " - unexpected " <> inpDesc
+  lexerError $ "after " <> pprint loc <> " - unexpected " <> inpDesc
 
 scanner :: ByteString.ByteString -> Either String [Lexeme Range]
 scanner str = runAlex str scanRest
@@ -333,8 +332,8 @@ scanner str = runAlex str scanRest
               inComment <- (/= 0) <$> getLexerCommentDepth
               case (inCodeBlock, inComment) of
                 (True, True) -> error "lexer in multiple states at once"
-                (True, False) -> alexError "code block not closed at end of file"
-                (False, True) -> alexError "comment not closed at end of file"
+                (True, False) -> lexerError "code block not closed at end of file"
+                (False, True) -> lexerError "comment not closed at end of file"
                 (False, False) -> return [tok]
             _ -> do
               toks <- scanRest
@@ -343,11 +342,14 @@ scanner str = runAlex str scanRest
 parse :: T.Text -> Result (Program Range)
 parse str
   = case scanner $ T.L.encodeUtf8 $ T.L.fromStrict str of
-         Left errMsg
-           -> ResultFail Error
-            { errorStage = StageLexing
-            , errorMsg = T.pack errMsg
-            }
+         Left locAndErrMsg
+           -> case reads locAndErrMsg of
+                [(loc, errMsg)] -> ResultFail Error
+                  { errorStage = StageLexing
+                  , errorRange = singletonRange loc
+                  , errorMsg = T.pack errMsg
+                  }
+                _ -> error $ "bad lexer error format: " ++ locAndErrMsg
          Right lexemes -> Result [] $ Program $ Annd rng lexemes
            where rng = mkRange loc1 str
 }

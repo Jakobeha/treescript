@@ -1,8 +1,11 @@
-# VS Code
-.history
-.vscode
-
 # Stack
 .stack-work/
 descript-R.cabal
 *~
+
+# VS Code
+.history
+.vscode
+
+# RStudio
+.Rproj.user

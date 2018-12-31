@@ -34,7 +34,10 @@ data Range
 instance Printable Loc where
   pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
 
--- | Line 1, column 1
+instance Printable Range where
+  pprint (Range start end) = pprint start <> "-" <> pprint end
+
+  -- | Line 1, column 1
 loc1 :: Loc
 loc1
   = Loc

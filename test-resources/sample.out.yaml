@@ -5,3 +5,4 @@ lexes?: Bool
 parses?: Bool
 desugars?: Bool
 error: String
+errors: [String]

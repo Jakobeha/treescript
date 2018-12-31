@@ -14,6 +14,7 @@ import Descript.Ast.Sugar as S
 
 import Control.Concurrent.MVar
 import Control.Monad
+import Data.List
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -54,41 +55,67 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars
       forExampleSugar :: (TestFile -> S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars
-      forExampleCore :: (TestFile -> C.Program -> IO ()) -> IO ()
+      forExampleCore :: (TestFile -> C.Program Range -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars
+      assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
+      assertProperFailure testInfo (ResultFail err) = do
+        unless (T.null $ testInfoFatalErrorMsg testInfo) $
+          errorMsg err `shouldBe` testInfoFatalErrorMsg testInfo
+        [] `shouldBe` testInfoErrorMsgs testInfo
+      assertProperFailure testInfo (Result errs src)
+        | null errs = assertFailureText $ "Unexpected non-fatal result: " <> pprint src
+        | otherwise = do
+          unless (null $ testInfoErrorMsgs testInfo) $
+              map errorMsg (sortOn errorRange errs) `shouldBe` testInfoErrorMsgs testInfo
+          "" `shouldBe` testInfoFatalErrorMsg testInfo
 
   describe "Read" $ do
     it "Lexes" $
       forExampleFile $ \file@(TestFile srcFile testInfo) -> do
         let fileStr = fileContents srcFile
             lexRes = L.parse fileStr
-        if testInfoIsLexable testInfo then do
-          when (testInfoPrintLex testInfo) $ do
-            T.putStrLn $ fileName srcFile <> ":"
-            T.putStrLn $ pprint lexRes
+        when (testInfoPrintLex testInfo) $ do
+          T.putStrLn $ fileName srcFile <> ":"
+          T.putStrLn $ pprint lexRes
+        if testInfoIsLexable testInfo then
           case lexRes of
-            ResultFail lexErr -> assertFailureText $ errorMsg lexErr
+            ResultFail lexErr ->
+              assertFailureText $ errorMsg lexErr
             Result lexErrs lexSrc -> do
               insertVarMap exampleLexVars file lexSrc
               assertNoErrors lexErrs
               reducePrint lexSrc `shouldBeReducePrintOf` fileStr
         else
-          unless (T.null $ testInfoErrorMsg testInfo) $ do
-            lexRes `shouldFailTo` testInfoErrorMsg testInfo
+          assertProperFailure testInfo lexRes
     it "Parses" $
       forExampleLex $ \file@(TestFile srcFile testInfo) lexSrc -> do
         let fileStr = fileContents srcFile
             sugarRes = S.parse lexSrc
-        if testInfoIsParseable testInfo then do
-          when (testInfoPrintSugar testInfo) $ do
-            T.putStrLn $ fileName srcFile <> ":"
-            T.putStrLn $ pprint sugarRes
+        when (testInfoPrintSugar testInfo) $ do
+          T.putStrLn $ fileName srcFile <> ":"
+          T.putStrLn $ pprint sugarRes
+        if testInfoIsParseable testInfo then
           case sugarRes of
-            ResultFail sugarErr -> assertFailureText $ errorMsg sugarErr
+            ResultFail sugarErr ->
+              assertFailureText $ errorMsg sugarErr
             Result sugarErrs sugarSrc -> do
               insertVarMap exampleSugarVars file sugarSrc
               assertNoErrors sugarErrs
               reducePrint sugarSrc `shouldBeReducePrintOf` fileStr
         else
-          unless (T.null $ testInfoErrorMsg testInfo) $ do
-            sugarRes `shouldFailTo` testInfoErrorMsg testInfo
+          assertProperFailure testInfo sugarRes
+    it "Desugars" $
+      forExampleSugar $ \file@(TestFile srcFile testInfo) sugarSrc -> do
+        let coreRes = C.parse sugarSrc
+        when (testInfoPrintCore testInfo) $ do
+          T.putStrLn $ fileName srcFile <> ":"
+          T.putStrLn $ pprint coreRes
+        if testInfoIsDesugarable testInfo then
+          case coreRes of
+            ResultFail coreErr ->
+              assertFailureText $ errorMsg coreErr
+            Result coreErrs coreSrc -> do
+              insertVarMap exampleCoreVars file coreSrc
+              assertNoErrors coreErrs
+        else
+          assertProperFailure testInfo coreRes

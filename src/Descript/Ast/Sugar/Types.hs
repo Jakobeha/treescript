@@ -100,7 +100,6 @@ data Program an
   , programTopLevels :: [TopLevel an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
-
 instance TreePrintable RecordDecl where
   treePrint par _ (RecordDecl _ record)
     = par record <> "."

@@ -32,7 +32,7 @@ Eventually Descript could even transform its own syntax trees (although it needs
 
 ## Overview
 
-The Descript compiler takes an input source file and generates a program. This program takes a file containing an **AST Specification** as a command-line argument. It then reads a stream of **syntax trees** conforming to the specification. It applies all reducers to each tree it encounters, and outputs a stream of transformed trees.
+The Descript compiler uses a builtin library of **language specifications**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
 
 ---
 
@@ -46,11 +46,17 @@ The following **examples** are for a minimal lambda-calculus Scheme specificatio
 
 (evaluates to 2).
 
+### Language Specification
+
+A language specification describes how to parse, print, and analyze a single language. It consists of:
+
+- AST Specification
+- Language Parser
+- Language Printer
+
 ### AST Specification
 
-The AST specification defines every type of node in the AST for *all languages*. Each node has a name, target language, and number of children.
-
-In the future, the AST specification can also contain a set of servers. Each server has a URL, port, and a list of functions. Each function has a name, optional target language, and number of arguments. The program will connect to these servers, and whenever it evaluates a function associated with an IP address, it sends the function index and input (as ASTs) to the address, and interprets the response as the function's output. The AST specification is in JSON.
+The AST specification defines every type of node in the AST. Each node has a name and number of children. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
 
 ---
 
@@ -62,56 +68,84 @@ In the future, the AST specification can also contain a set of servers. Each ser
     {
       "name": "Var",
       "args": 1, //identifier
-      "language": "scheme"
     },
     {
       "name": "Lambda",
       "args": 2, //bound identifier and body expression
-      "language": "scheme"
     },
     {
       "name": "App",
       "args": 2, //function and body expressions
-      "language": "scheme"
     },
     {
       "name": "Integer",
       "args": 1, //literal fixed-precision integer
-      "language": "scheme"
-    }
-  ],
-  "servers": [
-    {
-      "url": "localhost",
-      "port": "8009",
-      "language": "scheme",
-      "functions": [
-        {
-          "name": "CallBuiltin", //fallback for undefined function calls
-          "args": "2" //applied function identifier and body expression
-        }
-      ]
     }
   ]
 }
 ```
 
-### Syntax Tree Data
+### Language Parser
 
-In the Descript program, every AST node is assigned a name, number of children, and identifier (the node's target language is prefixed to its name). The identifiers are signed 32-bit integers, and nodes get identifiers as follows:
+A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding AST data. It isn't a Descript programs itself (it's a compiled program which could've been written in any language).
 
-- Arbitrary data (not a node) has identifier 0.
-- Nodes in the AST specification have *positive* identifiers. The nodes get the identifiers in the order they were defined.
-- Builtin nodes and nodes defined in the source have *negative* identifiers. `Unit[]` has -1, `False[]` has -2, `True[]` has -3, `Nil[]` has -4, `Cons[]` has -5, etc. Builtin nodes have "higher" (lower magnitude) identifiers than user defined ones.
+Each language parser must (or at least strongly should) handle indexed splices (`\#`, e.g. in `while (\0 < \1) \2++;)`), and convert `\\` occurrences to actual backslashes. When an indexed splice is encountered, in the AST data it gets converted into a `splice` node, which is followed by the splice's index. e.g. for `while (\0 < \1) \2++;)`, `\0` is encoded with `splice 0`, `1` is encoded with `splice 1`, and `2` is encoded with
+`splice 2` (these nodes have no children).
 
-The syntax trees are represented in postfix notation by a continuous stream of integers. When an integer is read, you can determine whether the following data belongs to a block of data, a child node, a sibling / outer node. If the integer is 0, the next piece of data is a *64-bit unsigned* integer which determines the size of the data, and that amount of bytes are the content of the data. Otherwise, the next piece of data is a 32-bit signed integer for another node.
+Language parsers are specifically designed to be used by the Descript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled Descript program. However, they're convenient when also paired with a Descript program - the command `cat <input> | <language-parser> | <descript-program> | <language-printer> | <output>` will read source text from `<input>`, apply `<descript-program>`, and print the write the transformed source text to `<output>`.
+
+### Language Printer
+
+A language printer is the opposite of a language parser - it's a command-line program which reads AST data for a language and outputs it's source text.
+
+### Server
+
+A server is provides additonal functions for Descript programs. The functions may or may not be for a particular langugage - e.g. they can include a function which takes a method identifier and provides its definition, or an additional math function.
+
+A server consists of a command-line program and a server specification.
+
+### Server Program
+
+When a Descript program includes a function which isn't builtin, it looks for a server which provides the function. If it finds a server, it runs its command-line program, inputting the current context, the function name, and each argument as AST data (the current context consists of the program's command-line argument path, and the index of the syntax tree which is being processed when the function is called. The context would be important e.g. if the program wanted to lookup the body of a class whose name was passed as an argument).
+
+### Server Specification
+
+The server specification declares all the functions the server provides. Each function has a name. Functions can take any number of arguments - they can even take variable arguments.
+
+A server doesn't need to fully implement a function it provides - it can return "undefined" for some inputs (e.g. if the wrong number of arguments is provided) - although it must declare all functions it implements.
+
+Multiple servers can provide the same function, and the Descript program will keep trying each server (in undefined order) until it gets a result. If no servers return a result, the Descript program will fail.
+
+---
+
+**Example:**
+
+```json
+{
+  "functions": [
+    "Add",
+    "Subtract",
+    "Multiply",
+    "Divide"
+  ]
+}
+```
+
+
+### AST Data
+
+AST data is a text-based format which encodes Descript values and abstract syntax trees for any language. It consists of a sequence of "words" separated by spaces and newlines.
+
+AST data encodes a sequence of values, and each value is separated by a newline. A primitive integer, float, or string is represented by the literal "integer", "float", or "string", followed by the (32-bit signed) integer, float, or escaped quoted string which is the content. A record is represented by the literal record's head, followed by it's children - e.g. `Foo[Bar[], 5]` is represented by `Foo Bar integer 5`. Thus AST data is prefix notation.
+
+Each AST node corresponds to a record. The head is the created by combining the node's target language, an underscore, and its name - e.g. `Java_While`.
 
 ---
 
 **Example:**
 
 ```
-3 3 2 0 <"f"> 3 3 1 0 <"f"> 4 0 <4> 4 0 <5> 2 0 <"x"> 2 0 <"y"> 2 0 <"z"> 3 3 1 0 <"+"> 1 0 <"x"> 3 3 1 0 <"-"> 1 0 <"z"> 1 0 <"y"> 4 0 <3>
+App App Lambda string "f" App App Var string "f" Number integer 4 Number integer 5 Lambda string "x" Lambda string "y" Lambda string "z" App App Var string "+" Var string "x" App App Var string "-" Var string "z" Var string "y" Number integer 3
 ```
 
 ### Descript Source Code
@@ -175,17 +209,6 @@ There are no "regular" values - all values are input or output values. Thus, all
 - Compile (into literal C program)
   - TODO Summarize?
 - Write (e.g. to stdout as output text)
-
-### Language Parsers
-
-A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding syntax tree data. It isn't a Descript programs itself (it's a compiled program which could've been written in any language).
-
-Each language parser has an associated "AST speification" - this specification only defines nodes for the parser's language (remember, each language parser only handles one language), and it shouldn't define any servers or functions (since the language parser can do any advanced operations itself). The Descript compiler gets its language parsers from a library (probably in it's app data).
-
-Each language parser must (or at least strongly should) handle indexed splices (`\#`, e.g. in `while (\0 < \1) \2++;)`), and convert `\\` occurrences to actual backslashes. When an indexed splice is encountered, it gets converted into a node with a positive identifier *immediately* after the last positive identifier in the AST specification (# of nodes in the specification + 1) + the index. e.g. for `while (\0 < \1) \2++;)`, if the defined language has 50 declared nodes, in the syntax tree data `\0` is encoded with `51`, `1` is encoded with `52`, and `2` is encoded with
-`53`. Normally these are unbound identifiers, but a program reading the syntax tree data (such as the Descript compiler) will know they refer to an indexed splice (and since they know how many identifiers are in the AST specification, which splice it refers to).
-
-Language parsers are specifically designed to be used by the Descript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into syntax tree data, e.g. not using this specific command-line format, and you can use these other methods when getting the syntax tree data to feed into a compiled Descript program. However, they're convenient when also paired with a Descript program - the command `cat <input> | <language-parser> | <descript-program> <language-parser-specification> | <language-printer> | <output>` will read source text from `<input>`, apply `<descript-program>`, and print the write the transformed source text to `<output>`.
 
 ## Descript (Compiled) Program Structure
 

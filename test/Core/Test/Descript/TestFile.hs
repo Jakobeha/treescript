@@ -29,7 +29,8 @@ data TestInfo
   , testInfoIsLexable :: Bool
   , testInfoIsParseable :: Bool
   , testInfoIsDesugarable :: Bool
-  , testInfoErrorMsg :: T.Text
+  , testInfoFatalErrorMsg :: T.Text
+  , testInfoErrorMsgs :: [T.Text]
   } deriving (Eq, Ord, Read, Show)
 
 instance FromJSON TestInfo where
@@ -41,6 +42,7 @@ instance FromJSON TestInfo where
     <*> x .:? "parses?" .!= True
     <*> x .:? "desugars?" .!= True
     <*> x .:? "error" .!= ""
+    <*> x .:? "errors" .!= []
 
 stripSuffix :: (Eq a) => [a] -> [a] -> Maybe [a]
 stripSuffix suf = fmap reverse . stripPrefix (reverse suf) . reverse
