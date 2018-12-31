@@ -30,7 +30,9 @@ Descript programs can do more when given a language server with helpful utility 
 
 Eventually Descript could even transform its own syntax trees (although it needs an AST specification and language parser first)
 
-## Overview
+## Components
+
+The Descript language is extensible. The compiler uses external programs and specifications to handle different languages, and Descript programs use external programs and specifications to implement extra computations in functions. These external programs and specifications are located in the Descript's compilers appdata, probably e.g. `~/Library/Application Support/Descript/`.
 
 The Descript compiler uses a builtin library of **language specifications**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
 
@@ -131,7 +133,6 @@ Multiple servers can provide the same function, and the Descript program will ke
 }
 ```
 
-
 ### AST Data
 
 AST data is a text-based format which encodes Descript values and abstract syntax trees for any language. It consists of a sequence of "words" separated by spaces and newlines.
@@ -144,7 +145,7 @@ Each AST node corresponds to a record. The head is the created by combining the 
 
 **Example:**
 
-```
+```s
 App App Lambda string "f" App App Var string "f" Number integer 4 Number integer 5 Lambda string "x" Lambda string "y" Lambda string "z" App App Var string "+" Var string "x" App App Var string "-" Var string "z" Var string "y" Number integer 3
 ```
 
