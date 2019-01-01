@@ -48,4 +48,20 @@ Significantly changed specification, slightly changed lexing and parsing
 - Updated README, lexing, parsing, and tests
 - `Sugar` and `Core` ASTs don't have guard support yet, but `Lex` AST has guard lexemes
 
+## 1/01/19
+
+Desugaring and `Core` AST
+
+- Can parse spliced code blocks with plugins
+- Still can't parse guards
+
+Basic plugin support
+
+- Plugin settings
+- Plugin languages
+  - Currently the only languages are `scheme` and `text`
+  - `scheme` has a specification and parsing (although dots followed by lists don't work)
+  - `text` has a specification
+- Plugin printing skeleton
+
 ## Unreleased changes

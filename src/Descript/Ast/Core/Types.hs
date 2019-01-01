@@ -126,6 +126,15 @@ instance Printable (Program an) where
   pprint (Program _ decls reds)
     = T.unlines $ map pprint decls ++ map pprint reds
 
+builtinDecls :: [RecordDeclCompact]
+builtinDecls =
+  [ RecordDeclCompact "Unit" 0
+  , RecordDeclCompact "True" 0
+  , RecordDeclCompact "False" 0
+  , RecordDeclCompact "Nil" 0
+  , RecordDeclCompact "Cons" 2
+  ]
+
 compactRecordDecl :: RecordDecl an -> RecordDeclCompact
 compactRecordDecl (RecordDecl _ head' props)
   = RecordDeclCompact

@@ -97,7 +97,7 @@ parseError [] = error "unexpected parse error without leftover lexemes - should 
 parseError (nextLex : _)
   = ResultFail Error
   { errorStage = StageParsing
-  , errorRange = nextLexRange
+  , errorRange = Just nextLexRange
   , errorMsg = "gave up at " <> locDesc
   }
   where nextLexRange = getAnn nextLex

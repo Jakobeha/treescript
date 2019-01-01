@@ -1,5 +1,8 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Data types for errors.
 module Descript.Misc.Error
@@ -8,6 +11,8 @@ module Descript.Misc.Error
   , Result (..)
   , ResultT (..)
   , MonadResult (..)
+  , prependMsgToErr
+  , addRangeToErr
   , isSuccess
   , traverseDropFatals
   ) where
@@ -17,21 +22,27 @@ import qualified Descript.Misc.Ext.Text as T
 import Descript.Misc.Loc
 import Descript.Misc.Print
 
+import Control.Monad.IO.Class
+import Control.Monad.Reader.Class
 import Control.Monad.State.Strict
 import Data.Maybe
 import qualified Data.Text as T
+import Control.Monad.Logger
 
 -- | A step in compiling.
 data Stage
-  = StageLexing
+  = StagePluginLoad
+  | StagePluginUse
+  | StageLexing
   | StageParsing
   | StageExtracting
+  | StageCompiling
 
--- | An error which can occur while compiling a program. Fatal and nonfatal errors share this type.
+-- | An error which occurs while compiling a program. Fatal and nonfatal errors share this type.
 data Error
   = Error
   { errorStage :: Stage -- ^ Compile stage the error occurred.
-  , errorRange :: Range -- ^ Where the error occurred. A singleton range if it occurred at a location.
+  , errorRange :: Maybe Range -- ^ Where the error occurred. A singleton range if it occurred at a location.
   , errorMsg :: T.Text -- ^ Text displayed to the user.
   }
 
@@ -53,13 +64,18 @@ class MonadResult m where
   -- | Raise an error but don't stop computing the result.
   tellError :: Error -> m ()
   tellError err = tellErrors [err]
+  -- | Transforms all errors in the result.
+  overErrors :: (Error -> Error) -> m a -> m a
   -- | Converts fatal results into nonfatal 'Nothing' results, and the rest into 'Just' results.
   downgradeFatal :: m a -> m (Maybe a)
 
 instance Printable Stage where
+  pprint StagePluginLoad = "loading plugins"
+  pprint StagePluginUse = "using a plugin"
   pprint StageLexing = "lexing"
   pprint StageParsing = "parsing"
   pprint StageExtracting = "extracting"
+  pprint StageCompiling = "compiling"
 
 instance Printable Error where
   pprint (Error stage _ msg) = "while " <> pprint stage <> " - " <> msg
@@ -103,22 +119,62 @@ instance (Monad u) => Monad (ResultT u) where
 
 instance MonadResult Result where
   mkFail = ResultFail
+
   tellErrors errs = Result errs ()
+
+  overErrors f (ResultFail err) = ResultFail $ f err
+  overErrors f (Result errs x) = Result (map f errs) x
+
   downgradeFatal (ResultFail err) = Result [err] Nothing
   downgradeFatal (Result errs x) = Result errs $ Just x
 
 instance (Applicative u) => MonadResult (ResultT u) where
   mkFail = ResultT . pure . mkFail
   tellErrors = ResultT . pure . tellErrors
+  overErrors f (ResultT x) = ResultT $ overErrors f <$> x
   downgradeFatal (ResultT x) = ResultT $ downgradeFatal <$> x
 
 instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
   mkFail = lift . mkFail
   tellErrors = lift . tellErrors
+  overErrors = mapStateT . overErrors
   downgradeFatal x = StateT run
     where run s = fmap fillState $ downgradeFatal $ runStateT x s
             where fillState Nothing = (Nothing, s)
                   fillState (Just (res, s')) = (Just res, s')
+
+instance (MonadReader r u) => MonadReader r (ResultT u) where
+  ask = ResultT $ pure <$> ask
+  local f (ResultT x) = ResultT $ local f x
+
+instance (MonadLogger u) => MonadLogger (ResultT u) where
+  monadLoggerLog loc src lvl = ResultT . fmap pure . monadLoggerLog loc src lvl
+
+instance (MonadIO u) => MonadIO (ResultT u) where
+  liftIO = ResultT . fmap pure . liftIO
+
+instance (MonadLoggerIO u) => MonadLoggerIO (ResultT u) where
+  askLoggerIO = ResultT $ pure <$> askLoggerIO
+
+-- | Prepends to the error message.
+prependMsgToErr :: T.Text -> Error -> Error
+prependMsgToErr new (Error stage rng msg)
+  = Error
+  { errorStage = stage
+  , errorRange = rng
+  , errorMsg = new <> " - " <> msg
+  }
+
+-- | Denotes that the error occurred in the given range. Changes its description. Fails if the error has a range.
+addRangeToErr :: Range -> Error -> Error
+addRangeToErr rng (Error stage Nothing msg)
+  = Error
+  { errorStage = stage
+  , errorRange = Just rng
+  , errorMsg = "at " <> pprint rng <> " - " <> msg
+  }
+addRangeToErr _ err@(Error _ (Just _) _)
+  = error $ "tried to add range to error which already has one (" ++ T.unpack (pprint err) ++ ")"
 
 -- | Is the result a success?
 isSuccess :: Result a -> Bool

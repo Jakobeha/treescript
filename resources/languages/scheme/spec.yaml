@@ -1,3 +1,5 @@
+name: Scheme
+extension: scm
 nodes:
 - name: Symbol # x
   args: 1 # identifier

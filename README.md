@@ -28,13 +28,13 @@ Descript could also:
 
 Descript programs can do more when given a language server with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "Descript" wouldn't be doing much, and there would be a lot of communication back and forth between the Descript program and server, which could be inefficient (although apparently socket communication can be very fast).
 
-Eventually Descript could even transform its own syntax trees (although it needs an AST specification and language parser first)
+Eventually Descript could even transform its own syntax trees (with a Descript language plugin)
 
-## Components
+## Plugins
 
 The Descript language is extensible. The compiler uses external programs and specifications to handle different languages, and Descript programs use external programs and specifications to implement extra computations in functions. These external programs and specifications are located in the Descript's compilers appdata, probably e.g. `~/Library/Application Support/Descript/`.
 
-The Descript compiler uses a builtin library of **language specifications**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
+The Descript compiler uses a builtin library of **language plugins**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
 
 ---
 
@@ -48,17 +48,17 @@ The following **examples** are for a minimal lambda-calculus Scheme specificatio
 
 (evaluates to 2).
 
-### Language Specification
+### Language Plugin
 
-A language specification describes how to parse, print, and analyze a single language. It consists of:
+A language plugin describes how to parse, print, and analyze a single language. It consists of:
 
-- AST Specification
+- Language Specification
 - Language Parser
 - Language Printer
 
-### AST Specification
+### Language Specification
 
-The AST specification defines every type of node in the AST. Each node has a name and number of children. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
+The language specification defines the language's file extension, and every type of node in the AST. Each node has a name and number of children. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
 
 ---
 
@@ -66,6 +66,7 @@ The AST specification defines every type of node in the AST. Each node has a nam
 
 ```json
 {
+  "extension": "scm",
   "nodes": [
     {
       "name": "Var",
@@ -203,9 +204,9 @@ There are no "regular" values - all values are input or output values. Thus, all
   - Make identifiers indices
   - Desugar code blocks (e.g. `c'while (\x < \y) \x++;' => C_While[C_LessThan[\x; \y]; C_Inc[\x]]`)
     - Move splices out (`'while (\0 < \1) \2++;)'[\x / \0; \y / \1, \x / \2]`, not the same as indexing identifiers)
-    - Run a language parser for the given language (generates syntax tree data)
-    - Convert back into records, using the language parser's associated AST specification, and substituting the free (after-declared) nodes with their corresponding splices
-      - Expects a single syntax tree, creates a single record. To encode multiple statements, wrap them in a block (every AST specification should define one, even if it's not valid in the actual language, it's convenient for Descript to pass data around).
+    - Run the given language's (plugin) parser (generates AST data)
+    - Convert back into records, using the (plugin) language specification, and substituting the free (after-declared) nodes with their corresponding splices
+      - Expects a single syntax tree, creates a single record. To encode multiple statements, wrap them in a block (every language specification should define one, even if it's not valid in the actual language, it's convenient for Descript to pass data around).
   - (In the future) apply syntax shortcuts like lists
 - Compile (into literal C program)
   - TODO Summarize?
@@ -264,11 +265,11 @@ This simple Descript program will "interpret" lambda calculus programs written i
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
 Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;
 ```
 
@@ -300,15 +301,15 @@ This example is broken - it uses a builtin function to allow integer addition.
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
 Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;
 
 //Addition
-scheme'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
+scm'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
 ```
 
 However, it misses some cases, e.g. `(((lambda (f) ((f x) x)) +) 2)` should reduce to `4` but doesn't. This example handles addition properly:
@@ -318,16 +319,16 @@ Add[lhs].
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
 Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;
 
 //Addition
-scheme'(+ \(Scheme_Integer[\x])': Add[\x];
-scheme'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
+scm'(+ \(Scheme_Integer[\x])': Add[\x];
+scm'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
 ```
 
 ### Optimization

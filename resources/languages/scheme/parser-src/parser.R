@@ -8,14 +8,21 @@ open(stdin)
 level <- 0
 didCons <- FALSE
 
+writeWord <- function(word) {
+  cat(word, " ", sep="")
+}
 writeNode <- function(node) {
-  cat(node, " ")
+  cat("Scheme_", node, " ", sep="")
 }
 writeSeparator <- function() {
   cat("\n")
 }
+raiseSyntax <- function(msg) {
+  write(paste0("syntax error - ", msg), stderr())
+  quit(save="no", status=1, runLast=FALSE)
+}
 
-for (line in readLines(stdin)) {
+for (line in readLines(stdin, warn=FALSE)) {
   for (token in str_extract_all(line, "\"(\\\\\"|[^\"])*\"|[\\(\\[\\{\\}\\]\\)]|[^ \\(\\[\\{\\}\\]\\)\"]+")[[1]]) {
     if (!(token %in% c(")", "]", "}", "."))) {
       if (level == 0) {
@@ -24,17 +31,17 @@ for (line in readLines(stdin)) {
         writeNode("Cons")
       }
     }
-    
+
     if (grepl("^\\\\[0-9]+$", token)) {
-      idxStr <- grep("[0-9]+$", token)
-      writeNode("splice")
-      writeNode(idxStr)
+      idxStr <- str_sub(token, 2)
+      writeWord("splice")
+      writeWord(idxStr)
     } else if (token %in% c("(", "[", "{")) {
       level <- level + 1
       didCons <- FALSE
     } else if (token %in% c(")", "]", "}")) {
       if (level == 0) {
-        stop("syntax error - unmatched closing paren")
+        raiseSyntax("unmatched closing paren")
       }
       if (!didCons) {
         writeNode("Nil")
@@ -42,34 +49,34 @@ for (line in readLines(stdin)) {
       level <- level - 1
     } else if (token == ".") {
       if (level == 0) {
-        stop("syntax error - dot at top level")
+        raiseSyntax("dot at top level")
       } else if (didCons) {
-        stop("syntax error - multiple dots in list")
+        raiseSyntax("multiple dots in list")
       } else {
         didCons <- TRUE
       }
     } else if (suppressWarnings(all(!is.na(as.numeric(token))))) {
       writeNode("Atom")
       if (grepl("\\.", token)) {
-        writeNode("float")
+        writeWord("float")
       } else {
-        writeNode("integer")
+        writeWord("integer")
       }
-      writeNode(token)
+      writeWord(token)
     } else if (grepl("\"", token)) {
       writeNode("Atom")
-      writeNode("string")
-      writeNode(token)
+      writeWord("string")
+      writeWord(token)
     } else {
       writeNode("Symbol")
-      writeNode("string")
-      writeNode(dQuote(token))
+      writeWord("string")
+      writeWord(dQuote(token))
     }
   }
 }
 
 if (level != 0) {
-  stop("syntax error - unmatched open paren")
+  raiseSyntax("unmatched open paren")
 }
 
 close(stdin)

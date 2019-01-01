@@ -1,9 +1,9 @@
 Subst[body; old; new].
 
 //Lambda application
-scheme'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
-Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scheme'(lambda (\old) \body)'; \old; \]: scheme'(lambda (\old) \body)';
-Subst[scheme'(lambda (\x) \body)'; \old; \new]: scheme'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scheme'(\f \x)'; \old; \new]: scheme'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
+Subst[Scheme_Symbol[\old]; \old; \new]: \new;
+Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;

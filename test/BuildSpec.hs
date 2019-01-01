@@ -106,7 +106,7 @@ spec = do
           assertProperFailure testInfo sugarRes
     it "Desugars" $
       forExampleSugar $ \file@(TestFile srcFile testInfo) sugarSrc -> do
-        let coreRes = C.parse sugarSrc
+        coreRes <- runSessionReal $ C.parse sugarSrc
         when (testInfoPrintCore testInfo) $ do
           T.putStrLn $ fileName srcFile <> ":"
           T.putStrLn $ pprint coreRes
