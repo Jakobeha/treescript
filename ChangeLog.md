@@ -64,4 +64,12 @@ Basic plugin support
   - `text` has a specification
 - Plugin printing skeleton
 
+## 1/02/19
+
+C template, translation and `Translate` phase
+
+- Template for C code
+- Updated README, added how Descript code will be translated into C, spliced into the template, and this will be compiled to get the Descript executable
+- Tested via printing/observing, didn't actually compile code yet
+
 ## Unreleased changes

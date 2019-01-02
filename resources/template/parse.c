@@ -4,28 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
-#include "template.h"
-
-// = Value Helpers
-
-int get_record_num_props(char* head) {
-  //$0
-  /*if (streq(head, "Foo")) {
-    return 1;
-  } else {
-    fprintf(stderr, "unknown record head: %s\n", head);
-    exit(1);
-  }*/
-}
-
-// = Value Parsing
+#include "parse.h"
 
 const int MIN_WORD_CAPACITY = 63;
 const int MIN_STRING_CAPACITY = 63;
-
-bool streq(const char* str1, const char* str2) {
-  return strcmp(str1, str2) == 0;
-}
 
 char* scan_word() {
   int word_capacity = MIN_WORD_CAPACITY;
@@ -128,7 +110,8 @@ value_record scan_record(char* head) {
   int num_props = record_num_props(head);
   value* props = malloc(sizeof(value) * num_props);
   for (int i = 0; i < num_props; i++) {
-    props[i] = scan_value();
+    char* word = scan_word();
+    props[i] = scan_value(word);
   }
   return (value_record){
     .head = head,
@@ -138,25 +121,25 @@ value_record scan_record(char* head) {
 }
 
 value scan_value(char* word) {
-  if (streq(word, "splice")) {
+  if (strings_equal(word, "splice")) {
     free(word);
     return (value){
       .type = SPLICE,
       .as_splice = scan_integer()
     };
-  } else if (streq(word, "integer")) {
+  } else if (strings_equal(word, "integer")) {
     free(word);
     return (value){
       .type = PRIM_INTEGER,
       .as_integer = scan_integer()
     };
-  } else if (streq(word, "float")) {
+  } else if (strings_equal(word, "float")) {
     free(word);
     return (value){
       .type = PRIM_FLOAT,
       .as_float = scan_float()
     };
-  } else if (streq(word, "string")) {
+  } else if (strings_equal(word, "string")) {
     free(word);
     return (value){
       .type = PRIM_STRING,
@@ -171,134 +154,4 @@ value scan_value(char* word) {
     fprintf(stderr, "word has unknown type: %s\n", word);
     exit(1);
   }
-}
-
-// = Value Printing
-
-void print_string(const char* x) {
-  putchar('"');
-  int i = 0;
-  char next;
-  while ((next = x[i]) != '\0') {
-    if (next == '\n') {
-      printf("\\n");
-    } else if (next == '"') {
-      printf("\\\"");
-    } else if (next == '\\') {
-      printf("\\\\");
-    } else {
-      putchar(next);
-    }
-    i++;
-  }
-  putchar('"');
-}
-
-void print_record(value_record x) {
-  printf("%s ", x.head);
-  for (int i = 0; i < x.num_props; i++) {
-    print_value(x.props[i]);
-  }
-}
-
-void print_value(value x) {
-  switch (x.type) {
-    case SPLICE:
-      printf("splice %d ", x.as_splice_num);
-      break;
-    case PRIM_INTEGER:
-      printf("integer %d ", x.as_integer);
-      break;
-    case PRIM_FLOAT:
-      printf("float %d ", x.as_float);
-      break;
-    case PRIM_STRING:
-      printf("string ");
-      print_string(x.as_string);
-      break;
-    case RECORD:
-      print_record(x.as_record);
-      break;
-  }
-}
-
-// = Value Reduction
-
-bool reduce(value* x) {
-  value in = *x;
-  //$1
-  bool set_matches[4];
-  value matches[4];
-  if (in.type == PRIM_STRING && streq(x, "foo")) {
-    //produce
-    *x = (value){
-      .type = PRIM_INTEGER,
-      .as_integer = 42
-    };
-    return true;
-  }
-  if (in.type == RECORD && streq(x, "Bar")) {
-    value in_0 = in.props[0];
-    if (in_0.type == PRIM_FLOAT && in_0.as_float == 2.5) {
-      value in_1 = in.props[1];
-      if (!set_matches[0] || values_equal(matches[0], in_1)) {
-        matches[0] = in_1;
-        //produce
-        value* out_props = malloc(sizeof(value) * 1);
-        out_props[0] = (value){
-          .type = PRIM_STRING,
-          .as_string = strdup("Hello world!")
-        };
-        *x = (value){
-          .type = RECORD,
-          .as_record = (value_record){
-            .head = strdup("Foo"),
-            .num_props = 1,
-            .props = out_props
-          }
-        };
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// = Value Freeing
-
-void free_record(value_record x) {
-  free(x.head);
-  for (int i = 0; i < x.num_props; i++) {
-    free_value(x.props[i]);
-  }
-  free(x.props);
-}
-
-void free_value(value x) {
-  switch (x.type) {
-    case SPLICE:
-    case PRIM_INTEGER:
-    case PRIM_FLOAT:
-      break;
-    case PRIM_STRING:
-      free(x.as_string);
-      break;
-    case RECORD:
-      free_record(x.as_record);
-      break;
-  }
-}
-
-// = Main
-
-int main(int argc, const char* argv[]) {
-  while ((char* next_word = scan_word()) != NULL) {
-    value next = scan_value(next_word);
-    while (reduce(&next)) { ; }
-    print_value(next);
-    printf("\n");
-    free_value(next); //also frees next_word if necessary
-  }
-
-  return 0;
 }

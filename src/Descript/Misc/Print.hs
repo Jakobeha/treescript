@@ -1,5 +1,6 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -69,7 +70,7 @@ instance Printable Float where
   pprint = T.pack . show
 
 instance Printable T.Text where
-  pprint = T.escapeString
+  pprint txt = "\"" <> T.escapeString txt <> "\""
 
 instance ReducePrintable Char where
   reducePrint = T.singleton

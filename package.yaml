@@ -47,6 +47,7 @@ dependencies:
 - megaparsec >= 7.0.4
 - monad-logger
 - mtl
+- neat-interpolation
 - process
 - shelly
 - system-filepath
@@ -62,6 +63,7 @@ library:
   - Descript.Ast.Lex
   - Descript.Ast.Sugar
   - Descript.Ast.Core
+  - Descript.Ast.Translate
 
 executables:
   descript-R-exe:

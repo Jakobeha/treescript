@@ -8,6 +8,7 @@ module BuildSpec
 
 import Core.Test
 import Descript
+import Descript.Ast.Translate as T
 import Descript.Ast.Core as C
 import Descript.Ast.Lex as L
 import Descript.Ast.Sugar as S
@@ -37,10 +38,12 @@ insertVarMap vars key x = do
 
 spec :: Spec
 spec = do
+  exampleEnv <- runIO $ fmap forceSuccess $ runPreSessionRes $ getInitialEnv
   exampleFiles <- runIO getExampleFiles
   exampleLexVars <- runIO $ mkVarMap exampleFiles
   exampleSugarVars <- runIO $ mkVarMap exampleFiles
   exampleCoreVars <- runIO $ mkVarMap exampleFiles
+  exampleTranslateVars <- runIO $ mkVarMap exampleFiles
   let forExampleFile :: (TestFile -> IO ()) -> IO ()
       forExampleFile f =
         forM_ exampleFiles $ \file ->
@@ -57,6 +60,8 @@ spec = do
       forExampleSugar = forExampleIntermediateIn exampleSugarVars
       forExampleCore :: (TestFile -> C.Program Range -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars
+      forExampleTranslate :: (TestFile -> T.Translated -> IO ()) -> IO ()
+      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars
       assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
       assertProperFailure testInfo (ResultFail err) = do
         unless (T.null $ testInfoFatalErrorMsg testInfo) $
@@ -106,7 +111,7 @@ spec = do
           assertProperFailure testInfo sugarRes
     it "Desugars" $
       forExampleSugar $ \file@(TestFile srcFile testInfo) sugarSrc -> do
-        coreRes <- runSessionReal $ C.parse sugarSrc
+        coreRes <- runSessionResVirtual exampleEnv $ C.parse sugarSrc
         when (testInfoPrintCore testInfo) $ do
           T.putStrLn $ fileName srcFile <> ":"
           T.putStrLn $ pprint coreRes
@@ -119,3 +124,18 @@ spec = do
               assertNoErrors coreErrs
         else
           assertProperFailure testInfo coreRes
+    it "Translates into C" $
+      forExampleCore $ \file@(TestFile srcFile testInfo) coreSrc -> do
+        translateRes <- runSessionResVirtual exampleEnv $ T.translate coreSrc
+        when (testInfoPrintTranslate testInfo) $ do
+          T.putStrLn $ fileName srcFile <> ":"
+          T.putStrLn $ pprint translateRes
+        if testInfoIsTranslatable testInfo then
+          case translateRes of
+            ResultFail translateErr ->
+              assertFailureText $ errorMsg translateErr
+            Result translateErrs translateSrc -> do
+              insertVarMap exampleTranslateVars file translateSrc
+              assertNoErrors translateErrs
+        else
+          assertProperFailure testInfo translateRes

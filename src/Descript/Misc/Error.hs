@@ -14,7 +14,9 @@ module Descript.Misc.Error
   , prependMsgToErr
   , addRangeToErr
   , isSuccess
+  , forceSuccess
   , traverseDropFatals
+  , mapResultT
   ) where
 
 import Descript.Misc.Ext
@@ -181,7 +183,18 @@ isSuccess :: Result a -> Bool
 isSuccess (ResultFail _) = False
 isSuccess (Result errs _) = null errs
 
+-- | Raises an error if the result has any errors.
+forceSuccess :: Result a -> a
+forceSuccess (ResultFail err) = error $ "unexpected fatal error:\n" <> T.unpack (pprint err)
+forceSuccess (Result errs x)
+  | null errs = x
+  | otherwise = error $ "unexpected nonfatal errors:\n" <> T.unpack (T.unlines $ map pprint errs)
+
 -- | Like 'traverse', but when an element raises a fatal error, instead of completely failing, the element is removed and the error becomes nonfatal.
 traverseDropFatals :: (Applicative w, MonadResult w) => (a -> w b) -> [a] -> w [b]
 traverseDropFatals f
   = fmap catMaybes . traverse (downgradeFatal . f)
+
+-- | Transforms the underlying monad in a 'ResultT'.
+mapResultT :: (u1 (Result a) -> u2 (Result b)) -> ResultT u1 a -> ResultT u2 b
+mapResultT f (ResultT x) = ResultT $ f x

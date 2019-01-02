@@ -1,1 +1,2 @@
-desugars?: true
+compiles?: true
+printTranslate?: true

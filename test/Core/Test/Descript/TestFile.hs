@@ -26,9 +26,12 @@ data TestInfo
   { testInfoPrintLex :: Bool
   , testInfoPrintSugar :: Bool
   , testInfoPrintCore :: Bool
+  , testInfoPrintTranslate :: Bool
   , testInfoIsLexable :: Bool
   , testInfoIsParseable :: Bool
   , testInfoIsDesugarable :: Bool
+  , testInfoIsTranslatable :: Bool
+  , testInfoIsCompilable :: Bool
   , testInfoFatalErrorMsg :: T.Text
   , testInfoErrorMsgs :: [T.Text]
   } deriving (Eq, Ord, Read, Show)
@@ -38,9 +41,12 @@ instance FromJSON TestInfo where
     <$> x .:? "printLex?" .!= False
     <*> x .:? "printSugar?" .!= False
     <*> x .:? "printCore?" .!= False
+    <*> x .:? "printTranslate?" .!= False
     <*> x .:? "lexes?" .!= True
     <*> x .:? "parses?" .!= True
     <*> x .:? "desugars?" .!= True
+    <*> x .:? "translates?" .!= True
+    <*> x .:? "compiles?" .!= True
     <*> x .:? "error" .!= ""
     <*> x .:? "errors" .!= []
 

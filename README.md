@@ -152,13 +152,19 @@ App App Lambda string "f" App App Var string "f" Number integer 4 Number integer
 
 ### Descript Source Code
 
-Descript source files are compiled in the following steps with the following forms:
+A Descript source file is compiled into an executable.
 
-- Read (input text)
-- Lexed (`Lex` phase AST)
-- Parsed (`Sugar` phase AST)
-- Desugared (`Core` phase AST)
-- Compiled (output text)
+More specifically, it gets compiled into a C project, which gets compiled into an executable.
+
+More specifically, it goes through the following steps with the following forms:
+
+- Read source from path (supplied by command-line argument)
+- Lex (into `Lex` phase AST)
+- Parse (into `Sugar` phase AST)
+- Desugar (into `Core` phase AST)
+- Generate C code (`Translate` phase)
+- Compile C code
+- Copy program to path (supplied by command-line argument)
 
 In the sugar and core phases:
 
@@ -179,6 +185,8 @@ Additionally, the sugar phase allows some syntax errors, so it can be parsed con
 - A declaration can come after reducers, but this is invalid.
 - Record declarations can contain value instead of string properties, and vice versa (e.g. `Foo[bar, Baz[]]`)
 
+The translate phase contains blocks of generated C code, which get spliced into a template to create the complete C project.
+
 ## Major Changes from v1 and v2
 
 *Descript code is no longer interpreted, it's now compiled into another language.*
@@ -197,7 +205,7 @@ There are no "regular" values - all values are input or output values. Thus, all
 
 ### Steps
 
-- Read (e.g. from stdin as input text)
+- Read source from path (supplied by command-line argument)
 - Lex (into `Lex` phase AST)
 - Parse (into `Sugar` phase AST)
 - Desugar (into `Core` phase AST)
@@ -208,41 +216,19 @@ There are no "regular" values - all values are input or output values. Thus, all
     - Convert back into records, using the (plugin) language specification, and substituting the free (after-declared) nodes with their corresponding splices
       - Expects a single syntax tree, creates a single record. To encode multiple statements, wrap them in a block (every language specification should define one, even if it's not valid in the actual language, it's convenient for Descript to pass data around).
   - (In the future) apply syntax shortcuts like lists
-- Compile (into literal C program)
-  - TODO Summarize?
-- Write (e.g. to stdout as output text)
+- Generate C code (`Translate` phase)
+  - Specifically, generate certain functions which are different in different Descript programs:
+  - `get_record_num_props` (affected by user-defined record declarations)
+  - `reduce` (affected by reducers)
+- Compile C code
+  - Copy the template - a C project with code shared by all Descript programs - into a temporary directory
+  - Splice the generated C code into the template copy, yielding a complete C project
+  - Run `gcc` on the temporary project, yielding the Descript program
+- Copy program to path (supplied by command-line argument)
 
-## Descript (Compiled) Program Structure
+## C Project Structure
 
-TODO fix
-
-- Descript text is parsed into an AST, which contains records, target language code blocks, and backend language code blocks.
-- The AST is partially desugared - splices become explicit (e.g. `Assign[lhs: <x?'is_label($)'; rhs: <?'$ == x']` becomes `Assign[lhs: <?'{ .fill = (x) => is_label(x) }:Descript::Splice<bool>'; rhs: <?#Splice[outer: '{ .fill = (x) => { .fill = (y) => y == x } }:Descript::Splice<Descript::Splice<bool>>'; inner: >lhs]]`), but target language code blocks remain.
-- Target language code blocks are desugared. They're parsed into instances of `<target>::Value`, *using the C++ language parser library at compile-time*. This library is linked with a universal program which expects some `value.serialize...()` methods and `<target>::serializationHeader` and uses them to export the values into data, which the Descript compiler imports and replaces the code blocks with.
-- The compiler starts with the source code to define `class Descript::Value`:
-  - The compiler defines `class Descipt::Primitive` and `class Descript::Record`
-  - For all record declarations, the compiler defines `class Descript::<name>(Descript::Value* <prop1>, Descript::Value* <prop2>, ...)`
-  - The compiler defines an instance of `Descript::<name>` for every `<target>::Value` record.
-- The compiler defines conversion functions to convert instances of `<target>::Value` to `Descript::Value`s.
-- The reducers are used to create a `public virtual Descript::Value* Descript::Value::reduce()` method (in functional programming, `reduce : Descript.Value -> Maybe Descript.Value`)
-  - Each reducer `N` (whose input surface is a record `<type>`) adds a new case in `<type>`'s override - `if consumeN(inp) { return produceN(inp) }` - and new methods `private bool Descript::<type>::consumeN()` and `private Descript::Value* Descript::<type>::produceN()` (in functional programming, adding a new case `reduce (<type> ...) | consumeN ... = Just (produceN ...)`). At the end of each record's override, `<type>` returns `super.reduce()`. The base class implementation, also covering primitives, returns `null` (`reduce _ = Nothing`).
-  - In the record's `consumeN`, each property is checked against its corresponding input property - `return prop1.consumeNProp1() && prop2.consumeNProp2() && ...`. `public virtual Descript::Value* Descript::Value::consumeNPropM`s is defined similar to `reduce`.
-    - If the input surface is a primitive `<prim>`, it changes `Primitive<T>`'s override to `return typeof(T) == typeof(<prim's T>) && (<prim's T>)self.value == <prim>.value` (for all primitive types, *`==` must be overloaded to test equivalence, not identity*). The base class implementation, also covering records, returns `false`.
-    - If the input surface is a record `<type>`, it changes `<type>`'s override to `return prop1->consumeNPropMProp1() && prop2->consumeNPropMProp2() && ... (&& super.consumeNPropM())`. The base class implementation, also covering primitives, returns `false`.
-    - If the input surface is a matcher - containing `Descript::Primitive<Descript::Splice<bool>> <prim>` - it changes the base method to `return <prim>.value.fill(self)`.
-  - In the record's `produceN`:
-    - If the output surface is a primitive `<prim>`, it changes `produceN` to `return <prim>`.
-    - If the output surface is a record `<type>`, it changes `produceN` to `return new <type>(((Prop1Type*)prop1)->produceNProp1(), ((Prop2Type*)prop2)->produceNProp2(), ...)`. `Prop1Type`, `Prop2Type`, etc. are statically resolved, using the input to resolve the type of paths - paths to matchers just get the type `Descript::Value`. `private Descript::Value* Descript::PropMType::produceNPropM`s is defined the same way as `produceN` (the property type is known enough so it doesn't have to be public or virtual).
-    - If the output surface is a path - with elements `elem1`, `elem2`, `...` - it changes the base method to `return ((Elem2Type*)((Elem1Type*)self.elem1)->elem2)->...`.
-  - `#Splice` records have their own `reduce` override which applies the splice.
-- The main program runs as follows:
-  - Reads source code from the target language as input (specifically, from stdin).
-  - Parses the source code into a `<target>::Value` using the C++ parser linked *at runtime*.
-  - Converts this into a `Descript::Value`.
-  - Calls the value's `reduce()` method until it returns `null` (define a helper in `Value`, `reduceFull()`), which:
-    - Applies the reducers from the Descript source to transform the value from the input shape into the output shape.
-    - Applies target-language common reducers (can be explicitly imported by the Descript source, or implicitly defined in an external Descript source) to transform the value from the output shape into a primitive string, containing the output
-    - Prints this output (specifically, to stdout)
+In the plugins folder, there's a C project template. This contains C code which is common for all Descript programs, and splice markers. The Descript compiler will take a Descript source file and generate code to fill these splices. To finish compiling the Descript source, it'll copy the template and fill in the splices, then compile the resulting C project.
 
 ## Descript Source Structure
 

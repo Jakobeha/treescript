@@ -6,6 +6,7 @@ module Descript.Ast.Core.Parse
   ( parse
   ) where
 
+import Descript.Ast.Core.Analyze
 import Descript.Ast.Core.Types
 import qualified Descript.Ast.Sugar as S
 import Descript.Misc
@@ -54,22 +55,6 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
         )
       Just idx -> (idx, env)
 
--- = Plugin support
-
-languageSpecDecls :: LangSpec -> [RecordDeclCompact]
-languageSpecDecls spec
-  = map nodeSpecToCompactDecl $ langSpecNodes spec
-  where langName = langSpecName spec
-        nodeSpecToCompactDecl (AstNodeSpec nodeName numArgs)
-          = RecordDeclCompact
-          { recordDeclCompactHead = langName <> "_" <> nodeName
-          , recordDeclCompactNumProps = numArgs
-          }
-
-allImportedDecls :: SessionEnv -> [RecordDeclCompact]
-allImportedDecls env
-  = builtinDecls ++ concatMap (languageSpecDecls . languageSpec) (sessionEnvLanguages env)
-
 -- = Parsing from AST data
 
 decodeError :: T.Text -> Error
@@ -83,7 +68,7 @@ decodeError msg
 decodeAstData :: LangSpec -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 decodeAstData spec txt splices = traverse decodeAstData1 $ filter (not . T.null) $ T.lines txt
   where
-    decls = builtinDecls ++ languageSpecDecls spec
+    decls = builtinDecls ++ langSpecDecls spec
     splicesVec = V.fromList splices
     decodeAstData1 txt1
       = case P.runParser astDataParser "" txt1 of

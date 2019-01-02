@@ -1,8 +1,10 @@
 printLex?: Bool
 printSugar?: Bool
 printCore?: Bool
+printTranslate?: Bool
 lexes?: Bool
 parses?: Bool
 desugars?: Bool
+translates?: Bool
 error: String
 errors: [String]

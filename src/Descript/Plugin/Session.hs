@@ -5,10 +5,13 @@
 module Descript.Plugin.Session
   ( Settings (..)
   , SessionEnv (..)
+  , Session
   , SessionRes
+  , getInitialEnv
   , getSessionEnv
-  , runSessionVirtual
-  , runSessionReal
+  , runSessionResVirtual
+  , runPreSessionRes
+  , runSessionResReal
   ) where
 
 import Descript.Plugin.CmdProgram
@@ -47,11 +50,15 @@ data SessionEnv
   { sessionEnvSettings :: Settings
   , sessionEnvLanguages :: [Language] -- ^ Languages with plugins.
   , sessionEnvServers :: [ServerSpec] -- ^ Servers (just specifications).
+  , sessionEnvTemplateDir :: FilePath
   }
 
 type PreSessionRes a = forall r. ResultT (ReaderT r (LoggingT IO)) a
 
 -- | A value computed using plugins.
+type Session a = ReaderT SessionEnv (LoggingT IO) a
+
+-- | A result computed using plugins.
 type SessionRes a = ResultT (ReaderT SessionEnv (LoggingT IO)) a
 
 instance FromJSON LogLevel where
@@ -84,6 +91,7 @@ emptySessionEnv
   { sessionEnvSettings = defaultSettings
   , sessionEnvLanguages = []
   , sessionEnvServers = []
+  , sessionEnvTemplateDir = ""
   }
 
 setupInitialPlugins :: FilePath -> PreSessionRes ()
@@ -91,8 +99,8 @@ setupInitialPlugins pluginPath = do
   logDebugN "Setting up initial plugins."
   liftIO $ S.shelly $ S.cp_r "resources" (P.decodeString pluginPath)
 
-getPluginPath :: PreSessionRes FilePath
-getPluginPath = do
+getRealPluginPath :: PreSessionRes FilePath
+getRealPluginPath = do
   path <- liftIO $ getAppUserDataDirectory "descript"
   pluginsWereSetup <- liftIO $ doesPathExist path
   unless pluginsWereSetup $ do
@@ -159,33 +167,44 @@ listDirPlugins :: FilePath -> PreSessionRes [String]
 listDirPlugins dir = filter (not . isHidden) <$> liftIO (listDirectory dir)
   where isHidden name = "." `isPrefixOf` name
 
-getCurrentEnv :: PreSessionRes SessionEnv
-getCurrentEnv = do
-  pluginPath <- getPluginPath
+getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
+getEnvAtPath pluginPath = do
   let settingsPath = pluginPath </> "settings.yaml"
       languagesPath = pluginPath </> "languages"
       serversPath = pluginPath </> "servers"
+      templateDirPath = pluginPath </> "template"
   settingsDecoded <- liftIO $ decodeFileEither settingsPath
   settings <-
     case settingsDecoded of
       Left err -> do
         tellError $ mkError $ "bad settings - " <> T.pack (prettyPrintParseException err)
         pure defaultSettings
-      Right settings' ->
-        if settingsOverwriteWithDefault settings' then do
-          logDebugN "Overwriting plugins with defaults - this was specified in settings."
-          S.shelly $ S.rm_rf (P.decodeString pluginPath)
-          setupInitialPlugins pluginPath
-          pure defaultSettings
-        else
-          pure settings'
+      Right res -> pure res
   languages <- traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
   servers <- traverseDropFatals (mkServer serversPath) =<< listDirPlugins serversPath
   pure SessionEnv
     { sessionEnvSettings = settings
     , sessionEnvLanguages = languages
     , sessionEnvServers = servers
+    , sessionEnvTemplateDir = templateDirPath
     }
+
+-- | Loads the environment which is shipped with this package.
+getInitialEnv :: PreSessionRes SessionEnv
+getInitialEnv = getEnvAtPath "resources"
+
+-- | Loads the environment for the current user.
+getRealEnv :: PreSessionRes SessionEnv
+getRealEnv = do
+  pluginPath <- getRealPluginPath
+  env <- getEnvAtPath pluginPath
+  if settingsOverwriteWithDefault $ sessionEnvSettings env then do
+    logDebugN "Overwriting plugins with defaults - this was specified in settings."
+    S.shelly $ S.rm_rf (P.decodeString pluginPath)
+    setupInitialPlugins pluginPath
+    getInitialEnv
+  else
+    pure env
 
 getSessionEnv :: SessionRes SessionEnv
 getSessionEnv = ask
@@ -196,22 +215,27 @@ setupEnv = do
   _ <- getSessionEnv
   logDebugN "Loaded session."
 
-runSessionVirtualRaw :: SessionEnv -> SessionRes a -> IO (Result a)
+runSessionVirtualRaw :: SessionEnv -> Session a -> IO a
 runSessionVirtualRaw env
   = runStdoutLoggingT
   . filterLogger (\_ lvl -> lvl >= envLvl)
   . (`runReaderT` env)
-  . runResultT
   where envLvl = logLevelToMonadLogLevel $ settingsLogLevel $ sessionEnvSettings env
 
--- | Evaluates a session in a given environment. Useful for tests.
-runSessionVirtual :: SessionEnv -> SessionRes a -> IO (Result a)
-runSessionVirtual env session = runSessionVirtualRaw env $ do
+-- | Evaluates a session result in a given environment. Useful for tests.
+runSessionResVirtual :: SessionEnv -> SessionRes a -> IO (Result a)
+runSessionResVirtual env session = runSessionVirtualRaw env $ runResultT $ do
   setupEnv
   session
 
--- | Evaluates a session in the current environment.
-runSessionReal :: SessionRes a -> IO (Result a)
-runSessionReal session = runSessionVirtual emptySessionEnv $ do
-  env <- getCurrentEnv
-  local (\_ -> env) session
+-- | Evaluates a pre-session result (like session result but doesn't use any environment).
+runPreSessionRes :: PreSessionRes a -> IO (Result a)
+runPreSessionRes session = runSessionVirtualRaw emptySessionEnv $ runResultT session
+
+-- | Evaluates a session result in the user's environment.
+runSessionResReal :: SessionRes a -> IO (Result a)
+runSessionResReal session = runPreSessionRes $ do
+  env <- getRealEnv
+  mapResultT (withReaderT $ \_ -> env) $ do
+    setupEnv
+    session
