@@ -13,12 +13,12 @@ import qualified Data.Text as T
 data Translated
   = Translated
   { translatedNumProps :: T.Text
-  , translatedReduce :: T.Text
+  , translatedReduceSurface :: T.Text
   }
 
 instance Printable Translated where
-  pprint (Translated numProps reduce)
+  pprint (Translated numProps reduceSurface)
      = "// \\get_record_num_props\n"
     <> numProps
-    <> "\n\n// \\reduce\n"
-    <> reduce
+    <> "\n\n// \\reduce_surface\n"
+    <> reduceSurface

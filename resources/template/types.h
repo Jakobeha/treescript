@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+struct value;
+
 typedef enum {
   SPLICE,
   PRIM_INTEGER,
@@ -12,10 +14,10 @@ typedef enum {
 typedef struct {
   char* head;
   int num_props;
-  value* props;
+  struct value* props;
 } value_record;
 
-typedef struct {
+typedef struct value {
   value_type type;
   union {
     int as_splice;

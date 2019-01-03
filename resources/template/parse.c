@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include "helpers.h"
+#include "misc.h"
 #include "parse.h"
 
 const int MIN_WORD_CAPACITY = 63;
@@ -15,7 +17,7 @@ char* scan_word() {
   int i = 0;
   int next;
   while ((next = getchar()) != -1) {
-    if (next == ' ' && next == '\n') {
+    if (next == ' ' || next == '\n') {
       if (i == 0) {
         continue;
       } else {
@@ -58,7 +60,7 @@ float scan_float() {
 }
 
 char* scan_string() {
-  char* open_quote = getchar();
+  int open_quote = getchar();
   assert(open_quote == '"');
 
   int res_capacity = MIN_STRING_CAPACITY;
@@ -69,7 +71,7 @@ char* scan_string() {
   while (true) {
     next = getchar();
     if (next == -1 || next == '\n') {
-      fprint(stderr, "unterminated string literal");
+      fprintf(stderr, "unterminated string literal");
       exit(1);
     }
     if (is_escaping) {
@@ -98,7 +100,17 @@ char* scan_string() {
       res[i] = next;
       i++;
     }
+    if (i > res_capacity) {
+      //increase buffer size
+      int old_res_capacity = res_capacity;
+      char* old_res = res;
+      res_capacity *= 2;
+      res = malloc(sizeof(char) * (res_capacity + 1));
+      memcpy(res, old_res, sizeof(char) * (old_res_capacity + 1));
+      free(old_res);
+    }
   }
+  res[i] = '\0';
   assert(!is_escaping);
   //process following whitespace
   next = getchar();
@@ -107,7 +119,7 @@ char* scan_string() {
 }
 
 value_record scan_record(char* head) {
-  int num_props = record_num_props(head);
+  int num_props = get_record_num_props(head);
   value* props = malloc(sizeof(value) * num_props);
   for (int i = 0; i < num_props; i++) {
     char* word = scan_word();

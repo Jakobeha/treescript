@@ -60,6 +60,9 @@ class (Annotatable a) => TreePrintable a where
 instance IsString ReducePrintText where
   fromString x = ReducePrintText $ T.strip $ T.pack x
 
+instance Printable () where
+  pprint () = "()"
+
 instance Printable Char where
   pprint = T.pack . show
 

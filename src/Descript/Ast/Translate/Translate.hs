@@ -36,6 +36,9 @@ numBindsInValue1 (ValuePrimitive _) = 0
 numBindsInValue1 (ValueRecord _) = 0
 numBindsInValue1 (ValueBind (Bind _ idx)) = idx
 
+maxNumBindsInReducer :: Reducer an -> Int
+maxNumBindsInReducer = getMax0 . foldValuesInReducer (Max0 . numBindsInValue1)
+
 maxNumBindsInProgram :: Program an -> Int
 maxNumBindsInProgram = getMax0 . foldValuesInProgram (Max0 . numBindsInValue1)
 
@@ -55,6 +58,7 @@ consumePrimExpr suc inp (PrimFloat _ float)
 consumePrimExpr suc inp (PrimString _ str)
   = [text|
       if ($inp.type == PRIM_STRING && strings_equal($inp.as_string, $strEncoded)) {
+        //printf("<Consume primitive %s> ", $strEncoded);
         $suc
       }|]
   where strEncoded = pprint str
@@ -73,7 +77,8 @@ consumePropsExpr suc inp n (prop : props)
 consumeRecordExpr :: T.Text -> T.Text -> Record an -> T.Text
 consumeRecordExpr suc inp (Record _ head' props)
   = [text|
-      if ($inp.type == PRIM_RECORD && strings_equal($inp.as_record.head, $headEncoded)) {
+      if ($inp.type == RECORD && strings_equal($inp.as_record.head, $headEncoded)) {
+        //printf("<Consume record %s> ", $headEncoded);
         value* ${inp}_props = $inp.as_record.props;
         $consumeProps
       }|]
@@ -86,6 +91,7 @@ consumeBindExpr suc inp (Bind _ idx)
   | otherwise
   = [text|
       if (!set_matches[$idx0Encoded] || values_equal($inp, matches[$idx0Encoded])) {
+        //printf("<Consume bind %d> ", $idx0Encoded);
         set_matches[$idx0Encoded] = true;
         matches[$idx0Encoded] = $inp;
         $suc
@@ -168,16 +174,24 @@ produceExpr out (ValueRecord record) = produceRecordExpr out record
 produceExpr out (ValueBind bind) = produceBindExpr out bind
 
 reduceExpr :: Reducer an -> T.Text
-reduceExpr (Reducer _ input output) = consumeExpr suc "in" input
-  where suc
+reduceExpr red@(Reducer _ input output)
+  = [text|
+      for (int i = 0; i < $maxNumBindsEncoded; i++) {
+        set_matches[i] = false;
+      }
+      $consumeAndProduce|]
+  where maxNumBindsEncoded = pprint $ maxNumBindsInReducer red
+        consumeAndProduce = consumeExpr suc "in" input
+        suc
           = [text|
+              //printf("<Produce!> ");
               $produceOut
               *x = out;
               return true;|]
         produceOut = produceExpr "out" output
 
-translateReduce :: Program an -> SessionRes T.Text
-translateReduce prog = do
+translateReduceSurface :: Program an -> SessionRes T.Text
+translateReduceSurface prog = do
   let maxNumBindsEncoded = pprint $ maxNumBindsInProgram prog
       reduceExprs = T.unlines $ map reduceExpr $ programReducers prog
   pure $
@@ -186,14 +200,15 @@ translateReduce prog = do
       bool set_matches[$maxNumBindsEncoded];
       value matches[$maxNumBindsEncoded];
       $reduceExprs
+      //printf("<Reduce fail> ");
       return false;|]
 
 -- | Generates C code from a @Core@ AST.
 translate :: Program an -> SessionRes Translated
 translate prog = do
   numProps <- translateNumProps prog
-  reduce <- translateReduce prog
+  reduceSurface <- translateReduceSurface prog
   pure Translated
     { translatedNumProps = numProps
-    , translatedReduce = reduce
+    , translatedReduceSurface = reduceSurface
     }

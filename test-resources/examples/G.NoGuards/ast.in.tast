@@ -1,0 +1,1 @@
+Scheme_Cons Scheme_Cons Scheme_Cons Scheme_Symbol string "lambda" Scheme_Cons Scheme_Cons Scheme_Symbol string "x" Scheme_Nil Scheme_Cons Scheme_Symbol string "x" Scheme_Nil Scheme_Cons Scheme_Atom string "foo" Scheme_Nil Scheme_Cons Scheme_Atom string "bar" Scheme_Nil

@@ -219,7 +219,7 @@ There are no "regular" values - all values are input or output values. Thus, all
 - Generate C code (`Translate` phase)
   - Specifically, generate certain functions which are different in different Descript programs:
   - `get_record_num_props` (affected by user-defined record declarations)
-  - `reduce` (affected by reducers)
+  - `reduce_surface` (affected by reducers)
 - Compile C code
   - Copy the template - a C project with code shared by all Descript programs - into a temporary directory
   - Splice the generated C code into the template copy, yielding a complete C project

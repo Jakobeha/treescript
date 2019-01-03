@@ -7,9 +7,9 @@ module Descript.Misc.Ext.Text
   , unescapeString
   , unescapeChar
   , escapeString
+  , indent
   , bullet
   , blockQuote
-  , indent
   ) where
 
 import qualified Data.Text as T
@@ -37,13 +37,18 @@ unescapeChar str
 escapeString :: T.Text -> T.Text
 escapeString str = T.drop 1 $ T.dropEnd 1 $ T.pack $ show $ T.unpack str
 
+-- | Doesn't indent the first line.
+indentRest :: T.Text -> T.Text
+indentRest = T.replace "\n" "\n  "
+
+-- | Also indents the first line.
+indent :: T.Text -> T.Text
+indent txt = "  " <> indentRest txt
+
 -- | Formats into a Markdown-style bulleted list item.
 bullet :: T.Text -> T.Text
-bullet subPr = "- " <> indent subPr
+bullet subPr = "- " <> indentRest subPr
 
 -- | Formats into a Markdown-style block quote.
 blockQuote :: T.Text -> T.Text
 blockQuote contentPr = "> " <> T.replace "\n" "\n> " contentPr
-
-indent :: T.Text -> T.Text
-indent = T.replace "\n" "\n  "

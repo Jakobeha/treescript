@@ -5,7 +5,7 @@ Scheme_Cons[
   Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x]; Scheme_Nil[]]; \body]];
   Scheme_Cons[\arg; Scheme_Nil[]]
 ]: Subst[\body; \x; \arg];
-Subst[Scheme_Symbol[\old]; \old; \new]: \new;
+Subst[\old; \old; \new]: \new;
 Subst[
   Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old]; Scheme_Nil[]]; \body]];
   \old;

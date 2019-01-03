@@ -40,14 +40,14 @@ runCmdProgram (CmdProgram ppath) inp = do
   liftIO $ hClose pin
   exitCode <- liftIO $ waitForProcess phandle
   out <- liftIO $ T.hGetContents pout
-  errs <- map convertErr . T.lines <$> liftIO (T.hGetContents perr)
+  errs <- map convertErr . filter (not . T.null . T.strip) . T.lines <$> liftIO (T.hGetContents perr)
   case exitCode of
     ExitSuccess -> do
       tellErrors errs
       pure out
-    ExitFailure code ->
-      case errs of
-        [] -> mkFail $ convertErr $ "unknown error (code " <> pprint code <> ")"
-        _ -> do
-          tellErrors $ init errs
-          mkFail $ last errs
+    ExitFailure code
+      | null errs ->
+        mkFail $ convertErr $ "unknown error (code " <> pprint code <> ")"
+      | otherwise -> do
+        tellErrors $ init errs
+        mkFail $ last errs

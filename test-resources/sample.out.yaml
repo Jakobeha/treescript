@@ -6,5 +6,6 @@ lexes?: Bool
 parses?: Bool
 desugars?: Bool
 translates?: Bool
+compiles?: Bool
 error: String
 errors: [String]

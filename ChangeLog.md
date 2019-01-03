@@ -72,4 +72,13 @@ C template, translation and `Translate` phase
 - Updated README, added how Descript code will be translated into C, spliced into the template, and this will be compiled to get the Descript executable
 - Tested via printing/observing, didn't actually compile code yet
 
+## 1/03/19
+
+Compiling and CLI
+
+- Compiling both C (last step) and Descript (all steps)
+- Tests for compiling - currently only work for AST data
+- Command-line interface only supports compiling
+- Started to change name to "TreeScript"
+
 ## Unreleased changes

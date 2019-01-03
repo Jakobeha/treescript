@@ -4,19 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include "helpers.h"
 #include "misc.h"
 
 int get_record_num_props(char* head) {
-  /*
-  Example:
-  if (strings_equal(head, "Foo")) {
-    return 1;
-  } else {
-    fprintf(stderr, "unknown record head: %s\n", head);
-    exit(1);
-  }
-  */
-
   // \get_record_num_props
 }
 

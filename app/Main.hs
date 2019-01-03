@@ -1,6 +1,7 @@
 module Main where
 
-import Descript
+import Run
+import Parse
 
 main :: IO ()
-main = someFunc
+main = run =<< prompt

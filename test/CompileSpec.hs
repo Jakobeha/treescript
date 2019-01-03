@@ -1,0 +1,184 @@
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+-- | Tests all parts of compiling.
+module CompileSpec
+       ( spec ) where
+
+import Core.Test
+import Descript
+import qualified Descript.Ast.Translate as T
+import qualified Descript.Ast.Core as C
+import qualified Descript.Ast.Lex as L
+import qualified Descript.Ast.Sugar as S
+
+import Control.Concurrent.MVar
+import Control.Monad
+import Data.List
+import qualified Data.Map.Strict as M
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import System.Directory
+import System.FilePath
+import System.IO.Temp
+
+type VarMap k v = M.Map k (MVar (Maybe v))
+
+examplesDir :: FilePath
+examplesDir = "test-resources/examples/"
+
+getExampleFiles :: IO [TestFile]
+getExampleFiles = loadFilesInDir examplesDir
+
+mkVarMap :: (Ord k) => [k] -> IO (VarMap k v)
+mkVarMap = fmap M.fromList . mapM (sequence . (, newMVar Nothing))
+
+insertVarMap :: (Ord k) => VarMap k v -> k -> v -> IO ()
+insertVarMap vars key x = do
+  Nothing <- swapMVar (vars M.! key) $ Just x
+  pure ()
+
+spec :: Spec
+spec = do
+  sysTmpDir <- runIO getCanonicalTemporaryDirectory
+  exampleEnv <- runIO $ fmap forceSuccess $ runPreSessionRes $ getInitialEnv
+  exampleFiles <- runIO getExampleFiles
+  exampleLexVars <- runIO $ mkVarMap exampleFiles
+  exampleSugarVars <- runIO $ mkVarMap exampleFiles
+  exampleCoreVars <- runIO $ mkVarMap exampleFiles
+  exampleTranslateVars <- runIO $ mkVarMap exampleFiles
+  exampleExecVars <- runIO $ mkVarMap exampleFiles
+  let forExampleFile :: (TestFile -> IO ()) -> IO ()
+      forExampleFile f =
+        forM_ exampleFiles $ \file ->
+          denoteFailIn ("file " <> fileName (testFileSrcFile file)) $ f file
+      forExampleIntermediateIn :: M.Map TestFile (MVar (Maybe a)) -> (TestFile -> a -> IO ()) -> IO ()
+      forExampleIntermediateIn xVars f =
+        forM_ (M.toAscList xVars) $ \(file, xVar) ->
+          denoteFailIn ("file " <> fileName (testFileSrcFile file)) $ withMVar xVar $ \case
+            Nothing -> pure ()
+            Just val -> f file val
+      forExampleLex :: (TestFile -> L.Program Range -> IO ()) -> IO ()
+      forExampleLex = forExampleIntermediateIn exampleLexVars
+      forExampleSugar :: (TestFile -> S.Program Range -> IO ()) -> IO ()
+      forExampleSugar = forExampleIntermediateIn exampleSugarVars
+      forExampleCore :: (TestFile -> C.Program Range -> IO ()) -> IO ()
+      forExampleCore = forExampleIntermediateIn exampleCoreVars
+      forExampleTranslate :: (TestFile -> T.Translated -> IO ()) -> IO ()
+      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars
+      forExampleExec :: (TestFile -> FilePath -> IO ()) -> IO ()
+      forExampleExec = forExampleIntermediateIn exampleExecVars
+      codeToAstData :: T.Text -> T.Text -> IO T.Text
+      codeToAstData txt ext
+        | ext == "tast" = pure txt
+        | otherwise = error "TODO find and use language parser"
+      astDataToCode :: T.Text -> T.Text -> IO T.Text
+      astDataToCode txt ext
+        | ext == "tast" = pure txt
+        | otherwise = error "TODO find and use language printer"
+      assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
+      assertProperFailure testInfo (ResultFail err) = do
+        unless (T.null $ testInfoFatalErrorMsg testInfo) $
+          errorMsg err `shouldBe` testInfoFatalErrorMsg testInfo
+        [] `shouldBe` testInfoErrorMsgs testInfo
+      assertProperFailure testInfo (Result errs src)
+        | null errs = assertFailureText $ "Unexpected non-fatal result: " <> pprint src
+        | otherwise = do
+          unless (null $ testInfoErrorMsgs testInfo) $
+              map errorMsg (sortOn errorRange errs) `shouldBe` testInfoErrorMsgs testInfo
+          "" `shouldBe` testInfoFatalErrorMsg testInfo
+
+  beforeAll (createTempDirectory sysTmpDir "descript-tests") $ afterAll removeDirectoryRecursive $ do
+    describe "The compiler" $ do
+      it "Lexes" $ \_ ->
+        forExampleFile $ \file@(TestFile srcFile testInfo _) -> do
+          let fileStr = fileContents srcFile
+              lexRes = L.parse fileStr
+          when (testInfoPrintLex testInfo) $ do
+            T.putStrLn $ fileName srcFile <> ":"
+            T.putStrLn $ pprint lexRes
+          if testInfoIsLexable testInfo then
+            case lexRes of
+              ResultFail lexErr ->
+                assertFailureText $ errorMsg lexErr
+              Result lexErrs lexSrc -> do
+                insertVarMap exampleLexVars file lexSrc
+                assertNoErrors lexErrs
+                reducePrint lexSrc `shouldBeReducePrintOf` fileStr
+          else
+            assertProperFailure testInfo lexRes
+      it "Parses" $ \_ ->
+        forExampleLex $ \file@(TestFile srcFile testInfo _) lexSrc -> do
+          let fileStr = fileContents srcFile
+              sugarRes = S.parse lexSrc
+          when (testInfoPrintSugar testInfo) $ do
+            T.putStrLn $ fileName srcFile <> ":"
+            T.putStrLn $ pprint sugarRes
+          if testInfoIsParseable testInfo then
+            case sugarRes of
+              ResultFail sugarErr ->
+                assertFailureText $ errorMsg sugarErr
+              Result sugarErrs sugarSrc -> do
+                insertVarMap exampleSugarVars file sugarSrc
+                assertNoErrors sugarErrs
+                reducePrint sugarSrc `shouldBeReducePrintOf` fileStr
+          else
+            assertProperFailure testInfo sugarRes
+      it "Desugars" $ \_ ->
+        forExampleSugar $ \file@(TestFile srcFile testInfo _) sugarSrc -> do
+          coreRes <- runSessionResVirtual exampleEnv $ C.parse sugarSrc
+          when (testInfoPrintCore testInfo) $ do
+            T.putStrLn $ fileName srcFile <> ":"
+            T.putStrLn $ pprint coreRes
+          if testInfoIsDesugarable testInfo then
+            case coreRes of
+              ResultFail coreErr ->
+                assertFailureText $ errorMsg coreErr
+              Result coreErrs coreSrc -> do
+                insertVarMap exampleCoreVars file coreSrc
+                assertNoErrors coreErrs
+          else
+            assertProperFailure testInfo coreRes
+      it "Translates into C" $ \_ ->
+        forExampleCore $ \file@(TestFile srcFile testInfo _) coreSrc -> do
+          translateRes <- runSessionResVirtual exampleEnv $ T.translate coreSrc
+          when (testInfoPrintTranslate testInfo) $ do
+            T.putStrLn $ fileName srcFile <> ":"
+            T.putStrLn $ pprint translateRes
+          if testInfoIsTranslatable testInfo then
+            case translateRes of
+              ResultFail translateErr ->
+                assertFailureText $ errorMsg translateErr
+              Result translateErrs translateSrc -> do
+                insertVarMap exampleTranslateVars file translateSrc
+                assertNoErrors translateErrs
+          else
+            assertProperFailure testInfo translateRes
+      it "Compiles C" $ \tmpDir ->
+        forExampleTranslate $ \file@(TestFile srcFile testInfo _) translateSrc -> do
+          let execPath = tmpDir </> T.unpack (fileName srcFile)
+          execRes <- runSessionResVirtual exampleEnv $ T.compile translateSrc execPath
+          if testInfoIsCompilable testInfo then
+            case execRes of
+              ResultFail execErr ->
+                assertFailureText $ errorMsg execErr
+              Result execErrs () -> do
+                insertVarMap exampleExecVars file execPath
+                assertNoErrors execErrs
+          else
+            assertProperFailure testInfo execRes
+    describe "The compiled executable" $
+      it "Transforms source code" $ \_ ->
+        forExampleExec $ \(TestFile _ _ execTests) execPath ->
+          forM_ execTests $ \(ExecTest name inTxt inExt outTxt outExt) -> denoteFailIn ("executable test " <> name) $ do
+            let execProg = CmdProgram{ cmdProgramPath = execPath }
+            progInTxt <- codeToAstData inTxt inExt
+            progOut <- runResultT $ runCmdProgram execProg progInTxt
+            case progOut of
+              ResultFail progErr ->
+                assertFailureText $ errorMsg progErr
+              Result progErrs progOutTxt -> do
+                assertNoErrors progErrs
+                aoutTxt <- astDataToCode progOutTxt outExt
+                T.strip aoutTxt `shouldBe` T.strip outTxt

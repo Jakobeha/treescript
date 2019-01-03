@@ -3,6 +3,7 @@
 -- | Functions to manipulate @Core@ ASTs.
 module Descript.Ast.Core.Analyze
   ( foldValue
+  , foldValuesInReducer
   , foldValuesInProgram
   , langSpecDecls
   , allImportedDecls
@@ -23,9 +24,12 @@ foldValue f (ValueRecord record)
 foldValue f (ValueBind bind) = f $ ValueBind bind
 
 -- | Applies to each value, then combines all results.
+foldValuesInReducer :: (Monoid r) => (Value an -> r) -> Reducer an -> r
+foldValuesInReducer f (Reducer _ input output) = foldValue f input <> foldValue f output
+
+-- | Applies to each value, then combines all results.
 foldValuesInProgram :: (Monoid r) => (Value an -> r) -> Program an -> r
-foldValuesInProgram f = foldMap foldValuesInReducer . programReducers
-  where foldValuesInReducer (Reducer _ input output) = foldValue f input <> foldValue f output
+foldValuesInProgram f = foldMap (foldValuesInReducer f) . programReducers
 
 langSpecDecls :: LangSpec -> [RecordDeclCompact]
 langSpecDecls spec

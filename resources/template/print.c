@@ -23,6 +23,7 @@ void print_string(const char* x) {
     i++;
   }
   putchar('"');
+  putchar(' ');
 }
 
 void print_record(value_record x) {
@@ -41,7 +42,7 @@ void print_value(value x) {
       printf("integer %d ", x.as_integer);
       break;
     case PRIM_FLOAT:
-      printf("float %d ", x.as_float);
+      printf("float %f ", x.as_float);
       break;
     case PRIM_STRING:
       printf("string ");

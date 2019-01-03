@@ -24,8 +24,7 @@ extra-source-files:
 - resources/**
 - src/Descript/Ast/Lex/Parse.x
 - src/Descript/Ast/Sugar/Parse.y
-- test-resources/examples/*.dscr
-- test-resources/examples/*.out.yaml
+- test-resources/examples/**
 
 extra-doc-files:
 - doc/**
@@ -64,9 +63,10 @@ library:
   - Descript.Ast.Sugar
   - Descript.Ast.Core
   - Descript.Ast.Translate
+  - Descript.Misc.Ext.Text
 
 executables:
-  descript-R-exe:
+  treescript:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -75,6 +75,12 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - descript-R
+    - containers
+    - fsnotify
+    - mtl
+    - optparse-applicative
+    - rainbow
+    - text
 
 tests:
   descript-R-test:
@@ -92,4 +98,5 @@ tests:
     - hspec
     - HUnit
     - QuickCheck
+    - temporary
     - yaml
