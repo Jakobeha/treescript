@@ -1,2 +1,2 @@
 lexes?: false
-error: code block not closed at end of file
+error: 'while lexing - code block not closed at end of file'

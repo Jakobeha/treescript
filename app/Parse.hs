@@ -80,7 +80,7 @@ runP_ = Run <$> execP <*> srcP <*> outP <*> watchP
 actionInfo :: InfoMod a
 actionInfo
    = fullDesc
-  <> progDesc "treescript compile ..., treescript run ..., treescript serve"
+  <> progDesc "treescript compile, treescript run, treescript serve"
   <> header "descript - compile and run Descript source code, start the Descript language server"
   <> footer "This is the interface for the Descript programming language: a DSL to manipulate syntax of other languages.\n\
             \It can compile Descript source code into executables and run those executables.\n\

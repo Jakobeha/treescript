@@ -4,4 +4,4 @@ import Run
 import Parse
 
 main :: IO ()
-main = run =<< prompt
+main = runAction =<< prompt

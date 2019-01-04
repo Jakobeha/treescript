@@ -8,6 +8,6 @@ import qualified Data.Text as T
 -- | Unparsed code annotated with source language.
 data Code
   = Code
-  { codeLanguage :: T.Text -- ^ Source language
-  , codeContent :: T.Text -- ^ Raw text
+  { codeLangExt :: T.Text -- ^ Source language extension.
+  , codeContent :: T.Text -- ^ Raw text.
   }

@@ -16,6 +16,7 @@ module Descript.Misc.Print
 import Descript.Misc.Ann
 import qualified Descript.Misc.Ext.Text as T
 
+import Control.Monad.Catch
 import Data.String
 import qualified Data.Text as T
 
@@ -74,6 +75,9 @@ instance Printable Float where
 
 instance Printable T.Text where
   pprint txt = "\"" <> T.escapeString txt <> "\""
+
+instance Printable SomeException where
+  pprint = T.pack . displayException
 
 instance ReducePrintable Char where
   reducePrint = T.singleton

@@ -39,9 +39,11 @@ dependencies:
 - array
 - autoexporter
 - base >= 4.7 && < 5
+- bifunctors
 - bytestring
 - containers
 - directory
+- exceptions
 - filepath
 - megaparsec >= 7.0.4
 - monad-logger
@@ -59,9 +61,10 @@ library:
   source-dirs: src
   exposed-modules:
   - Descript
+  - Descript.Ast.Core
+  - Descript.Ast.Flat
   - Descript.Ast.Lex
   - Descript.Ast.Sugar
-  - Descript.Ast.Core
   - Descript.Ast.Translate
   - Descript.Misc.Ext.Text
 

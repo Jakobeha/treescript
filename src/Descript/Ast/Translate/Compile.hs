@@ -9,6 +9,7 @@ module Descript.Ast.Translate.Compile
 
 import Descript.Ast.Translate.Types
 import qualified Descript.Misc.Ext.Text as T
+import Descript.Misc
 import Descript.Plugin
 
 import Control.Monad
@@ -23,16 +24,15 @@ compile (Translated numProps reduceSurface) outPath = do
   env <- getSessionEnv
   let templateDir = fromText $ T.pack $ sessionEnvTemplateDir env
   -- TODO Handle exceptions
-  shelly $ withTmpDir $ \tempDir -> do
+  catchExceptionToError StageCompiling $ shelly $ withTmpDir $ \tempDir -> do
     let projectDir = tempDir </> "project"
         splicePath = tempDir </> "splice"
     cp_r templateDir projectDir
-    cd tempDir
     projectSrcPaths <- lsT projectDir
     let splice old new = do
           writefile splicePath $ T.indent new
           forM_ projectSrcPaths $ \projectSrcPath ->
-            run_ "sed" ["-i", "''", "/\\/\\/ \\\\" <> old <> "/r splice", projectSrcPath]
+            run_ "sed" ["-i", "''", "/\\/\\/ \\\\" <> old <> "/r " <> toTextIgnore splicePath, projectSrcPath]
     splice "get_record_num_props" numProps
     splice "reduce_surface" reduceSurface
-    run_ "gcc" $ filter (".c" `T.isSuffixOf`) projectSrcPaths ++ ["-o", T.pack outPath, "-g"]
+    run_ "gcc" $ filter (".c" `T.isSuffixOf`) projectSrcPaths ++ ["-o", T.pack outPath]

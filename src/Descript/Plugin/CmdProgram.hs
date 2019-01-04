@@ -8,6 +8,7 @@ module Descript.Plugin.CmdProgram
 
 import Descript.Misc
 
+import Control.Monad.Catch
 import Control.Monad.IO.Class
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -16,38 +17,43 @@ import System.IO
 import System.Process
 
 -- | Represents an external command-line program.
-newtype CmdProgram = CmdProgram{ cmdProgramPath :: FilePath } deriving (Read, Show)
+data CmdProgram
+  = CmdProgram
+  { cmdProgramStage :: Stage
+  , cmdProgramPath :: FilePath
+  } deriving (Read, Show)
 
-convertErr :: T.Text -> Error
-convertErr err
+convertErr :: Stage -> T.Text -> Error
+convertErr stage err
   = Error
-    { errorStage = StagePluginUse
+    { errorStage = stage
     , errorRange = Nothing
     , errorMsg = err
     }
 
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
-runCmdProgram :: (MonadIO m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
-runCmdProgram (CmdProgram ppath) inp = do
-  let pproc
+runCmdProgram :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
+runCmdProgram (CmdProgram stage ppath) inp = do
+  let liftCmdIO = liftIOAndCatch stage
+      pproc
         = (proc ppath [])
         { std_in = CreatePipe
         , std_out = CreatePipe
         , std_err = CreatePipe
         }
-  (Just pin, Just pout, Just perr, phandle) <- liftIO $ createProcess pproc
-  liftIO $ T.hPutStr pin inp
-  liftIO $ hClose pin
-  exitCode <- liftIO $ waitForProcess phandle
-  out <- liftIO $ T.hGetContents pout
-  errs <- map convertErr . filter (not . T.null . T.strip) . T.lines <$> liftIO (T.hGetContents perr)
+  (Just pin, Just pout, Just perr, phandle) <- liftCmdIO $ createProcess pproc
+  liftCmdIO $ T.hPutStr pin inp
+  liftCmdIO $ hClose pin
+  exitCode <- liftCmdIO $ waitForProcess phandle
+  out <- liftCmdIO $ T.hGetContents pout
+  errs <- map (convertErr stage) . filter (not . T.null . T.strip) . T.lines <$> liftCmdIO (T.hGetContents perr)
   case exitCode of
     ExitSuccess -> do
       tellErrors errs
       pure out
     ExitFailure code
       | null errs ->
-        mkFail $ convertErr $ "unknown error (code " <> pprint code <> ")"
+        mkFail $ convertErr stage $ "unknown error (code " <> pprint code <> ")"
       | otherwise -> do
         tellErrors $ init errs
         mkFail $ last errs

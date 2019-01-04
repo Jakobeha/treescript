@@ -45,12 +45,44 @@ bool values_equal(value x, value y) {
   }
 }
 
-void free_record(value_record x) {
-  free(x.head);
+value_record dup_record(value_record x) {
+  value* props = malloc0(sizeof(value) * x.num_props);
   for (int i = 0; i < x.num_props; i++) {
-    free_value(x.props[i]);
+    props[i] = dup_value(x.props[i]);
   }
-  free(x.props);
+  return (value_record){
+    .head = x.head,
+    .num_props = x.num_props,
+    .props = props
+  };
+}
+
+value dup_value(value x) {
+  switch (x.type) {
+  case SPLICE:
+  case PRIM_INTEGER:
+  case PRIM_FLOAT:
+    return x;
+  case PRIM_STRING:
+    return (value){
+      .type = PRIM_STRING,
+      .as_string = strdup(x.as_string)
+    };
+  case RECORD:
+    return (value){
+      .type = RECORD,
+      .as_record = dup_record(x.as_record)
+    };
+  }
+}
+
+void free_record(value_record x) {
+  if (x.num_props > 0) {
+    for (int i = 0; i < x.num_props; i++) {
+      free_value(x.props[i]);
+    }
+    free(x.props);
+  }
 }
 
 void free_value(value x) {

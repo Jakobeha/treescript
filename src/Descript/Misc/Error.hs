@@ -11,12 +11,16 @@ module Descript.Misc.Error
   , Result (..)
   , ResultT (..)
   , MonadResult (..)
+  , mkOverlapInOutError
+  , exceptionToError
   , prependMsgToErr
   , addRangeToErr
   , isSuccess
   , forceSuccess
   , traverseDropFatals
   , mapResultT
+  , catchExceptionToError
+  , liftIOAndCatch
   ) where
 
 import Descript.Misc.Ext
@@ -24,6 +28,7 @@ import qualified Descript.Misc.Ext.Text as T
 import Descript.Misc.Loc
 import Descript.Misc.Print
 
+import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Control.Monad.Reader.Class
 import Control.Monad.State.Strict
@@ -33,12 +38,17 @@ import Control.Monad.Logger
 
 -- | A step in compiling.
 data Stage
-  = StagePluginLoad
+  = StageReadArgs
+  | StageReadInput
+  | StagePluginLoad
   | StagePluginUse
   | StageLexing
   | StageParsing
   | StageExtracting
   | StageCompiling
+  | StageRunning
+  | StageWriteOutput
+  deriving (Eq, Ord, Read, Show)
 
 -- | An error which occurs while compiling a program. Fatal and nonfatal errors share this type.
 data Error
@@ -72,12 +82,16 @@ class MonadResult m where
   downgradeFatal :: m a -> m (Maybe a)
 
 instance Printable Stage where
+  pprint StageReadArgs = "reading arguments"
+  pprint StageReadInput = "reading input"
   pprint StagePluginLoad = "loading plugins"
   pprint StagePluginUse = "using a plugin"
   pprint StageLexing = "lexing"
   pprint StageParsing = "parsing"
   pprint StageExtracting = "extracting"
   pprint StageCompiling = "compiling"
+  pprint StageRunning = "running"
+  pprint StageWriteOutput = "writing output"
 
 instance Printable Error where
   pprint (Error stage _ msg) = "while " <> pprint stage <> " - " <> msg
@@ -158,6 +172,31 @@ instance (MonadIO u) => MonadIO (ResultT u) where
 instance (MonadLoggerIO u) => MonadLoggerIO (ResultT u) where
   askLoggerIO = ResultT $ pure <$> askLoggerIO
 
+instance (MonadThrow u) => MonadThrow (ResultT u) where
+  throwM = ResultT . fmap pure . throwM
+
+instance (MonadCatch u) => MonadCatch (ResultT u) where
+  ResultT x `catch` f = ResultT $ x `catch` f'
+    where f' = runResultT . f
+
+-- | Creates an error which occurs when trying to perform an operation which would overwrite its input.
+mkOverlapInOutError :: Stage -> Error
+mkOverlapInOutError stage
+  = Error
+  { errorStage = stage
+  , errorRange = Nothing
+  , errorMsg = "input and output are the same, so output would overwrite - will not perform this operation"
+  }
+
+-- | Converts the exception into an error.
+exceptionToError :: Stage -> SomeException -> Error
+exceptionToError stage exc
+  = Error
+  { errorStage = stage
+  , errorRange = Nothing
+  , errorMsg = pprint exc
+  }
+
 -- | Prepends to the error message.
 prependMsgToErr :: T.Text -> Error -> Error
 prependMsgToErr new (Error stage rng msg)
@@ -198,3 +237,12 @@ traverseDropFatals f
 -- | Transforms the underlying monad in a 'ResultT'.
 mapResultT :: (u1 (Result a) -> u2 (Result b)) -> ResultT u1 a -> ResultT u2 b
 mapResultT f (ResultT x) = ResultT $ f x
+
+-- | If an exception is thrown, will catch it and convert it into a fatal error with the given stage.
+catchExceptionToError :: (MonadCatch w, MonadResult w) => Stage -> w a -> w a
+catchExceptionToError stage x
+  = x `catch` (mkFail . exceptionToError stage)
+
+-- | Lift the I/O action into a 'ResultT' /and/ catch exceptions.
+liftIOAndCatch :: (MonadIO w, MonadCatch w, MonadResult w) => Stage -> IO a -> w a
+liftIOAndCatch stage = catchExceptionToError stage . liftIO

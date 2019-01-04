@@ -35,7 +35,7 @@ data Primitive an
   = PrimInteger an Int
   | PrimFloat an Float
   | PrimString an T.Text
-   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
 data Record an

@@ -1,2 +1,2 @@
 parses?: false
-error: 'gave up at 1:15 (before "[")'
+error: 'while parsing - gave up at 1:15 (before "[")'

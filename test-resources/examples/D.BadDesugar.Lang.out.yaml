@@ -1,5 +1,5 @@
 desugars?: false
 errors:
-- "at 1:1-1:4 - no (valid) plugin for language with extension 'foo'"
-- "at 2:1-2:23 - couldn't parse code - syntax error - multiple dots in list"
-- 'at 3:1-3:28 - expected 1 value, got 3'
+- "while extracting - at 1:1-1:4 - no (valid) plugin for language with extension 'foo'"
+- "while using a plugin - at 2:1-2:23 - couldn't parse code - syntax error - multiple dots in list"
+- 'while extracting - at 3:1-3:28 - expected 1 value, got 3'

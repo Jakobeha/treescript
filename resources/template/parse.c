@@ -120,9 +120,10 @@ char* scan_string() {
 
 value_record scan_record(char* head) {
   int num_props = get_record_num_props(head);
-  value* props = malloc(sizeof(value) * num_props);
+  value* props = malloc0(sizeof(value) * num_props);
   for (int i = 0; i < num_props; i++) {
     char* word = scan_word();
+    assert(word != NULL);
     props[i] = scan_value(word);
   }
   return (value_record){

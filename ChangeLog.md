@@ -81,4 +81,13 @@ Compiling and CLI
 - Command-line interface only supports compiling
 - Started to change name to "TreeScript"
 
+## 1/04/19
+
+Run on source code - `treescript run`
+
+- Parses code into AST data, runs the executable, and prints it back into code
+- Now can take a Descript source file and input, and generate output - `treescript compile` the source file, `treescript run` the executable with the input.
+- I/O exceptions should now be wrapped in `Result`s, better error messages and handling
+- Bugfixes for compiling (fixed memory issue)
+
 ## Unreleased changes

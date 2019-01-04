@@ -142,12 +142,12 @@ producePropsExpr out
 produceRecordExpr :: T.Text -> Record an -> T.Text
 produceRecordExpr out (Record _ head' props)
   = [text|
-      value* ${out}_props = malloc(sizeof(value) * $numPropsEncoded);
+      value* ${out}_props = malloc0(sizeof(value) * $numPropsEncoded);
       $produceProps
       value $out = {
         .type = RECORD,
         .as_record = (value_record){
-          .head = strdup($headEncoded),
+          .head = $headEncoded,
           .num_props = $numPropsEncoded,
           .props = ${out}_props
         }
@@ -165,9 +165,8 @@ produceBindExpr out (Bind _ idx)
         .type = PRIM_STRING,
         .as_string = strdup("<WARNING: output bind with unbound identifier>")
       };|] -- Should never happen in valid code
-  | otherwise = [text|value $out = matches[$idx0Encoded];|]
+  | otherwise = [text|value $out = dup_value(matches[$idx0Encoded]);|]
   where idx0Encoded = pprint $ idx - 1
-
 produceExpr :: T.Text -> Value an -> T.Text
 produceExpr out (ValuePrimitive prim) = producePrimExpr out prim
 produceExpr out (ValueRecord record) = produceRecordExpr out record
@@ -186,6 +185,7 @@ reduceExpr red@(Reducer _ input output)
           = [text|
               //printf("<Produce!> ");
               $produceOut
+              free_value(in);
               *x = out;
               return true;|]
         produceOut = produceExpr "out" output

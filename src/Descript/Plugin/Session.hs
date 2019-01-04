@@ -7,11 +7,13 @@ module Descript.Plugin.Session
   , SessionEnv (..)
   , Session
   , SessionRes
+  , mkPluginUseError
   , getInitialEnv
   , getSessionEnv
   , runSessionResVirtual
   , runPreSessionRes
   , runSessionResReal
+  , langFromExt
   ) where
 
 import Descript.Plugin.CmdProgram
@@ -94,27 +96,38 @@ emptySessionEnv
   , sessionEnvTemplateDir = ""
   }
 
-setupInitialPlugins :: FilePath -> PreSessionRes ()
-setupInitialPlugins pluginPath = do
-  logDebugN "Setting up initial plugins."
-  liftIO $ S.shelly $ S.cp_r "resources" (P.decodeString pluginPath)
-
-getRealPluginPath :: PreSessionRes FilePath
-getRealPluginPath = do
-  path <- liftIO $ getAppUserDataDirectory "descript"
-  pluginsWereSetup <- liftIO $ doesPathExist path
-  unless pluginsWereSetup $ do
-    logDebugN "Local plugins not created yet."
-    setupInitialPlugins path
-  pure path
-
-mkError :: T.Text -> Error
-mkError msg
+mkPluginLoadError :: T.Text -> Error
+mkPluginLoadError msg
   = Error
   { errorStage = StagePluginLoad
   , errorRange = Nothing
   , errorMsg = msg
   }
+
+mkPluginUseError :: T.Text -> Error
+mkPluginUseError msg
+  = Error
+  { errorStage = StagePluginUse
+  , errorRange = Nothing
+  , errorMsg = msg
+  }
+
+liftLoadIO :: IO a -> PreSessionRes a
+liftLoadIO = liftIOAndCatch StagePluginLoad
+
+setupInitialPlugins :: FilePath -> PreSessionRes ()
+setupInitialPlugins pluginPath = do
+  logDebugN "Setting up initial plugins."
+  liftLoadIO $ S.shelly $ S.cp_r "resources" (P.decodeString pluginPath)
+
+getRealPluginPath :: PreSessionRes FilePath
+getRealPluginPath = do
+  path <- liftLoadIO $ getAppUserDataDirectory "descript"
+  pluginsWereSetup <- liftLoadIO $ doesPathExist path
+  unless pluginsWereSetup $ do
+    logDebugN "Local plugins not created yet."
+    setupInitialPlugins path
+  pure path
 
 validatePluginName :: String -> T.Text -> PreSessionRes ()
 validatePluginName name actualName = do
@@ -123,7 +136,7 @@ validatePluginName name actualName = do
             [] -> T.empty
             (nameHead : nameTail) -> T.pack $ toUpper nameHead : nameTail
   when (expectedName /= actualName) $
-    tellError $ mkError $ T.concat
+    tellError $ mkPluginLoadError $ T.concat
       [ "from folder name, expected specification to be named '"
       , expectedName
       , "' but it's actually named '"
@@ -137,34 +150,42 @@ mkLanguage pluginPath name = do
       specPath = path </> "spec.yaml"
       parserPath = path </> "parser"
       printerPath = path </> "printer"
-  specDecoded <- liftIO $ decodeFileEither specPath
+  specDecoded <- liftLoadIO $ decodeFileEither specPath
   spec <-
     case specDecoded of
       Left err
-        -> mkFail $ mkError $ "bad specification - " <> T.pack (prettyPrintParseException err)
+        -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
       Right res -> pure res
   validatePluginName name $ langSpecName spec
   pure Language
     { languageSpec = spec
-    , languageParser = CmdProgram{ cmdProgramPath = parserPath }
-    , languagePrinter = CmdProgram{ cmdProgramPath = printerPath }
+    , languageParser
+        = CmdProgram
+        { cmdProgramStage = StagePluginUse
+        , cmdProgramPath = parserPath
+        }
+    , languagePrinter
+        = CmdProgram
+        { cmdProgramStage = StagePluginUse
+        , cmdProgramPath = printerPath
+        }
     }
 
 mkServer :: FilePath -> String -> PreSessionRes ServerSpec
 mkServer pluginPath name = do
   let path = pluginPath </> name
       specPath = path </> "spec.yaml"
-  specDecoded <- liftIO $ decodeFileEither specPath
+  specDecoded <- liftLoadIO $ decodeFileEither specPath
   spec <-
     case specDecoded of
       Left err
-        -> mkFail $ mkError $ "bad specification - " <> T.pack (prettyPrintParseException err)
+        -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
       Right res -> pure res
   validatePluginName name $ serverSpecName spec
   pure spec
 
 listDirPlugins :: FilePath -> PreSessionRes [String]
-listDirPlugins dir = filter (not . isHidden) <$> liftIO (listDirectory dir)
+listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
   where isHidden name = "." `isPrefixOf` name
 
 getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
@@ -173,11 +194,11 @@ getEnvAtPath pluginPath = do
       languagesPath = pluginPath </> "languages"
       serversPath = pluginPath </> "servers"
       templateDirPath = pluginPath </> "template"
-  settingsDecoded <- liftIO $ decodeFileEither settingsPath
+  settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
   settings <-
     case settingsDecoded of
       Left err -> do
-        tellError $ mkError $ "bad settings - " <> T.pack (prettyPrintParseException err)
+        tellError $ mkPluginLoadError $ "bad settings - " <> T.pack (prettyPrintParseException err)
         pure defaultSettings
       Right res -> pure res
   languages <- traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
@@ -239,3 +260,15 @@ runSessionResReal session = runPreSessionRes $ do
   mapResultT (withReaderT $ \_ -> env) $ do
     setupEnv
     session
+
+-- | Gets the language for the given extension in the session. Fails if no language found.
+langFromExt :: Stage -> T.Text -> SessionRes Language
+langFromExt stage ext = do
+  langs <- sessionEnvLanguages <$> getSessionEnv
+  case find (\lang -> langSpecExtension (languageSpec lang) == ext) langs of
+    Nothing -> mkFail Error
+      { errorStage = stage
+      , errorRange = Nothing
+      , errorMsg = "no (valid) plugin for language with extension '" <> ext <> "'"
+      }
+    Just res -> pure res

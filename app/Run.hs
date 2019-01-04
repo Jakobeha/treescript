@@ -4,7 +4,7 @@
 
 -- | Runs actions.
 module Run
-  ( run
+  ( runAction
   ) where
 
 import Action
@@ -20,10 +20,10 @@ import System.FSNotify hiding (Action)
 
 default (T.Text)
 
-run :: Action -> IO ()
-run ActionServe = runServe
-run (ActionCompile compile') = runCompile compile'
-run (ActionRun run') = runRun run'
+runAction :: Action -> IO ()
+runAction ActionServe = runServe
+runAction (ActionCompile compile') = runCompile compile'
+runAction (ActionRun run') = runRun run'
 
 runServe :: IO ()
 runServe = error "TODO implement"
@@ -36,7 +36,7 @@ runCompile (Compile input output False) = runSessionRes $ compile input output
 runRun :: Run -> IO ()
 runRun (Run exec input output True)
   = runWatching input $ runRun $ Run exec input output False
-runRun (Run _ _ _ False) = error "TODO implement"
+runRun (Run exec input output False) = runSessionRes $ run exec input output
 
 runWatching :: FilePath -> IO () -> IO ()
 runWatching input action = withManager $ \mgr -> do

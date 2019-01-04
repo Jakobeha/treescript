@@ -8,6 +8,7 @@ module Descript.Ast.Core.Parse
 
 import Descript.Ast.Core.Analyze
 import Descript.Ast.Core.Types
+import qualified Descript.Ast.Flat as F
 import qualified Descript.Ast.Sugar as S
 import Descript.Misc
 import Descript.Plugin
@@ -15,16 +16,13 @@ import Descript.Plugin
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Data.Bifunctor
 import Data.Char
 import Data.List
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Data.Void
-import qualified Text.Megaparsec as P
-import qualified Text.Megaparsec.Char as P
-import qualified Text.Megaparsec.Char.Lexer as P
 
 -- = Bind identifier/index environment
 
@@ -66,56 +64,46 @@ decodeError msg
   }
 
 decodeAstData :: LangSpec -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
-decodeAstData spec txt splices = traverse decodeAstData1 $ filter (not . T.null) $ T.lines txt
+decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
   where
     decls = builtinDecls ++ langSpecDecls spec
     splicesVec = V.fromList splices
-    decodeAstData1 txt1
-      = case P.runParser astDataParser "" txt1 of
-          Left err -> mkFail $ decodeError $ T.pack $ P.errorBundlePretty (err :: P.ParseErrorBundle T.Text Void)
-          Right res -> pure res
-    astDataParser = valueParser <* P.eof
-    valueParser = do
-      word <- wordParser
-      case word of
-        "splice" -> do
-          idx <- P.decimal
-          separatorParser
-          case splicesVec V.!? idx of
-            Nothing -> fail $ "invalid splice index: " ++ show idx
-            Just splice -> pure $ Just <$> splice
-        "integer" -> do
-          value <- P.decimal
-          separatorParser
-          pure $ ValuePrimitive $ PrimInteger Nothing value
-        "float" -> do
-          value <- P.float
-          separatorParser
-          pure $ ValuePrimitive $ PrimFloat Nothing value
-        "string" -> do
-          value <- stringParser
-          separatorParser
-          pure $ ValuePrimitive $ PrimString Nothing value
-        _ | isUpper $ head word -> ValueRecord <$> recordParser (T.pack word)
-          | otherwise -> fail $ "word has unknown type: " ++ word
-    recordParser head' = do
+    decodeAstData1 lexs = do
+      (res, rest) <- valueParser lexs
+      unless (null rest) $
+        mkFail $ decodeError "unexpected extra nodes after decoded value"
+      pure res
+    valueParser [] = mkFail $ decodeError "tried to decode value from no nodes"
+    valueParser (F.LexemeSplice idx : rest)
+      = case splicesVec V.!? idx of
+          Nothing -> mkFail $ decodeError $ "invalid splice index: " <> pprint idx
+          Just splice -> pure (Just <$> splice, rest)
+    valueParser (F.LexemePrimitive prim : rest) = pure (ValuePrimitive $ primParser prim, rest)
+    valueParser (F.LexemeRecordHead head' : rest) = first ValueRecord <$> recordParser head' rest
+    primParser (F.PrimInteger value) = PrimInteger Nothing value
+    primParser (F.PrimFloat value) = PrimFloat Nothing value
+    primParser (F.PrimString value) = PrimString Nothing value
+    recordParser head' rest = do
       nodeDecl <-
         case find (\decl -> recordDeclCompactHead decl == head') decls of
-          Nothing -> fail $ T.unpack $ "unknown record head: " <> head'
+          Nothing -> mkFail $ decodeError $ "unknown record head: " <> head'
           Just res -> pure res
       let numProps = recordDeclCompactNumProps nodeDecl
-      props <- P.count numProps valueParser
-      pure Record
-        { recordAnn = Nothing
-        , recordHead = head'
-        , recordProps = props
-        }
-    stringParser = T.pack <$> (P.char '"' *> P.manyTill P.charLiteral (P.char '"'))
-    wordParser = do
-      res <- P.some (P.anySingleBut ' ')
-      separatorParser
-      pure res
-    separatorParser = (() <$ P.char ' ') P.<|> P.eof
+      (props, rest') <- propsParser numProps rest
+      pure
+        ( Record
+          { recordAnn = Nothing
+          , recordHead = head'
+          , recordProps = props
+          },
+          rest'
+        )
+    propsParser 0 rest = pure ([], rest)
+    propsParser n rest = do
+      (x, rest') <- valueParser rest
+      (xs, rest'') <- propsParser (n - 1) rest'
+      pure (x : xs, rest'')
+
 
 runLanguageParser :: Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 runLanguageParser lang txt splices = do
@@ -194,11 +182,7 @@ parseSpliceCode typ (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) 
   let txt = flattenSpliceText spliceText
       unparsedSplices = spliceTextValues spliceText
   splices <- traverse (parseValue typ) unparsedSplices
-  env <- lift getSessionEnv
-  lang <-
-    case find (\lang -> langSpecExtension (languageSpec lang) == langExt) $ sessionEnvLanguages env of
-      Nothing -> mkFail $ parseError langExtRng $ "no (valid) plugin for language with extension '" <> langExt <> "'"
-      Just res -> pure res
+  lang <- lift $ overErrors (addRangeToErr langExtRng) $ langFromExt StageExtracting langExt
   ress <- overErrors (addRangeToErr rng) $ lift $ runLanguageParser lang txt splices
   case ress of
     [res] -> pure $ (rng `fromMaybe`) <$> res

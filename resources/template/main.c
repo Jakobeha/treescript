@@ -16,7 +16,8 @@ int main(int argc, const char* argv[]) {
     while (reduce(&next)) { ; }
     print_value(next);
     printf("\n");
-    free_value(next); //also frees next_word if necessary
+    free(next_word);
+    free_value(next);
   }
 
   return 0;

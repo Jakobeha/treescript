@@ -69,24 +69,30 @@ spec = do
       forExampleTranslate = forExampleIntermediateIn exampleTranslateVars
       forExampleExec :: (TestFile -> FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars
-      codeToAstData :: T.Text -> T.Text -> IO T.Text
+      codeToAstData :: T.Text -> T.Text -> ResultT IO T.Text
       codeToAstData txt ext
         | ext == "tast" = pure txt
-        | otherwise = error "TODO find and use language parser"
-      astDataToCode :: T.Text -> T.Text -> IO T.Text
+        | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
+          lang <- langFromExt undefined ext
+          let parser = languageParser lang
+          runCmdProgram parser txt
+      astDataToCode :: T.Text -> T.Text -> ResultT IO T.Text
       astDataToCode txt ext
         | ext == "tast" = pure txt
-        | otherwise = error "TODO find and use language printer"
+        | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
+          lang <- langFromExt undefined ext
+          let printer = languagePrinter lang
+          runCmdProgram printer txt
       assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
       assertProperFailure testInfo (ResultFail err) = do
         unless (T.null $ testInfoFatalErrorMsg testInfo) $
-          errorMsg err `shouldBe` testInfoFatalErrorMsg testInfo
+          pprint err `shouldBe` testInfoFatalErrorMsg testInfo
         [] `shouldBe` testInfoErrorMsgs testInfo
       assertProperFailure testInfo (Result errs src)
         | null errs = assertFailureText $ "Unexpected non-fatal result: " <> pprint src
         | otherwise = do
           unless (null $ testInfoErrorMsgs testInfo) $
-              map errorMsg (sortOn errorRange errs) `shouldBe` testInfoErrorMsgs testInfo
+              map pprint (sortOn errorRange errs) `shouldBe` testInfoErrorMsgs testInfo
           "" `shouldBe` testInfoFatalErrorMsg testInfo
 
   beforeAll (createTempDirectory sysTmpDir "descript-tests") $ afterAll removeDirectoryRecursive $ do
@@ -101,7 +107,7 @@ spec = do
           if testInfoIsLexable testInfo then
             case lexRes of
               ResultFail lexErr ->
-                assertFailureText $ errorMsg lexErr
+                assertFailureText $ pprint lexErr
               Result lexErrs lexSrc -> do
                 insertVarMap exampleLexVars file lexSrc
                 assertNoErrors lexErrs
@@ -118,7 +124,7 @@ spec = do
           if testInfoIsParseable testInfo then
             case sugarRes of
               ResultFail sugarErr ->
-                assertFailureText $ errorMsg sugarErr
+                assertFailureText $ pprint sugarErr
               Result sugarErrs sugarSrc -> do
                 insertVarMap exampleSugarVars file sugarSrc
                 assertNoErrors sugarErrs
@@ -134,7 +140,7 @@ spec = do
           if testInfoIsDesugarable testInfo then
             case coreRes of
               ResultFail coreErr ->
-                assertFailureText $ errorMsg coreErr
+                assertFailureText $ pprint coreErr
               Result coreErrs coreSrc -> do
                 insertVarMap exampleCoreVars file coreSrc
                 assertNoErrors coreErrs
@@ -149,7 +155,7 @@ spec = do
           if testInfoIsTranslatable testInfo then
             case translateRes of
               ResultFail translateErr ->
-                assertFailureText $ errorMsg translateErr
+                assertFailureText $ pprint translateErr
               Result translateErrs translateSrc -> do
                 insertVarMap exampleTranslateVars file translateSrc
                 assertNoErrors translateErrs
@@ -162,7 +168,7 @@ spec = do
           if testInfoIsCompilable testInfo then
             case execRes of
               ResultFail execErr ->
-                assertFailureText $ errorMsg execErr
+                assertFailureText $ pprint execErr
               Result execErrs () -> do
                 insertVarMap exampleExecVars file execPath
                 assertNoErrors execErrs
@@ -172,13 +178,18 @@ spec = do
       it "Transforms source code" $ \_ ->
         forExampleExec $ \(TestFile _ _ execTests) execPath ->
           forM_ execTests $ \(ExecTest name inTxt inExt outTxt outExt) -> denoteFailIn ("executable test " <> name) $ do
-            let execProg = CmdProgram{ cmdProgramPath = execPath }
-            progInTxt <- codeToAstData inTxt inExt
-            progOut <- runResultT $ runCmdProgram execProg progInTxt
-            case progOut of
+            let execProg
+                  = CmdProgram
+                  { cmdProgramStage = StageRunning
+                  , cmdProgramPath = execPath
+                  }
+            progOutRes <- runResultT $ do
+              inAstData <- codeToAstData inTxt inExt
+              outAstData <- runCmdProgram execProg inAstData
+              astDataToCode outAstData outExt
+            case progOutRes of
               ResultFail progErr ->
-                assertFailureText $ errorMsg progErr
+                assertFailureText $ pprint progErr
               Result progErrs progOutTxt -> do
                 assertNoErrors progErrs
-                aoutTxt <- astDataToCode progOutTxt outExt
-                T.strip aoutTxt `shouldBe` T.strip outTxt
+                T.strip progOutTxt `shouldBe` T.strip outTxt
