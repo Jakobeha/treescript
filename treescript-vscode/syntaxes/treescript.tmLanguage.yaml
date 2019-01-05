@@ -1,0 +1,89 @@
+$schema: https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json
+name: TreeScript
+scopeName: source.treescript
+patterns:
+- include: "#symbols"
+- include: "#general"
+repository:
+  symbols:
+    patterns:
+    - include: "#recordHead"
+    - include: "#propKey"
+    - include: "#bind"
+    - include: "#function"
+  recordHead:
+    name: entity.name.function.treescript
+    match: '[A-Z]\w*'
+  propKey:
+    name: variable.parameter.treescript
+    match: "[a-z]\\w*(?!\\w|')"
+  bind:
+    name: keyword.operator.treescript
+    match: '\\([a-z]\w*)?'
+    captures:
+      '1': { name: entity.name.tag.treescript }
+  function:
+    name: support.class.treescript
+    match: '#([A-Z]\w*)'
+
+  general:
+    patterns:
+    - include: "#strings"
+    - include: "#numbers"
+    - include: "#comments"
+    - include: "#punctuation"
+  strings:
+    patterns:
+    - name: meta.target.r.treescript
+      begin: "(r')"
+      end: "(')|(\\\\\\()"
+      captures:
+        '1': { name: string.quoted.single.treescript }
+        '2': { name: constant.character.escape.treescript }
+      patterns:
+      - &escapeAbstraction
+        name: constant.character.escape.treescript
+        match: '\\([a-z]\w*)'
+        captures:
+          '1': { name: entity.name.tag.treescript }
+      - name: keyword.operator.r
+        match: '[\(\[\{\}\]\)]'
+      - include: source.r
+    - name: meta.target.scheme.treescript
+      begin: "(scheme')"
+      end: "(')|(\\\\\\()"
+      captures:
+        '1': { name: string.quoted.single.treescript }
+        '2': { name: constant.character.escape.treescript }
+      patterns:
+      - *escapeAbstraction
+      - include: source.scheme
+    - name: meta.target.other.treescript
+      begin: "((?:[a-z]\\w*)?')|(\\))"
+      end: "(')|(\\\\\\()"
+      captures:
+        '1': { name: string.quoted.single.treescript }
+        '2': { name: constant.character.escape.treescript }
+      patterns:
+      - *escapeAbstraction
+      - include: source.text
+    - name: string.quoted.double.treescript
+      begin: '"'
+      end: '"'
+      patterns:
+      - name: constant.character.escape.treescript
+        match: '\\([xXoO][0-9]{3}|.)'
+  numbers:
+    name: constant.numeric.treescript
+    match: '0[xbo][0-9]*|[0-9]+(?:[./][0-9]*)?'
+  comments:
+    patterns:
+    - name: comment.line.double-slash.treescript
+      begin: '\/\/'
+      end: '$'
+    - name: comment.block.treescript
+      begin: '\/\*'
+      end: '\*\/'
+  punctuation:
+    name: keyword.operator.treescript
+    match: '=>|[?:=.;|]'

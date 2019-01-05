@@ -251,7 +251,7 @@ This simple TreeScript program will "interpret" lambda calculus programs written
 ```treescript
 Subst[body; old; new].
 
-//Lambda application
+//Function application
 scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
 Subst[Scheme_Var[\old]; \old; \new]: \new;
 Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
@@ -265,19 +265,59 @@ It gets desugared into something like (technically invalid syntax, good for the 
 ```treescript
 Subst[body; old; new].
 
-//Lambda application
-Scheme_App[Scheme_Lambda[\0; \1]; \2]: Subst[\1; \0; \2];
-Subst[Scheme_Var[\0]; \0; \1]: Scheme_Var[\1];
-Subst[Scheme_Lambda[\0; \1]; \0; \]: Scheme_Lambda[\0; \1];
-Subst[Scheme_Lambda[\0; \1]; \2; \3]: Scheme_Lambda[\0; Subst[\1; \2; \3]];
-Subst[Scheme_App[\0; \1]; \2; \3]: Scheme_App[Subst[\0; \1; \3]; Subst[\2; \2; \3]];
-Subst[\0; \1; \2]: \0;
+//Function application
+Scheme_Cons[
+  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  Scheme_Cons[\3; Scheme_Nil[]]
+]: Subst[\2; \1; \3];
+Subst[\1; \1; \2]: \2;
+Subst[
+  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  \1;
+  \
+]: Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+Subst[
+  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  \3;
+  \4
+]: Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; Subst[\2; \3; \4]]];
+Subst[
+  Scheme_Cons[\1; Scheme_Cons[\2; Scheme_Nil[]]];
+  \3;
+  \4
+]: Scheme_Cons[Subst[\1; \3; \4]; Scheme_Cons[Subst[\2; \3; \4]; Scheme_Nil[]]];
+Subst[\1; \; \]: \1;
 ```
 
-And compiled into somthing like (pseudocode, not actual output):
+And compiled into somthing like (not necessarily actual output, this was taken from output at one point):
 
-```python
-TODO
+```c
+if (in.type == RECORD && strings_equal(in.as_record.head, "Scheme_Cons")) {
+  value* in_props = in.as_record.props;
+  value in_0 = in_props[0];
+  if (in_0.type == RECORD && strings_equal(in_0.as_record.head, "Scheme_Cons")) {
+    value* in_0_props = in_0.as_record.props;
+    value in_0_0 = in_0_props[0];
+    ...
+    //printf("<Produce!> ");
+    value* out_props = malloc0(sizeof(value) * 3);
+    value out_0 = dup_value(matches[1]);
+    out_props[0] = out_0;
+    ...
+    value out = {
+      .type = RECORD,
+      .as_record = (value_record){
+        .head = "Subst",
+        .num_props = 3,
+        .props = out_props
+      }
+    };
+    free_value(in);
+    *x = out;
+    return true;
+  }
+}
+...
 ```
 
 ### Functions
