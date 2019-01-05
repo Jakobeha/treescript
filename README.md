@@ -1,15 +1,17 @@
-# Descript-R
+# TreeScript
 
 Third version / "attempt" of Descript. The other 2 are:
 
 1. Descript-lang (Haskell)
 2. Descript-ocaml
 
+This language used to be called "Descript". It was renamed because TreeScript better describes what it actually does - rename trees - and it sounds similar.
+
 ## Purpose
 
-Descript is a DSL for writing code to transform syntax trees.
+TreeScript is a DSL for writing code to transform syntax trees.
 
-Descript is especially designed to:
+TreeScript is especially designed to:
 
 - Convert one language into another (e.g. CoffeeScript to JavaScript, C to Java)
 - Perform refactors - trivial (e.g. rename a variable) and non-trivial (move all global variables with a literal prefix into a namespace, and remove the prefix)
@@ -18,7 +20,7 @@ Descript is especially designed to:
 - Optimize source code by transforming expressions into equivalent ones which run faster
 - Allow small groups to slightly customize existing languages, creating their own "mini DSLs".
 
-Descript could also:
+TreeScript could also:
 
 - Analyze code - e.g. find the # of occurrences of a certain symbol.
 - Fully interpret a language, by "reducing" its syntax tree as much as possible
@@ -26,15 +28,25 @@ Descript could also:
 - Print a language - convert it's syntax tree into text
 - Parse a language - convert text into a syntax tree
 
-Descript programs can do more when given a language server with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "Descript" wouldn't be doing much, and there would be a lot of communication back and forth between the Descript program and server, which could be inefficient (although apparently socket communication can be very fast).
+TreeScript programs can do more when given a language server with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "TreeScript" wouldn't be doing much, and there would be a lot of communication back and forth between the TreeScript program and server, which could be inefficient (although apparently socket communication can be very fast).
 
-Eventually Descript could even transform its own syntax trees (with a Descript language plugin)
+Eventually TreeScript could even transform its own syntax trees (with a TreeScript language plugin).
+
+## How to Use
+
+- Write TreeScript source code, save it in a `.tscr` file.
+- Run `treescript compile <SRC>.tscr` to compile this into a `.tprg` executable.
+- Run `treescript run <EXEC>.tprg <INPUT> -o <OUTPUT>` to take the source code from `<INPUT>`, transform it, and write the result to `<OUTPUT>`.
+
+A typical TreeScript program will be written in TreeScript. Then, via `treescript compile`, it gets compiled into a C executable. The executable takes raw AST data as input, transforms it, and outputs the transformed data. The program can be run with source code input and output via `treescript run`.
+
+In the future, the compiler will support creating standalone executables. Then you could just run `treescript compile <SRC>.tscr --standalone`, and run `<EXEC> <INPUT> -o <OUTPUT>` by itself. Maybe in the distant future TreeScript will even create GUI applications.
 
 ## Plugins
 
-The Descript language is extensible. The compiler uses external programs and specifications to handle different languages, and Descript programs use external programs and specifications to implement extra computations in functions. These external programs and specifications are located in the Descript's compilers appdata, probably e.g. `~/Library/Application Support/Descript/`.
+The TreeScript language is extensible. The compiler uses external programs and specifications to handle different languages, and TreeScript programs use external programs and specifications to implement extra computations in functions. These external programs and specifications are located in the TreeScript's compilers appdata, probably e.g. `~/Library/Application Support/TreeScript/`.
 
-The Descript compiler uses a builtin library of **language plugins**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
+The TreeScript compiler uses a builtin library of **language plugins**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
 
 ---
 
@@ -90,12 +102,12 @@ The language specification defines the language's file extension, and every type
 
 ### Language Parser
 
-A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding AST data. It isn't a Descript programs itself (it's a compiled program which could've been written in any language).
+A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding AST data. It isn't a TreeScript programs itself (it's a compiled program which could've been written in any language).
 
 Each language parser must (or at least strongly should) handle indexed splices (`\#`, e.g. in `while (\0 < \1) \2++;)`), and convert `\\` occurrences to actual backslashes. When an indexed splice is encountered, in the AST data it gets converted into a `splice` node, which is followed by the splice's index. e.g. for `while (\0 < \1) \2++;)`, `\0` is encoded with `splice 0`, `1` is encoded with `splice 1`, and `2` is encoded with
 `splice 2` (these nodes have no children).
 
-Language parsers are specifically designed to be used by the Descript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled Descript program. However, they're convenient when also paired with a Descript program - the command `cat <input> | <language-parser> | <descript-program> | <language-printer> | <output>` will read source text from `<input>`, apply `<descript-program>`, and print the write the transformed source text to `<output>`.
+Language parsers are specifically designed to be used by the TreeScript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled TreeScript program. However, they're convenient when also paired with a TreeScript program - the command `cat <input> | <language-parser> | <treescript-program> | <language-printer> | <output>` will read source text from `<input>`, apply `<treescript-program>`, and print the write the transformed source text to `<output>`.
 
 ### Language Printer
 
@@ -103,13 +115,13 @@ A language printer is the opposite of a language parser - it's a command-line pr
 
 ### Server
 
-A server is provides additonal functions for Descript programs. The functions may or may not be for a particular langugage - e.g. they can include a function which takes a method identifier and provides its definition, or an additional math function.
+A server is provides additonal functions for TreeScript programs. The functions may or may not be for a particular langugage - e.g. they can include a function which takes a method identifier and provides its definition, or an additional math function.
 
 A server consists of a command-line program and a server specification.
 
 ### Server Program
 
-When a Descript program includes a function which isn't builtin, it looks for a server which provides the function. If it finds a server, it runs its command-line program, inputting the current context, the function name, and each argument as AST data (the current context consists of the program's command-line argument path, and the index of the syntax tree which is being processed when the function is called. The context would be important e.g. if the program wanted to lookup the body of a class whose name was passed as an argument).
+When a TreeScript program includes a function which isn't builtin, it looks for a server which provides the function. If it finds a server, it runs its command-line program, inputting the current context, the function name, and each argument as AST data (the current context consists of the program's command-line argument path, and the index of the syntax tree which is being processed when the function is called. The context would be important e.g. if the program wanted to lookup the body of a class whose name was passed as an argument).
 
 ### Server Specification
 
@@ -117,7 +129,7 @@ The server specification declares all the functions the server provides. Each fu
 
 A server doesn't need to fully implement a function it provides - it can return "undefined" for some inputs (e.g. if the wrong number of arguments is provided) - although it must declare all functions it implements.
 
-Multiple servers can provide the same function, and the Descript program will keep trying each server (in undefined order) until it gets a result. If no servers return a result, the Descript program will fail.
+Multiple servers can provide the same function, and the TreeScript program will keep trying each server (in undefined order) until it gets a result. If no servers return a result, the TreeScript program will fail.
 
 ---
 
@@ -136,7 +148,7 @@ Multiple servers can provide the same function, and the Descript program will ke
 
 ### AST Data
 
-AST data is a text-based format which encodes Descript values and abstract syntax trees for any language. It consists of a sequence of "words" separated by spaces and newlines.
+AST data is a text-based format which encodes TreeScript values and abstract syntax trees for any language. It consists of a sequence of "words" separated by spaces and newlines.
 
 AST data encodes a sequence of values, and each value is separated by a newline. A primitive integer, float, or string is represented by the literal "integer", "float", or "string", followed by the (32-bit signed) integer, float, or escaped quoted string which is the content. A record is represented by the literal record's head, followed by it's children - e.g. `Foo[Bar[], 5]` is represented by `Foo Bar integer 5`. Thus AST data is prefix notation.
 
@@ -150,9 +162,9 @@ Each AST node corresponds to a record. The head is the created by combining the 
 App App Lambda string "f" App App Var string "f" Number integer 4 Number integer 5 Lambda string "x" Lambda string "y" Lambda string "z" App App Var string "+" Var string "x" App App Var string "-" Var string "z" Var string "y" Number integer 3
 ```
 
-### Descript Source Code
+### TreeScript Source Code
 
-A Descript source file is compiled into an executable.
+A TreeScript source file is compiled into an executable.
 
 More specifically, it gets compiled into a C project, which gets compiled into an executable.
 
@@ -168,7 +180,7 @@ More specifically, it goes through the following steps with the following forms:
 
 In the sugar and core phases:
 
-- (As before), a Descript source file is a list of record declarations followed by reducers.
+- (As before), a TreeScript source file is a list of record declarations followed by reducers.
 - Each record declaration consists of a (string) head, and a sequence of (string) identifiers which determine # of arguments (currently the identifiers are just for documentation).
 - Each reducer consists of an input value, output value, and a sequence of guards.
 - Each guard consists of an (output value) predicate and (input value) match.
@@ -187,11 +199,11 @@ Additionally, the sugar phase allows some syntax errors, so it can be parsed con
 
 The translate phase contains blocks of generated C code, which get spliced into a template to create the complete C project.
 
-## Major Changes from v1 and v2
+## Major Changes from Descript v1 and v2
 
-*Descript code is no longer interpreted, it's now compiled into another language.*
+*TreeScript code is no longer interpreted, it's now compiled into another language.*
 
-As before, there are 2 types of objects - **values** and **reducers**. A program still consists of reducers, but there's no query - all programs read source from `stdin`, transform it, and print it to `stdout`. There are no macros or multiple phases, they're not needed. Descript no longer refactors itself directly, and if you want to write code which handles `Add`, `Subtract`, `Multiply`, and `Divide` a common way, you can do reduce these into `Arith[op: ...; left: ...; right: ...]` in the single phase. A program must also declare its records at the top of the file - builtins and source records don't need to be declared.
+As before, there are 2 types of objects - **values** and **reducers**. A program still consists of reducers, but there's no query - all programs read source from `stdin`, transform it, and print it to `stdout`. There are no macros or multiple phases, they're not needed. TreeScript no longer refactors itself directly, and if you want to write code which handles `Add`, `Subtract`, `Multiply`, and `Divide` a common way, you can do reduce these into `Arith[op: ...; left: ...; right: ...]` in the single phase. A program must also declare its records at the top of the file - builtins and source records don't need to be declared.
 
 Primitives are exactly as before.
 
@@ -214,40 +226,29 @@ There are no "regular" values - all values are input or output values. Thus, all
     - Move splices out (`'while (\0 < \1) \2++;)'[\x / \0; \y / \1, \x / \2]`, not the same as indexing identifiers)
     - Run the given language's (plugin) parser (generates AST data)
     - Convert back into records, using the (plugin) language specification, and substituting the free (after-declared) nodes with their corresponding splices
-      - Expects a single syntax tree, creates a single record. To encode multiple statements, wrap them in a block (every language specification should define one, even if it's not valid in the actual language, it's convenient for Descript to pass data around).
+      - Expects a single syntax tree, creates a single record. To encode multiple statements, wrap them in a block (every language specification should define one, even if it's not valid in the actual language, it's convenient for TreeScript to pass data around).
   - (In the future) apply syntax shortcuts like lists
 - Generate C code (`Translate` phase)
-  - Specifically, generate certain functions which are different in different Descript programs:
+  - Specifically, generate certain functions which are different in different TreeScript programs:
   - `get_record_num_props` (affected by user-defined record declarations)
   - `reduce_surface` (affected by reducers)
 - Compile C code
-  - Copy the template - a C project with code shared by all Descript programs - into a temporary directory
+  - Copy the template - a C project with code shared by all TreeScript programs - into a temporary directory
   - Splice the generated C code into the template copy, yielding a complete C project
-  - Run `gcc` on the temporary project, yielding the Descript program
+  - Run `gcc` on the temporary project, yielding the TreeScript program
 - Copy program to path (supplied by command-line argument)
 
 ## C Project Structure
 
-In the plugins folder, there's a C project template. This contains C code which is common for all Descript programs, and splice markers. The Descript compiler will take a Descript source file and generate code to fill these splices. To finish compiling the Descript source, it'll copy the template and fill in the splices, then compile the resulting C project.
-
-## Descript Source Structure
-
-A typical Descript program will be written in **Descript** and **"backend-lang" (C++)**, then compiled into a **"backend-lang" (C++)** program, which takes a **"target-lang" (R)** program as input, transforms it, and outputs it.
-
-A typical Descript program will now:
-
-- Use the backend to read input (or if lazy, have input built-in to the query).
-- *Use the backend to parse input into a Descript AST* - in theory, Descript can parse input directly, but in practice it takes a ridiculus amount of time.
-- Use Descript to transform this AST, by matches against pieces of it and reducing those pieces
-- Use Descript (more likely) or the backend (less likely) to print this AST back into source code.
+In the plugins folder, there's a C project template. This contains C code which is common for all TreeScript programs, and splice markers. The TreeScript compiler will take a TreeScript source file and generate code to fill these splices. To finish compiling the TreeScript source, it'll copy the template and fill in the splices, then compile the resulting C project.
 
 ## Examples / Prototypes
 
 ### Simple Evaluation
 
-This simple Descript program will "interpret" lambda calculus programs written in scheme, by applying the lambdas.
+This simple TreeScript program will "interpret" lambda calculus programs written in scheme, by applying the lambdas.
 
-```descript
+```treescript
 Subst[body; old; new].
 
 //Lambda application
@@ -261,7 +262,7 @@ Subst[\body; \; \]: \body;
 
 It gets desugared into something like (technically invalid syntax, good for the example):
 
-```descript
+```treescript
 Subst[body; old; new].
 
 //Lambda application
@@ -283,7 +284,7 @@ TODO
 
 This example is broken - it uses a builtin function to allow integer addition.
 
-```descript
+```treescript
 Subst[body; old; new].
 
 //Lambda application
@@ -300,7 +301,7 @@ scm'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; 
 
 However, it misses some cases, e.g. `(((lambda (f) ((f x) x)) +) 2)` should reduce to `4` but doesn't. This example handles addition properly:
 
-```descript
+```treescript
 Add[lhs].
 Subst[body; old; new].
 
@@ -319,9 +320,9 @@ scm'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
 
 ### Optimization
 
-This program optimize R for-loops on data frames, by converting the data frame into a list so it's not copied every time.
+This program optimizes R for-loops on data frames, by converting the data frame into a list so it's not copied every time.
 
-```descript
+```treescript
 r'
 for (\i in \iter) {
   \x[[\i]] <- \expr
@@ -359,7 +360,7 @@ x <- as.data.frame(y)
 
 There are edge-cases, e.g. when the input isn't a data frame or `y` is used afterward. These can be fixed with guards.
 
-```descript
+```treescript
 r'
 for (\i in \iter) {
   \x[[\i]] <- \expr

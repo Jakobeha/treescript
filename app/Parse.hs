@@ -59,7 +59,7 @@ runP_ = Run <$> execP <*> srcP <*> outP <*> watchP
   where execP
            = strArgument
            $ metavar "EXEC"
-          <> help "path to the compiled Descript executable"
+          <> help "path to the compiled TreeScript executable"
         srcP
            = strArgument
            $ metavar "SRC"
@@ -81,31 +81,31 @@ actionInfo :: InfoMod a
 actionInfo
    = fullDesc
   <> progDesc "treescript compile, treescript run, treescript serve"
-  <> header "descript - compile and run Descript source code, start the Descript language server"
-  <> footer "This is the interface for the Descript programming language: a DSL to manipulate syntax of other languages.\n\
-            \It can compile Descript source code into executables and run those executables.\n\
-            \It also includes a language server ('descript serve'), which adds Descript support to editors like VSCode."
+  <> header "treescript - compile and run TreeScript source code, start the TreeScript language server"
+  <> footer "This is the interface for the TreeScript programming language: a DSL to manipulate syntax of other languages.\n\
+            \It can compile TreeScript source code into executables and run those executables.\n\
+            \It also includes a language server ('treescript serve'), which adds TreeScript support to editors like VSCode."
 
 serveInfo :: InfoMod a
 serveInfo
    = fullDesc
   <> progDesc "start the language server"
-  <> header "descript serve - start the language server"
+  <> header "treescript serve - start the language server"
   <> footer "You probably don't want to call this yourself - this command should be called by language clients, \
-            \such as the 'descript-lang' VSCode plugin, once they want to edit Descript files. \
+            \such as the 'treescript-vscode' plugin, once they want to edit TreeScript files. \
             \Only need one server per system, even if there are multiple workspaces and clients."
 
 compileInfo :: InfoMod a
 compileInfo
    = fullDesc
-  <> progDesc "compile a Descript source file (.tscr) into an executable (.tprg)"
-  <> header "descript compile - compile a Descript source file (.tscr) into an executable (.tprg)"
-  <> footer "In order to be applied to source code, a Descript program needs to be compiled into an executable.\
-            \You can't run this executable on the source code itself (unless compiling with -s) - instead use 'descript run'."
+  <> progDesc "compile a TreeScript source file (.tscr) into an executable (.tprg)"
+  <> header "treescript compile - compile a TreeScript source file (.tscr) into an executable (.tprg)"
+  <> footer "In order to be applied to source code, a TreeScript program needs to be compiled into an executable.\
+            \You can't run this executable on the source code itself (unless compiling with -s) - instead use 'treescript run'."
 
 runInfo :: InfoMod a
 runInfo
    = fullDesc
-  <> progDesc "run a Descript executable"
-  <> header "descript run - run a Descript executable"
+  <> progDesc "run a TreeScript executable"
+  <> header "treescript run - run a TreeScript executable"
   <> footer "The executable will transform the source code in the input file"

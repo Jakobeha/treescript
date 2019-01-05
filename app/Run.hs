@@ -8,8 +8,8 @@ module Run
   ) where
 
 import Action
-import Descript
-import qualified Descript.Misc.Ext.Text as T
+import TreeScript
+import qualified TreeScript.Misc.Ext.Text as T
 
 import Control.Monad
 import qualified Data.Text as T

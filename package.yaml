@@ -1,9 +1,9 @@
-name:                descript-R
+name:                treescript
 version:             0.1.0.0
-github:              "jakobeha/descript-R"
-git:                 "https://github.org/jakobeha/descript-R"
-homepage:            "https://github.org/jakobeha/descript-R/src/master/README.md"
-bug-reports:         "https://github.org/jakobeha/descript-R/issues"
+github:              "jakobeha/treescript"
+git:                 "https://github.org/jakobeha/treescript"
+homepage:            "https://github.org/jakobeha/treescript/src/master/README.md"
+bug-reports:         "https://github.org/jakobeha/treescript/issues"
 license:             GPL-3
 author:              "Jakob Hain"
 maintainer:          "jakobeha@gmail.com"
@@ -16,20 +16,20 @@ category:            Language
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/descript-R#readme>
+description:         Please see the README on GitHub at <https://github.org/jakobeha/treescript#readme>
 
 extra-source-files:
 - README.md
 - ChangeLog.md
 - resources/**
-- src/Descript/Ast/Lex/Parse.x
-- src/Descript/Ast/Sugar/Parse.y
+- src/TreeScript/Ast/Lex/Parse.x
+- src/TreeScript/Ast/Sugar/Parse.y
 - test-resources/examples/**
 
 extra-doc-files:
 - doc/**
 
-ghc-options: -Wall
+ghc-options: -Wall -optP-Wno-nonportable-include-path
 
 build-tools:
 - alex
@@ -60,13 +60,13 @@ dependencies:
 library:
   source-dirs: src
   exposed-modules:
-  - Descript
-  - Descript.Ast.Core
-  - Descript.Ast.Flat
-  - Descript.Ast.Lex
-  - Descript.Ast.Sugar
-  - Descript.Ast.Translate
-  - Descript.Misc.Ext.Text
+  - TreeScript
+  - TreeScript.Ast.Core
+  - TreeScript.Ast.Flat
+  - TreeScript.Ast.Lex
+  - TreeScript.Ast.Sugar
+  - TreeScript.Ast.Translate
+  - TreeScript.Misc.Ext.Text
 
 executables:
   treescript:
@@ -77,7 +77,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - descript-R
+    - treescript
     - containers
     - fsnotify
     - mtl
@@ -86,7 +86,7 @@ executables:
     - text
 
 tests:
-  descript-R-test:
+  treescript-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -94,7 +94,7 @@ tests:
     - -rtsopts
     - '"-with-rtsopts=-N -M128m"'
     dependencies:
-    - descript-R
+    - treescript
     - containers
     - directory
     - filepath

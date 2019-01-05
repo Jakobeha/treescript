@@ -46,7 +46,7 @@ When a reducer is applied to a value, if its input **matches** the value, it wil
 
 ### Matcher / path
 
-> _Matchers and paths are the abstractions of Descript._
+> _Matchers and paths are the abstractions of TreeScript._
 
 A **matcher** is an input value, and it will match any value of a particular type.
 
@@ -327,7 +327,7 @@ Res[
 
 ### Reducer abstraction
 
-In Descript, you can’t create a “reducer reducer”, e.g. `(Foo[]: Bar[]): (Baz[]: Qux[])`. However, you can still abstract a reducer, by writing 2 separate macro reducers - one for its input, and another for its output.
+In TreeScript, you can’t create a “reducer reducer”, e.g. `(Foo[]: Bar[]): (Baz[]: Qux[])`. However, you can still abstract a reducer, by writing 2 separate macro reducers - one for its input, and another for its output.
 
 ```
 TODO => (Add[left: Approx[a: <Any[]], right: Approx[a: <Any[]]]: Approx[a: Add[left: >left>a, right: >right>a]) | (Subtract[left: Approx[a: <Any[]], right: Approx[a: <Any[]]]: Approx[a: Subtract[left: >left>a, right: >right>a]) | ...

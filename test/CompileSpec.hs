@@ -7,11 +7,11 @@ module CompileSpec
        ( spec ) where
 
 import Core.Test
-import Descript
-import qualified Descript.Ast.Translate as T
-import qualified Descript.Ast.Core as C
-import qualified Descript.Ast.Lex as L
-import qualified Descript.Ast.Sugar as S
+import TreeScript
+import qualified TreeScript.Ast.Translate as T
+import qualified TreeScript.Ast.Core as C
+import qualified TreeScript.Ast.Lex as L
+import qualified TreeScript.Ast.Sugar as S
 
 import Control.Concurrent.MVar
 import Control.Monad
@@ -95,7 +95,7 @@ spec = do
               map pprint (sortOn errorRange errs) `shouldBe` testInfoErrorMsgs testInfo
           "" `shouldBe` testInfoFatalErrorMsg testInfo
 
-  beforeAll (createTempDirectory sysTmpDir "descript-tests") $ afterAll removeDirectoryRecursive $ do
+  beforeAll (createTempDirectory sysTmpDir "treescript-tests") $ afterAll removeDirectoryRecursive $ do
     describe "The compiler" $ do
       it "Lexes" $ \_ ->
         forExampleFile $ \file@(TestFile srcFile testInfo _) -> do
