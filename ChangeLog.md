@@ -92,4 +92,12 @@ Run on source code - `treescript run`
 - I/O exceptions should now be wrapped in `Result`s, better error messages and handling
 - Bugfixes for compiling (fixed memory issue)
 
+## 1/07/19
+
+Started to add functions and "groups"
+
+- Syntax for functions and groups (`Lex` to `Core` phases) - untested, but regular syntax still works
+- Some documentation
+- TODO Add more documentation, add ability to translate to C (`Translate` phase)
+
 ## Unreleased changes

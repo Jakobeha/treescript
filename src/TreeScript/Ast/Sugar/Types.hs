@@ -50,16 +50,34 @@ data Symbol an
   , symbol :: T.Text
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Either a record property value ("regular" property) or property declaration (record declaration property).
+-- | A group property.
+data GroupProperty an
+  = GroupProperty
+  { groupPropertyAnn :: an
+  , groupPropertyKey :: Symbol an
+  , groupPropertyValue :: Value an
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | A record declaration property, group declaration property, record property, or group property.
 data GenProperty an
-  = GenPropertyDecl (Symbol an)
-  | GenProperty (Value an)
+  = GenPropertyDecl (Symbol an) -- ^ Record or group declaration property.
+  | GenPropertyRecord (Value an) -- ^ Record (value) property.
+  | GenPropertyGroup (GroupProperty an) -- ^ Group property.
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Declares a group (properties will be symbols), or references it (properties will be group properties).
+data Group an
+  = Group
+  { groupAnn :: an
+  , groupHead :: Symbol an
+  , groupProps :: [GenProperty an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
 data Record an
   = Record
   { recordAnn :: an
+  , recordIsFunc :: Bool
   , recordHead :: Symbol an
   , recordProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
@@ -79,18 +97,35 @@ data Value an
   | ValueSpliceCode (SpliceCode an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | An input or output of a reducer
+data ReducerClause an
+  = ReducerClause
+  { reducerClauseAnn :: an
+  , reducerClauseValue :: Value an
+  , reducerClauseGroups :: [Group an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Transforms a value into a different value. Like a "function".
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: Value an
-  , reducerOutput :: Value an
+  , reducerInput :: ReducerClause an
+  , reducerOutput :: ReducerClause an
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a group which will consist of the following reducers.
+data GroupDecl an
+  = GroupDecl
+  { groupDeclAnn :: an
+  , groupDeclGroup :: Group an
+  , groupDeclSupers :: [Group an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Not nested in anything other than the program.
 data TopLevel an
   = TopLevelRecordDecl (RecordDecl an)
   | TopLevelReducer (Reducer an)
+  | TopLevelGroupDecl (GroupDecl an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -123,13 +158,24 @@ instance TreePrintable Primitive where
 instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
 
+instance TreePrintable GroupProperty where
+  treePrint par _ (GroupProperty _ key value) = par key <> ": " <> par value
+
 instance TreePrintable GenProperty where
   treePrint par _ (GenPropertyDecl key) = par key
-  treePrint par _ (GenProperty prop) = par prop
+  treePrint par _ (GenPropertyRecord prop) = par prop
+  treePrint par _ (GenPropertyGroup prop) = par prop
+
+instance TreePrintable Group where
+  treePrint par _ (Group _ head' props)
+    = "&" <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
 
 instance TreePrintable Record where
-  treePrint par _ (Record _ head' props)
-    = par head' <> "[" <> mintercalate "; " (map par props) <> "]"
+  treePrint par _ (Record _ isFun head' props)
+    = printIsFun <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
+    where printIsFun
+            | isFun = "#"
+            | otherwise = mempty
 
 instance TreePrintable Bind where
   treePrint par _ (Bind _ sym)
@@ -141,13 +187,25 @@ instance TreePrintable Value where
   treePrint par _ (ValueBind bind) = par bind
   treePrint par _ (ValueSpliceCode code) = par code
 
+instance TreePrintable ReducerClause where
+  treePrint par _ (ReducerClause _ val groups)
+    = mintercalate " " $ par val : map par groups
+
 instance TreePrintable Reducer where
   treePrint par _ (Reducer _ input output)
     = par input <> ": " <> par output <> ";"
 
+instance TreePrintable GroupDecl where
+  treePrint par _ (GroupDecl _ group sups)
+    = par group <> printSups <> ";\n---"
+    where printSups
+            | null sups = mempty
+            | otherwise = ": " <> mintercalate " " (map par sups)
+
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelRecordDecl decl) = par decl
   treePrint par _ (TopLevelReducer red) = par red
+  treePrint par _ (TopLevelGroupDecl decl) = par decl
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels

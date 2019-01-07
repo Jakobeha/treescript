@@ -11,17 +11,21 @@ import TreeScript.Ast.Core
 import TreeScript.Misc
 import TreeScript.Plugin
 
+import Data.Maybe
 import qualified Data.Text as T
 import NeatInterpolation
 
 translateNumProps :: Program an -> SessionRes T.Text
 translateNumProps prog = do
-  let translateNumPropsDecl (RecordDeclCompact name numProps)
-        = [text|
-            if (strings_equal(head, "$name")) {
+  let translateNumPropsDecl (RecordDeclCompact (RecordHead isFunc name) numProps)
+        | isFunc = Nothing
+        | otherwise = Just
+          [text|
+            if (strings_equal(head, $nameEncoded)) {
               return $numPropsEncoded;
             }|]
-        where numPropsEncoded = pprint numProps
+        where nameEncoded = pprint name
+              numPropsEncoded = pprint numProps
       translateNumPropsTail
         = [text|
             {
@@ -29,18 +33,7 @@ translateNumProps prog = do
               exit(1);
             }|]
   decls <- getAllProgramDecls prog
-  pure $ T.intercalate " else " $ (map translateNumPropsDecl decls ++ [translateNumPropsTail])
-
-numBindsInValue1 :: Value an -> Int
-numBindsInValue1 (ValuePrimitive _) = 0
-numBindsInValue1 (ValueRecord _) = 0
-numBindsInValue1 (ValueBind (Bind _ idx)) = idx
-
-maxNumBindsInReducer :: Reducer an -> Int
-maxNumBindsInReducer = getMax0 . foldValuesInReducer (Max0 . numBindsInValue1)
-
-maxNumBindsInProgram :: Program an -> Int
-maxNumBindsInProgram = getMax0 . foldValuesInProgram (Max0 . numBindsInValue1)
+  pure $ T.intercalate " else " $ (mapMaybe translateNumPropsDecl decls ++ [translateNumPropsTail])
 
 consumePrimExpr :: T.Text -> T.Text -> Primitive an -> T.Text
 consumePrimExpr suc inp (PrimInteger _ int)
@@ -72,10 +65,10 @@ consumePropsExpr suc inp n (prop : props)
   where nEncoded = pprint n
         inp' = inp <> "_" <> nEncoded
         consumeRest = consumePropsExpr suc inp (n + 1) props
-        consumeProps = consumeExpr consumeRest inp' prop
+        consumeProps = consumeValueExpr consumeRest inp' prop
 
 consumeRecordExpr :: T.Text -> T.Text -> Record an -> T.Text
-consumeRecordExpr suc inp (Record _ head' props)
+consumeRecordExpr suc inp (Record _ (RecordHead False head') props)
   = [text|
       if ($inp.type == RECORD && strings_equal($inp.as_record.head, $headEncoded)) {
         //printf("<Consume record %s> ", $headEncoded);
@@ -84,6 +77,24 @@ consumeRecordExpr suc inp (Record _ head' props)
       }|]
   where headEncoded = pprint head'
         consumeProps = consumePropsExpr suc inp 0 props
+consumeRecordExpr suc inp (Record _ (RecordHead True head') props)
+  = [text|
+      {
+        value func_props[$numPropsEncoded];
+        $produceProps
+        value func_out = apply_function($headEncoded, func_props);
+        temp_bool = values_equal($inp, func_out);
+        for (int i = 0; i < $numPropsEncoded; i++) {
+          free_value(func_props[i]);
+        }
+        free_value(func_out);
+      }
+      if (temp_bool) {
+        $suc
+      }|]
+  where headEncoded = pprint head'
+        numPropsEncoded = pprint $ length props
+        produceProps = producePropsExpr "func" props
 
 consumeBindExpr :: T.Text -> T.Text -> Bind an -> T.Text
 consumeBindExpr suc inp (Bind _ idx)
@@ -98,10 +109,14 @@ consumeBindExpr suc inp (Bind _ idx)
       }|]
   where idx0Encoded = pprint $ idx - 1
 
-consumeExpr :: T.Text -> T.Text -> Value an -> T.Text
-consumeExpr suc inp (ValuePrimitive prim) = consumePrimExpr suc inp prim
-consumeExpr suc inp (ValueRecord record) = consumeRecordExpr suc inp record
-consumeExpr suc inp (ValueBind bind) = consumeBindExpr suc inp bind
+consumeValueExpr :: T.Text -> T.Text -> Value an -> T.Text
+consumeValueExpr suc inp (ValuePrimitive prim) = consumePrimExpr suc inp prim
+consumeValueExpr suc inp (ValueRecord record) = consumeRecordExpr suc inp record
+consumeValueExpr suc inp (ValueBind bind) = consumeBindExpr suc inp bind
+
+consumeClauseExpr :: T.Text -> T.Text -> ReducerClause an -> T.Text
+consumeClauseExpr suc inp (ReducerClause _ value groups)
+  = consumeValueExpr suc inp value -- TODO Add groups
 
 producePrimExpr :: T.Text -> Primitive an -> T.Text
 producePrimExpr out (PrimInteger _ int)
@@ -131,7 +146,7 @@ producePropExpr out n prop
   = [text|
       $produceValue
       ${out}_props[$nEncoded] = $out';|]
-  where produceValue = produceExpr out' prop
+  where produceValue = produceValueExpr out' prop
         nEncoded = pprint n
         out' = out <> "_" <> nEncoded
 
@@ -140,7 +155,7 @@ producePropsExpr out
   = T.unlines . zipWith (producePropExpr out) [0..]
 
 produceRecordExpr :: T.Text -> Record an -> T.Text
-produceRecordExpr out (Record _ head' props)
+produceRecordExpr out (Record _ (RecordHead False head') props)
   = [text|
       value* ${out}_props = malloc0(sizeof(value) * $numPropsEncoded);
       $produceProps
@@ -155,6 +170,20 @@ produceRecordExpr out (Record _ head' props)
   where produceProps = producePropsExpr out props
         headEncoded = pprint head'
         numPropsEncoded = pprint $ length props
+produceRecordExpr out (Record _ (RecordHead True head') props)
+  = [text|
+      value $out;
+      {
+        value func_props[$numPropsEncoded];
+        $produceProps
+        $out = apply_function($headEncoded, func_props);
+        for (int i = 0; i < $numPropsEncoded; i++) {
+          free_value(func_props[i]);
+        }
+      }|]
+  where headEncoded = pprint head'
+        numPropsEncoded = pprint $ length props
+        produceProps = producePropsExpr "func" props
 
 produceBindExpr :: T.Text -> Bind an -> T.Text
 produceBindExpr out (Bind _ idx)
@@ -167,20 +196,25 @@ produceBindExpr out (Bind _ idx)
       };|] -- Should never happen in valid code
   | otherwise = [text|value $out = dup_value(matches[$idx0Encoded]);|]
   where idx0Encoded = pprint $ idx - 1
-produceExpr :: T.Text -> Value an -> T.Text
-produceExpr out (ValuePrimitive prim) = producePrimExpr out prim
-produceExpr out (ValueRecord record) = produceRecordExpr out record
-produceExpr out (ValueBind bind) = produceBindExpr out bind
 
-reduceExpr :: Reducer an -> T.Text
-reduceExpr red@(Reducer _ input output)
+produceValueExpr :: T.Text -> Value an -> T.Text
+produceValueExpr out (ValuePrimitive prim) = producePrimExpr out prim
+produceValueExpr out (ValueRecord record) = produceRecordExpr out record
+produceValueExpr out (ValueBind bind) = produceBindExpr out bind
+
+produceClauseExpr :: T.Text -> ReducerClause an -> T.Text
+produceClauseExpr out (ReducerClause _ value groups)
+  = produceValueExpr out value -- TODO add groups
+
+reduceExpr :: Int -> Reducer an -> T.Text
+reduceExpr maxNumBinds (Reducer _ input output)
   = [text|
       for (int i = 0; i < $maxNumBindsEncoded; i++) {
         set_matches[i] = false;
       }
       $consumeAndProduce|]
-  where maxNumBindsEncoded = pprint $ maxNumBindsInReducer red
-        consumeAndProduce = consumeExpr suc "in" input
+  where maxNumBindsEncoded = pprint maxNumBinds
+        consumeAndProduce = consumeClauseExpr suc "in" input
         suc
           = [text|
               //printf("<Produce!> ");
@@ -188,17 +222,20 @@ reduceExpr red@(Reducer _ input output)
               free_value(in);
               *x = out;
               return true;|]
-        produceOut = produceExpr "out" output
+        produceOut = produceClauseExpr "out" output
 
 translateReduceSurface :: Program an -> SessionRes T.Text
 translateReduceSurface prog = do
-  let maxNumBindsEncoded = pprint $ maxNumBindsInProgram prog
-      reduceExprs = T.unlines $ map reduceExpr $ programReducers prog
+  let reducers = programMainReducers prog
+      maxNumBinds = maxNumBindsInReducers reducers
+      maxNumBindsEncoded = pprint maxNumBinds
+      reduceExprs = T.unlines $ map (reduceExpr maxNumBinds) reducers
   pure $
     [text|
       value in = *x;
       bool set_matches[$maxNumBindsEncoded];
       value matches[$maxNumBindsEncoded];
+      bool temp_bool;
       $reduceExprs
       //printf("<Reduce fail> ");
       return false;|]

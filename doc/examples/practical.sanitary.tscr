@@ -2,11 +2,7 @@ r'
 for (\i in \iter) {
   \x[[\i]] <- \expr
 }
-' | \i => R_Var[\; \];
-  | \x => R_Var[\; "data.frame"];
-  | #Includes[\iter; \x] => False[];
-  | R_Var[#FreeId[]; "data.list"] => \y
-  : r'
+' &Group[]: r'
 \y <- as.list(\x)
 
 for (\i in \iter) {
@@ -15,3 +11,10 @@ for (\i in \iter) {
 
 \x <- as.data.frame(\y)
 ';
+
+&Group[i; x; iter; y];
+---
+\i: R_Var[\; \];
+\x: R_Var[\; "data.frame"];
+#Includes[\iter; \x]: False[];
+R_Var[#FreeId[]; "data.list"]: \y;

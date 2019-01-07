@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST.
 module TreeScript.Ast.Core.Parse
@@ -7,51 +8,23 @@ module TreeScript.Ast.Core.Parse
   ) where
 
 import TreeScript.Ast.Core.Analyze
+import qualified TreeScript.Ast.Core.Intermediate as I
 import TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Flat as F
 import qualified TreeScript.Ast.Sugar as S
 import TreeScript.Misc
 import TreeScript.Plugin
 
-import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Bifunctor
-import Data.Char
-import Data.List
+import Data.List hiding (group)
+import qualified Data.List.NonEmpty as N
 import qualified Data.Map.Strict as M
 import Data.Maybe
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
-
--- = Bind identifier/index environment
-
-data BindEnv
-  = BindEnv
-  { bindEnvBinds :: M.Map T.Text Int
-  , bindEnvNextFree :: Int
-  }
-
-type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
-
-emptyBindEnv :: BindEnv
-emptyBindEnv
-  = BindEnv
-  { bindEnvBinds = M.empty
-  , bindEnvNextFree = 1
-  }
-
-bindEnvLookup :: T.Text -> BindEnv -> (Int, BindEnv)
-bindEnvLookup bind env@(BindEnv binds nextFree)
-  = case binds M.!? bind of
-      Nothing ->
-        ( nextFree,
-          BindEnv
-          { bindEnvBinds = M.insert bind nextFree binds
-          , bindEnvNextFree = nextFree + 1
-          }
-        )
-      Just idx -> (idx, env)
 
 -- = Parsing from AST data
 
@@ -85,7 +58,7 @@ decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.p
     primParser (F.PrimString value) = PrimString Nothing value
     recordParser head' rest = do
       nodeDecl <-
-        case find (\decl -> recordDeclCompactHead decl == head') decls of
+        case find (\decl -> recordDeclCompactHead decl == RecordHead False head') decls of
           Nothing -> mkFail $ decodeError $ "unknown record head: " <> head'
           Just res -> pure res
       let numProps = recordDeclCompactNumProps nodeDecl
@@ -93,7 +66,11 @@ decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.p
       pure
         ( Record
           { recordAnn = Nothing
-          , recordHead = head'
+          , recordHead
+              = RecordHead
+              { recordHeadIsFunc = False
+              , recordHeadName = head'
+              }
           , recordProps = props
           },
           rest'
@@ -127,15 +104,19 @@ parseError rng msg
 
 parsePropDecl :: S.GenProperty Range -> SessionRes T.Text
 parsePropDecl (S.GenPropertyDecl (S.Symbol _ decl)) = pure decl
-parsePropDecl (S.GenProperty val) = do
+parsePropDecl (S.GenPropertyRecord val) = do
   tellError $ parseError (getAnn val) "expected lowercase symbol, got value"
+  pure undefinedSym
+parsePropDecl (S.GenPropertyGroup prop) = do
+  tellError $ parseError (getAnn prop) "expected lowercase symbol, got group property"
   pure undefinedSym
 
 parseRecordDecl :: S.RecordDecl Range -> SessionRes (RecordDecl Range)
-parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props))
-  = RecordDecl rng head' <$> traverse parsePropDecl props
+parseRecordDecl (S.RecordDecl rng (S.Record _ isFunc (S.Symbol _ head') props))
+  | isFunc = mkFail $ parseError rng $ "can't declare function"
+  | otherwise = RecordDecl rng head' <$> traverse parsePropDecl props
 
-parsePrim :: S.Primitive Range -> BindSessionRes (Primitive Range)
+parsePrim :: S.Primitive Range -> I.BindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
   = pure $ PrimInteger rng int
 parsePrim (S.PrimFloat rng float)
@@ -143,27 +124,24 @@ parsePrim (S.PrimFloat rng float)
 parsePrim (S.PrimString rng string)
   = pure $ PrimString rng string
 
-parseProperty :: ValueType -> S.GenProperty Range -> BindSessionRes (Value Range)
-parseProperty _ (S.GenPropertyDecl key)
+parseRecordProperty :: S.GenProperty Range -> I.BindSessionRes (Value Range)
+parseRecordProperty (S.GenPropertyDecl key)
   = mkFail $ parseError (getAnn key) "expected value, got lowercase symbol"
-parseProperty typ (S.GenProperty val) = parseValue typ val
+parseRecordProperty (S.GenPropertyRecord val) = parseValue val
+parseRecordProperty (S.GenPropertyGroup prop)
+  = mkFail $ parseError (getAnn prop) "expected value, got group property"
 
-parseRecord :: ValueType -> S.Record Range -> BindSessionRes (Record Range)
-parseRecord typ (S.Record rng (S.Symbol _ head') props)
-  = Record rng head' <$> traverseDropFatals (parseProperty typ) props
+parseRecord :: S.Record Range -> I.BindSessionRes (Record Range)
+parseRecord (S.Record rng isFunc (S.Symbol _ head') props)
+  = Record rng (RecordHead isFunc head') <$> traverseDropFatals parseRecordProperty props
 
-parseBind :: ValueType -> S.Bind Range -> BindSessionRes (Bind Range)
-parseBind typ (S.Bind rng sym)
+parseBind :: S.Bind Range -> I.BindSessionRes (Bind Range)
+parseBind (S.Bind rng sym)
   = case sym of
-      Nothing -> do
-        when (typ == ValueTypeOutput) $
-          tellError $ parseError rng "output bind must have an identifier"
-        pure $ Bind rng 0
+      Nothing -> pure $ Bind rng 0
       Just (S.Symbol _ txt) -> do
         env <- get
-        when (typ == ValueTypeOutput && M.notMember txt (bindEnvBinds env)) $
-          tellError $ parseError rng "output bind must have the same identifier as an input bind"
-        let (idx, newEnv) = bindEnvLookup txt env
+        let (idx, newEnv) = I.bindEnvLookup txt env
         put newEnv
         pure $ Bind rng idx
 
@@ -177,36 +155,160 @@ spliceTextValues :: S.SpliceText Range -> [S.Value Range]
 spliceTextValues (S.SpliceTextNil _ _) = []
 spliceTextValues (S.SpliceTextCons _ _ val rst) = val : spliceTextValues rst
 
-parseSpliceCode :: ValueType -> S.SpliceCode Range -> BindSessionRes (Value Range)
-parseSpliceCode typ (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
+parseSpliceCode :: S.SpliceCode Range -> I.BindSessionRes (Value Range)
+parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
   let txt = flattenSpliceText spliceText
       unparsedSplices = spliceTextValues spliceText
-  splices <- traverse (parseValue typ) unparsedSplices
+  splices <- traverse parseValue unparsedSplices
   lang <- lift $ overErrors (addRangeToErr langExtRng) $ langFromExt StageExtracting langExt
   ress <- overErrors (addRangeToErr rng) $ lift $ runLanguageParser lang txt splices
   case ress of
     [res] -> pure $ (rng `fromMaybe`) <$> res
     _ -> mkFail $ parseError rng $ "expected 1 value, got " <> pprint (length ress)
 
-parseValue :: ValueType -> S.Value Range -> BindSessionRes (Value Range)
-parseValue _ (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
-parseValue typ (S.ValueRecord record) = ValueRecord <$> parseRecord typ record
-parseValue typ (S.ValueBind bind) = ValueBind <$> parseBind typ bind
-parseValue typ (S.ValueSpliceCode code) = parseSpliceCode typ code
+parseValue :: S.Value Range -> I.BindSessionRes (Value Range)
+parseValue (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
+parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
+parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
+parseValue (S.ValueSpliceCode code) = parseSpliceCode code
 
-parseReducer :: S.Reducer Range -> SessionRes (Reducer Range)
-parseReducer (S.Reducer rng input output)
-  = (`evalStateT` emptyBindEnv)
-  $ Reducer rng <$> parseValue ValueTypeInput input <*> parseValue ValueTypeOutput output
+parseGroupProperty1 :: S.GenProperty Range -> I.BindSessionRes (I.GroupProperty Range)
+parseGroupProperty1 (S.GenPropertyDecl key)
+  = mkFail $ parseError (getAnn key) "expected group property, got lowercase symbol"
+parseGroupProperty1 (S.GenPropertyRecord val)
+  = mkFail $ parseError (getAnn val) "expected group property, got value"
+parseGroupProperty1 (S.GenPropertyGroup (S.GroupProperty rng sym val))
+  = I.GroupProperty rng sym <$> parseValue val
+
+parseGroupRef1 :: S.Group Range -> I.BindSessionRes (I.GroupRef Range)
+parseGroupRef1 (S.Group rng head' props)
+  = I.GroupRef rng head' <$> traverseDropFatals parseGroupProperty1 props
+
+parseReducerClause1 :: S.ReducerClause Range -> I.BindSessionRes (I.ReducerClause Range)
+parseReducerClause1 (S.ReducerClause rng val groups)
+  = I.ReducerClause rng <$> parseValue val <*> traverseDropFatals parseGroupRef1 groups
+
+parseReducer1 :: S.Reducer Range -> I.BindSessionRes (I.Reducer Range)
+parseReducer1 (S.Reducer rng input output)
+  = I.Reducer rng <$> parseReducerClause1 input <*> parseReducerClause1 output
+
+parseGroupPropDecl1 :: S.GenProperty Range -> I.BindSessionRes (T.Text, Bind Range)
+parseGroupPropDecl1 (S.GenPropertyDecl (S.Symbol rng txt)) = do
+  env <- get
+  let (idx, newEnv) = I.bindEnvLookup txt env
+  put newEnv
+  pure (txt, Bind rng idx)
+parseGroupPropDecl1 (S.GenPropertyRecord val) = do
+  mkFail $ parseError (getAnn val) "expected lowercase symbol, got value"
+parseGroupPropDecl1 (S.GenPropertyGroup prop) = do
+  mkFail $ parseError (getAnn prop) "expected lowercase symbol, got group property"
+
+parseEmptyGroupDef1 :: S.GroupDecl Range -> SessionRes (I.GroupDef Range)
+parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ (S.Symbol _ head') props) supers) = do
+  ((props', supers'), bindEnv)
+     <- (`runStateT` I.emptyBindEnv) $ (,)
+    <$> traverseDropFatals parseGroupPropDecl1 props
+    <*> traverseDropFatals parseGroupRef1 supers
+  pure I.GroupDef
+    { I.groupDefAnn = rng
+    , I.groupDefHead = head'
+    , I.groupDefProps = props'
+    , I.groupDefSupers = supers'
+    , I.groupDefImmReducers = []
+    , I.groupDefBindEnv = bindEnv
+    }
+
+parseRestGroupDefs1 :: S.GroupDecl Range -> [S.TopLevel Range] -> SessionRes (N.NonEmpty (I.GroupDef Range))
+parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
+parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
+parseRestGroupDefs1 decl (S.TopLevelReducer red : xs) = do
+  I.GroupDef yRng yHead yProps ySupers yReds yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
+  (red', yBindEnv') <- runStateT (parseReducer1 red) yBindEnv
+  let yReds' = red' : yReds
+  pure $ I.GroupDef (getAnn red <> yRng) yHead yProps ySupers yReds' yBindEnv' N.:| ys
+parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
+  = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
+
+parseAllGroupDefs1 :: [S.TopLevel Range] -> SessionRes [I.GroupDef Range]
+parseAllGroupDefs1 [] = pure []
+parseAllGroupDefs1 (S.TopLevelGroupDecl x : xs)
+  = N.toList <$> parseRestGroupDefs1 x xs
+parseAllGroupDefs1 (_ : _) = error "expected group declaration when parsing group definitions"
+
+parseGroupPropIdx :: M.Map T.Text Int -> S.Symbol Range -> I.GroupSessionRes Int
+parseGroupPropIdx propEnv (S.Symbol rng propName)
+  = case propEnv M.!? propName of
+      Nothing -> do
+        tellError $ parseError rng $ "bind not exported by group: " <> propName
+        pure (-1)
+      Just idx -> pure idx
+
+parseGroupRef2 :: I.BindEnv -> I.GroupRef Range -> I.GroupSessionRes (GroupRef Range)
+parseGroupRef2 bindEnv (I.GroupRef rng (S.Symbol headRng head') props) = do
+  groupEnv <- ask
+  let (propNames, propVals) = V.unzip $ V.map (\(I.GroupProperty _ propHead propVal) -> (propHead, propVal)) $ V.fromList props
+  case groupEnv M.!? head' of
+    Nothing -> mkFail $ parseError headRng $ "undefined group: " <> head'
+    Just (groupIdx, propEnv) -> do
+      propIdxs <- traverse (parseGroupPropIdx propEnv) propNames
+      let bindIdxs = M.mapKeys (\name -> M.findWithDefault (-1) name propEnv) $ I.bindEnvBinds bindEnv
+          propForIdx nextIdx idx
+            = case V.elemIndex idx propIdxs of
+                Nothing ->
+                  case bindIdxs M.!? idx of
+                    Nothing -> (nextIdx + 1, ValueBind $ Bind headRng nextIdx)
+                    Just bindIdx -> (nextIdx, ValueBind $ Bind headRng bindIdx)
+                Just propIdx -> (nextIdx, propVals V.! propIdx)
+          (_, props') = mapAccumL propForIdx (I.bindEnvNextFree bindEnv) [0..M.size propEnv]
+      pure GroupRef
+        { groupRefAnn = rng
+        , groupRefIdx = groupIdx
+        , groupRefProps = props'
+        }
+
+parseReducerClause2 :: I.BindEnv -> I.ReducerClause Range -> I.GroupSessionRes (ReducerClause Range)
+parseReducerClause2 bindEnv (I.ReducerClause rng val groups)
+  = ReducerClause rng val <$> traverseDropFatals (parseGroupRef2 bindEnv) groups
+
+parseReducer2 :: I.BindEnv -> I.Reducer Range -> I.GroupSessionRes (Reducer Range)
+parseReducer2 bindEnv (I.Reducer rng input output)
+    = Reducer rng
+  <$> parseReducerClause2 bindEnv input
+  <*> parseReducerClause2 bindEnv output
+
+parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
+parseGroupDef2 (I.GroupDef rng _ props supers reducers bindEnv)
+    = GroupDef rng (map (\(_, bind) -> bind) props)
+  <$> traverseDropFatals (parseGroupRef2 bindEnv) supers
+  <*> traverseDropFatals (parseReducer2 bindEnv) reducers
+
+parseGroupDefEnv :: Int -> I.GroupDef Range -> (T.Text, (Int, M.Map T.Text Int))
+parseGroupDefEnv idx group
+  = ( I.groupDefHead group
+    , ( idx
+      , M.fromList $ zipWith (\propIdx (propName, _) -> (propName, propIdx)) [0..] $ I.groupDefProps group
+      )
+    )
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
 parseRaw :: S.Program Range -> SessionRes (Program Range)
-parseRaw (S.Program rng topLevels)
-    = Program rng
-  <$> traverse parseRecordDecl decls
-  <*> traverseDropFatals parseReducer reds
-  where decls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
-        reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevels
+parseRaw (S.Program rng topLevels) = do
+  let (topLevelsOutGroups, topLevelsInGroups)
+        = break (\case S.TopLevelGroupDecl _ -> True; _ -> False) topLevels
+      decls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
+      reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevelsOutGroups
+  decls' <- traverse parseRecordDecl decls
+  (reds1, redsBindEnv) <- runStateT (traverseDropFatals parseReducer1 reds) I.emptyBindEnv
+  groups1 <- parseAllGroupDefs1 topLevelsInGroups
+  let groupEnv = M.fromList $ zipWith parseGroupDefEnv [0..] groups1
+  reds' <- runReaderT (traverseDropFatals (parseReducer2 redsBindEnv) reds1) groupEnv
+  groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
+  pure Program
+    { programAnn = rng
+    , programRecordDecls = decls'
+    , programMainReducers = reds'
+    , programGroups = groups'
+    }
 
 -- == Validation
 
@@ -214,7 +316,7 @@ duplicateDeclErrs :: [RecordDeclCompact] -> [RecordDecl Range] -> [Error]
 duplicateDeclErrs imported decls
   = catMaybes $ zipWith duplicateDeclErr decls (inits decls)
   where duplicateDeclErr (RecordDecl rng head' _) prevs
-          | any (\other -> recordDeclCompactHead other == head') others
+          | any (\other -> recordDeclCompactHead other == RecordHead False head') others
           = Just $ parseError rng $ "duplicate record declaration: " <> head'
           | otherwise = Nothing
           where others = map compactRecordDecl prevs ++ imported
@@ -223,32 +325,99 @@ invalidRecordErrs :: [RecordDeclCompact] -> [Reducer Range] -> [Error]
 invalidRecordErrs decls reds
   = concatMap invalidRecordErrorsReducer reds
   where invalidRecordErrorsReducer (Reducer _ input output)
-          = invalidRecordErrorsValue input ++ invalidRecordErrorsValue output
-        invalidRecordErrorsValue (ValuePrimitive _) = []
-        invalidRecordErrorsValue (ValueRecord record) = invalidRecordErrorsRecord record
-        invalidRecordErrorsValue (ValueBind _) = []
-        invalidRecordErrorsRecord record =
-          invalidRecordErrorsRecordIndiv record ++ invalidRecordErrorsRecordChildren record
-        invalidRecordErrorsRecordIndiv (Record rng head' props) =
-          case find (\decl -> recordDeclCompactHead decl == head') decls of
-            Nothing -> [parseError rng $ "undeclared record: " <> head']
-            Just decl
-              | numDeclProps /= numProps -> [ parseError rng
-               $ "record has wrong number of properties: expected "
-              <> pprint numDeclProps
-              <> ", got "
-              <> pprint numProps ]
-              | otherwise -> []
-              where numDeclProps = recordDeclCompactNumProps decl
-                    numProps = length props
-        invalidRecordErrorsRecordChildren = concatMap invalidRecordErrorsValue . recordProps
+           = foldValuesInClause invalidRecordErrorsValue1 input
+          ++ foldValuesInClause invalidRecordErrorsValue1 output
+        invalidRecordErrorsValue1 (ValuePrimitive _) = []
+        invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
+          = case find (\decl -> recordDeclCompactHead decl == head') decls of
+              Nothing -> [parseError rng $ "undeclared record: " <> pprint head']
+              Just decl
+                | numDeclProps /= numProps -> [ parseError rng
+                 $ "record has wrong number of properties: expected "
+                <> pprint numDeclProps
+                <> ", got "
+                <> pprint numProps ]
+                | otherwise -> []
+                where numDeclProps = recordDeclCompactNumProps decl
+                      numProps = length props
+        invalidRecordErrorsValue1 (ValueBind _) = []
+
+bindsInValue1 :: Value Range -> S.Set Int
+bindsInValue1 (ValuePrimitive _) = S.empty
+bindsInValue1 (ValueRecord _) = S.empty
+bindsInValue1 (ValueBind bind) = S.singleton $ bindContent bind
+
+bindsInClause :: ReducerClause Range -> S.Set Int
+bindsInClause = foldValuesInClause bindsInValue1
+
+unboundOutputErrsCovariantValue1 :: S.Set Int -> Value Range -> [Error]
+unboundOutputErrsCovariantValue1 _ (ValuePrimitive _) = []
+unboundOutputErrsCovariantValue1 _ (ValueRecord _) = []
+unboundOutputErrsCovariantValue1 binds (ValueBind (Bind rng idx))
+  | S.member idx binds = []
+  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
+  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
+
+unboundOutputErrsValue :: I.Variance -> Value Range -> [Error]
+unboundOutputErrsValue I.VarianceContravariant (ValuePrimitive _) = []
+unboundOutputErrsValue I.VarianceContravariant (ValueRecord (Record _ head' props))
+  | recordHeadIsFunc head' = concatMap (unboundOutputErrsValue $ I.VarianceCovariant S.empty) props
+  | otherwise = concatMap (unboundOutputErrsValue I.VarianceContravariant) props
+unboundOutputErrsValue I.VarianceContravariant (ValueBind _) = []
+unboundOutputErrsValue (I.VarianceCovariant binds) val
+  = foldValue (unboundOutputErrsCovariantValue1 binds) val
+
+unboundOutputErrsClause :: I.Variance -> ReducerClause Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrsClause variance (ReducerClause _ val groups)
+  = (unboundOutputErrsValue variance val ++) . concat <$> traverse unboundOutputErrsGroup groups
+  where isCovariant
+          = case variance of
+              I.VarianceContravariant -> False
+              I.VarianceCovariant _ -> True
+        unboundOutputErrsGroup group
+          = (unboundOutputErrsGroupProp group ++) <$> unboundOutputErrsGroupReds group
+        unboundOutputErrsGroupProp = concatMap (unboundOutputErrsValue variance) . groupRefProps
+        unboundOutputErrsGroupReds (GroupRef _ idx props) = do
+          groups' <- get
+          let groups'' = V.map (\(group', _, _) -> group') groups'
+              (group, coChecked, contraChecked) = groups' V.! idx
+              checked
+                | isCovariant = coChecked
+                | otherwise = contraChecked
+          if checked then
+            pure []
+          else do
+            let reds = allGroupDefReducers groups'' props group
+                newGroups
+                  | isCovariant = groups' V.// [(idx, (group, True, contraChecked))]
+                  | otherwise = groups' V.// [(idx, (group, coChecked, True))]
+            put newGroups
+            unboundOutputErrs isCovariant reds
+
+unboundOutputErrs1 :: Bool -> Reducer Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrs1 isCovariant (Reducer _ input output)
+    | isCovariant
+    = (++)
+  <$> unboundOutputErrsClause I.VarianceContravariant input
+  <*> unboundOutputErrsClause (I.VarianceCovariant $ bindsInClause input) output
+    | otherwise
+    = (++)
+  <$> unboundOutputErrsClause (I.VarianceCovariant $ bindsInClause output) input
+  <*> unboundOutputErrsClause I.VarianceContravariant output
+
+unboundOutputErrs :: Bool -> [Reducer Range] -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrs isCovariant reds
+  = concat <$> traverse (unboundOutputErrs1 isCovariant) reds
 
 validationErrs :: SessionEnv -> Program Range -> [Error]
-validationErrs env (Program _ decls reds)
+validationErrs env (Program _ decls reds groups)
    = duplicateDeclErrs importedDecls decls
-  ++ invalidRecordErrs allDecls reds
+  ++ invalidRecordErrs allDecls allReds
+  ++ evalState (unboundOutputErrs True reds) groupsVec
   where importedDecls = allImportedDecls env
-        allDecls = map compactRecordDecl decls ++ importedDecls -- TODO add builtins and code spliced
+        allDecls = map compactRecordDecl decls ++ importedDecls
+        allReds = reds ++ concatMap groupDefImmReducers groups
+        groupsVec = V.fromList $ map (, False, False) groups
 
 -- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.
 validate :: SessionRes (Program Range) -> SessionRes (Program Range)

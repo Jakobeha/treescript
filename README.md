@@ -1,11 +1,20 @@
 # TreeScript
 
-Third version / "attempt" of Descript. The other 2 are:
+A language to transform source code from/between different languages.
 
-1. Descript-lang (Haskell)
-2. Descript-ocaml
+```treescript
+objc'for (\i = 0; \i < \n; \i++) \expr' &Env[]: swift'for \i in 0..<\n \expr'
 
-This language used to be called "Descript". It was renamed because TreeScript better describes what it actually does - rename trees - and it sounds similar.
+&Env[];
+---
+TypeOf[\i]: "Int";
+TypeOf[\n]: "Int";
+Modifies[\expr; \i]: False[];
+Modifies[\expr; \n]: False[];
+```
+
+<!--ts-->
+<!--te-->
 
 ## Purpose
 
@@ -33,6 +42,12 @@ TreeScript programs can do more when given a language server with helpful utilit
 Eventually TreeScript could even transform its own syntax trees (with a TreeScript language plugin).
 
 ## How to Use
+
+### Writing Source Code
+
+TODO Describe the language's syntax and semantics
+
+### Running Source Code
 
 - Write TreeScript source code, save it in a `.tscr` file.
 - Run `treescript compile <SRC>.tscr` to compile this into a `.tprg` executable.
@@ -162,7 +177,7 @@ Each AST node corresponds to a record. The head is the created by combining the 
 App App Lambda string "f" App App Var string "f" Number integer 4 Number integer 5 Lambda string "x" Lambda string "y" Lambda string "z" App App Var string "+" Var string "x" App App Var string "-" Var string "z" Var string "y" Number integer 3
 ```
 
-### TreeScript Source Code
+## Compilation
 
 A TreeScript source file is compiled into an executable.
 
@@ -178,42 +193,33 @@ More specifically, it goes through the following steps with the following forms:
 - Compile C code
 - Copy program to path (supplied by command-line argument)
 
+### Source Structure
+
 In the sugar and core phases:
 
-- (As before), a TreeScript source file is a list of record declarations followed by reducers.
+- A TreeScript source file is a list of record declarations followed by group definitions.
 - Each record declaration consists of a (string) head, and a sequence of (string) identifiers which determine # of arguments (currently the identifiers are just for documentation).
-- Each reducer consists of an input value, output value, and a sequence of guards.
-- Each guard consists of an (output value) predicate and (input value) match.
+- Each group definition consists of a group declaration, inherited groups, and reducers.
+- Each group declaration consists of a (string) head, and a sequence of (string) identifiers (these are actually significant).
+- Each reducer consists of an input clause and output clause.
+- Each clause consists of a value and groups.
+  - If an input clause references a group, its reducers are contravariant, so that the input clauses actually conform to the output clause specification and vice versa (then).
+- Each group consists of a (string) head, and a sequence of group properties.
+- Each group property consists of a (string) identifier and value.
 - In the sugar phase, each value is either a primitive, record, code block, or bind.
 - In the core phase, each value is either a primitive, record, or abstraction.
 - Each primitive is either a 32-bit integer, float, or string.
 - Each record consists of a (string) head, a sequence of (value) properties, and a boolean to determine whether its a function.
 - Each code block consists of an alternating sequence of strings and (spliced) output values.
-- In the sugar phase, each bind is a string. Input binds can be empty strings, output binds can't.
-- In the core phase, each bind is an unsigned integer. Input binds can be 0, output binds can't.
+- In the sugar phase, each bind is a string. In covariant groups, input binds can be empty strings, output binds can't. In contravariant groups, output binds can be empty strings, input binds can't.
+- In the core phase, each bind is an unsigned integer. In covariant groups, input binds can be 0, output binds can't. In contravariant groups, output binds can be 0, input binds can't.
 
 Additionally, the sugar phase allows some syntax errors, so it can be parsed context-free:
 
-- A declaration can come after reducers, but this is invalid.
-- Record declarations can contain value instead of string properties, and vice versa (e.g. `Foo[bar, Baz[]]`)
+- A declaration can come after group definitions and reducers, but this is invalid.
+- Record declarations, groups, and records can all contain string, value and group properties (e.g. `Foo[bar, Baz[], qux: 5]`)
 
 The translate phase contains blocks of generated C code, which get spliced into a template to create the complete C project.
-
-## Major Changes from Descript v1 and v2
-
-*TreeScript code is no longer interpreted, it's now compiled into another language.*
-
-As before, there are 2 types of objects - **values** and **reducers**. A program still consists of reducers, but there's no query - all programs read source from `stdin`, transform it, and print it to `stdout`. There are no macros or multiple phases, they're not needed. TreeScript no longer refactors itself directly, and if you want to write code which handles `Add`, `Subtract`, `Multiply`, and `Divide` a common way, you can do reduce these into `Arith[op: ...; left: ...; right: ...]` in the single phase. A program must also declare its records at the top of the file - builtins and source records don't need to be declared.
-
-Primitives are exactly as before.
-
-All record heads are static strings, and records must be declared, like in version #1. Record properties aren't named, and 2 records with the same name must have the same number of properties. "Injections" exist as "functions"
-
-"Matchers" and "paths" are renamed to "binds". Now, they both consist of a single string (desugared into an integer). Input binds can contain the empty string (or integer 0), in which case they're like "any" matchers, but not output binds. Like before, binds and functions should encapsulate all abstraction.
-
-There are no "regular" values - all values are input or output values. Thus, all values have the same specification - a value is either a primitive, record, or bind (or with sugar, a code block).
-
-## Compilation
 
 ### Steps
 
@@ -398,18 +404,14 @@ for (i in 1:5) {
 x <- as.data.frame(y)
 ```
 
-There are edge-cases, e.g. when the input isn't a data frame or `y` is used afterward. These can be fixed with guards.
+There are edge-cases, e.g. when the input isn't a data frame or `y` is used afterward. These can be fixed with groups.
 
 ```treescript
 r'
 for (\i in \iter) {
   \x[[\i]] <- \expr
 }
-' | \i => R_Var[\; \];
-  | \x => R_Var[\; "data.frame"];
-  | #Includes[\iter; \x] => False[];
-  | R_Var[#FreeId[]; "data.list"] => \y
-  : r'
+' &Group[]: r'
 \y <- as.list(\x)
 
 for (\i in \iter) {
@@ -418,6 +420,34 @@ for (\i in \iter) {
 
 \x <- as.data.frame(\y)
 ';
+
+&Group[i; x; iter; y];
+---
+\i: R_Var[\; \];
+\x: R_Var[\; "data.frame"];
+#Includes[\iter; \x]: False[];
+R_Var[#FreeId[]; "data.list"]: \y;
 ```
 
 (example borrowed from [Advanced R](https://adv-r.hadley.nz/names-values.html))
+
+## Relation to Descript
+
+This language used to be called Descript. It was renamed because TreeScript better describes what it actually does - rename trees - and it sounds similar. It's the third version / "attempt" at creating a syntax transformation language. The other 2 attempts are:
+
+1. [Descript-lang (Haskell)](https://bitbucket.org/jakobeha/descript-lang/src/master/)
+2. [Descript-ocaml](https://bitbucket.org/jakobeha/descript-ocaml/src/master/)
+
+### Major Changes from Descript-lang and Descript-ocaml
+
+*TreeScript code is no longer interpreted, it's now compiled into another language.*
+
+As before, there are 2 types of objects - **values** and **reducers**. A program still consists of reducers, but there's no query - all programs read source from `stdin`, transform it, and print it to `stdout`. Reducers are also organized into groups, and reducers can reference groups, which allows abstraction and sort of replaces macros. There are no macros or multiple phases, they're not needed. TreeScript no longer refactors itself directly, and if you want to write code which handles `Add`, `Subtract`, `Multiply`, and `Divide` a common way, you can do reduce these into `Arith[op: ...; left: ...; right: ...]` in the single phase. A program must also declare its records at the top of the file - builtins and source records don't need to be declared.
+
+Primitives are exactly as before.
+
+All record heads are static strings, and records must be declared, like in version #1. Record properties aren't named, and 2 records with the same name must have the same number of properties. "Injections" exist as "functions". Groups are similar to records, but they have named properties, and the names correspond to binds.
+
+"Matchers" and "paths" are renamed to "binds". Now, they both consist of a single string (desugared into an integer). Input binds can contain the empty string (or integer 0), in which case they're like "any" matchers, but not output binds. Like before, binds and functions should encapsulate all abstraction.
+
+There are no "regular" values - all values are input or output values. Thus, all values have the same specification - a value is either a primitive, record, or bind (or with sugar, a code block).

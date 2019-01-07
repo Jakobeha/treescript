@@ -50,6 +50,7 @@ dependencies:
 - mtl
 - neat-interpolation
 - process
+- semigroupoids
 - shelly
 - system-filepath
 - text

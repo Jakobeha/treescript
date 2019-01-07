@@ -8,12 +8,11 @@ module TreeScript.Misc.Loc
   , advanceLoc
   , mkRange
   , singletonRange
-  , boundingRange
   ) where
 
 import TreeScript.Misc.Print
 
-import qualified Data.List.NonEmpty as N
+import Data.Semigroup
 import qualified Data.Text as T
 
 -- | A location in text.
@@ -30,6 +29,16 @@ data Range
   { rangeStart :: Loc -- ^ Location before the first character.
   , rangeEnd :: Loc -- ^ Location after the last character.
   } deriving (Eq, Ord, Read, Show)
+
+-- | The result is the smallest range containing all sub-ranges.
+instance Semigroup Range where
+  Range xStart xEnd <> Range yStart yEnd
+    = Range
+    { rangeStart = min xStart yStart
+    , rangeEnd = max xEnd yEnd
+    }
+  sconcat = foldr1 (<>)
+  stimes _ x = x
 
 instance Printable Loc where
   pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
@@ -76,12 +85,3 @@ singletonRange loc
   { rangeStart = loc
   , rangeEnd = loc
   }
-
--- | The smallest range containing all sub-ranges.
-boundingRange :: N.NonEmpty Range -> Range
-boundingRange = foldr1 boundingRange2
-  where boundingRange2 (Range xStart xEnd) (Range yStart yEnd)
-          = Range
-          { rangeStart = min xStart yStart
-          , rangeEnd = max xEnd yEnd
-          }

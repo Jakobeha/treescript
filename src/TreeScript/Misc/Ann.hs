@@ -12,6 +12,7 @@ module TreeScript.Misc.Ann
   , Annotatable (..)
   , mapAnnd
   , remAnns
+  , (=@=)
   ) where
 
 import GHC.Generics
@@ -62,3 +63,7 @@ mapAnnd f (Annd ann x) = Annd ann $ f x
 -- | Remove all annotations.
 remAnns :: (Annotatable f) => f an -> f ()
 remAnns x = () <$ x
+
+-- | Checks for equality ignoring annotations.
+(=@=) :: (Annotatable f, Eq (f ())) => f an -> f an -> Bool
+x =@= y = remAnns x == remAnns y

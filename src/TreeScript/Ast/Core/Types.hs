@@ -15,10 +15,17 @@ import TreeScript.Misc
 import qualified Data.Text as T
 import GHC.Generics
 
+-- | The type of a record.
+data RecordHead
+  = RecordHead
+  { recordHeadIsFunc :: Bool
+  , recordHeadName :: T.Text
+  } deriving (Eq, Ord, Read, Show)
+
 -- | Declares a type of record but doesn't specifify property values.
 data RecordDeclCompact
   = RecordDeclCompact
-  { recordDeclCompactHead :: T.Text
+  { recordDeclCompactHead :: RecordHead
   , recordDeclCompactNumProps :: Int
   }
 
@@ -41,7 +48,7 @@ data Primitive an
 data Record an
   = Record
   { recordAnn :: an
-  , recordHead :: T.Text
+  , recordHead :: RecordHead
   , recordProps :: [Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -59,18 +66,37 @@ data Value an
   | ValueBind (Bind an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Whether a value or value-related type is input or output.
-data ValueType
-  = ValueTypeInput
-  | ValueTypeOutput
-  deriving (Eq)
+-- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
+data GroupRef an
+  = GroupRef
+  { groupRefAnn :: an
+  , groupRefIdx :: Int
+  , groupRefProps :: [Value an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | The input or output of a reducer.
+data ReducerClause an
+  = ReducerClause
+  { reducerClauseAnn :: an
+  , reducerClauseValue :: Value an
+  , reducerClauseGroups :: [GroupRef an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: Value an
-  , reducerOutput :: Value an
+  , reducerInput :: ReducerClause an
+  , reducerOutput :: ReducerClause an
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a group of reducers, which can be referenced by other reducers.
+data GroupDef an
+  = GroupDef
+  { groupDefAnn :: an
+  , groupDefProps :: [Bind an]
+  , groupDefSupers :: [GroupRef an]
+  , groupDefImmReducers :: [Reducer an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -78,15 +104,17 @@ data Program an
   = Program
   { programAnn :: an
   , programRecordDecls :: [RecordDecl an]
-  , programReducers :: [Reducer an]
+  , programMainReducers :: [Reducer an]
+  , programGroups :: [GroupDef an]
   }
 
 instance (Semigroup an) => Semigroup (Program an) where
-  Program xAnn xDecls xReds <> Program yAnn yDecls yReds
+  Program xAnn xDecls xReds xGroups <> Program yAnn yDecls yReds yGroups
     = Program
     { programAnn = xAnn <> yAnn
     , programRecordDecls = xDecls <> yDecls
-    , programReducers = xReds <> yReds
+    , programMainReducers = xReds <> yReds
+    , programGroups = xGroups <> yGroups
     }
 
 instance (Monoid an) => Monoid (Program an) where
@@ -94,8 +122,16 @@ instance (Monoid an) => Monoid (Program an) where
     = Program
     { programAnn = mempty
     , programRecordDecls = mempty
-    , programReducers = mempty
+    , programMainReducers = mempty
+    , programGroups = mempty
     }
+
+instance Printable RecordHead where
+  pprint (RecordHead isFunc name)
+    = printIsFunc <> name
+    where printIsFunc
+            | isFunc = "#"
+            | otherwise = T.empty
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
@@ -108,7 +144,7 @@ instance Printable (Primitive an) where
 
 instance Printable (Record an) where
   pprint (Record _ head' props)
-    = head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
+    = pprint head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
 
 instance Printable (Bind an) where
   pprint (Bind _ idx) = "\\" <> pprint idx
@@ -118,26 +154,64 @@ instance Printable (Value an) where
   pprint (ValueRecord record) = pprint record
   pprint (ValueBind bind) = pprint bind
 
+instance Printable (GroupRef an) where
+  pprint (GroupRef _ head' props)
+    = "&" <> pprint head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
+
+instance Printable (ReducerClause an) where
+  pprint (ReducerClause _ val groups)
+    = T.intercalate " " $ pprint val : map pprint groups
+
 instance Printable (Reducer an) where
   pprint (Reducer _ input output)
     = pprint input <> ": " <> pprint output <> ";"
 
 instance Printable (Program an) where
-  pprint (Program _ decls reds)
-    = T.unlines $ map pprint decls ++ map pprint reds
+  pprint (Program _ decls reds groups)
+    = T.unlines $ map pprint decls ++ map pprint reds ++ zipWith printGroupDef [0..] groups
+
+printGroupDef :: Int -> GroupDef an -> T.Text
+printGroupDef head' (GroupDef _ props supers reds)
+  = T.unlines $ printDecl : map pprint reds
+  where printDecl
+           = "&"
+          <> pprint head'
+          <> "["
+          <> T.intercalate "; " (map pprint props)
+          <> "]"
+          <> printSupers
+          <> ";\n---"
+        printSupers
+          | null supers = T.empty
+          | otherwise = ": " <> T.intercalate " " (map pprint supers)
+
+mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
+mkBuiltinDecl isFunc head' numProps
+  = RecordDeclCompact
+  { recordDeclCompactHead
+      = RecordHead
+      { recordHeadIsFunc = isFunc
+      , recordHeadName = head'
+      }
+  , recordDeclCompactNumProps = numProps
+  }
 
 builtinDecls :: [RecordDeclCompact]
 builtinDecls =
-  [ RecordDeclCompact "Unit" 0
-  , RecordDeclCompact "True" 0
-  , RecordDeclCompact "False" 0
-  , RecordDeclCompact "Nil" 0
-  , RecordDeclCompact "Cons" 2
+  [ mkBuiltinDecl False "Unit" 0
+  , mkBuiltinDecl False "True" 0
+  , mkBuiltinDecl False "False" 0
+  , mkBuiltinDecl False "Nil" 0
+  , mkBuiltinDecl False "Cons" 2
   ]
 
 compactRecordDecl :: RecordDecl an -> RecordDeclCompact
 compactRecordDecl (RecordDecl _ head' props)
   = RecordDeclCompact
-  { recordDeclCompactHead = head'
+  { recordDeclCompactHead
+      = RecordHead
+      { recordHeadIsFunc = False
+      , recordHeadName = head'
+      }
   , recordDeclCompactNumProps = length props
   }

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Data types for errors.
@@ -30,7 +31,7 @@ import TreeScript.Misc.Print
 
 import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.Reader.Class
+import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Maybe
 import qualified Data.Text as T
@@ -149,6 +150,12 @@ instance (Applicative u) => MonadResult (ResultT u) where
   tellErrors = ResultT . pure . tellErrors
   overErrors f (ResultT x) = ResultT $ overErrors f <$> x
   downgradeFatal (ResultT x) = ResultT $ downgradeFatal <$> x
+
+instance (Monad u, MonadResult u) => MonadResult (ReaderT r u) where
+  mkFail = lift . mkFail
+  tellErrors = lift . tellErrors
+  overErrors = mapReaderT . overErrors
+  downgradeFatal x = ReaderT $ downgradeFatal . runReaderT x
 
 instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
   mkFail = lift . mkFail

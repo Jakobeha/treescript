@@ -6,7 +6,7 @@ errors:
 - 'while extracting - at 7:1-7:8 - record has wrong number of properties: expected 0, got 1'
 - 'while extracting - at 8:1-8:8 - record has wrong number of properties: expected 1, got 0'
 - 'while extracting - at 8:6-8:7 - expected value, got lowercase symbol'
-- 'while extracting - at 8:14-8:16 - output bind must have the same identifier as an input bind'
+- 'while extracting - at 8:14-8:16 - bind in non-matching position has unassigned label'
 - 'while extracting - at 9:21-9:54 - undeclared record: Subtract'
 - 'while extracting - at 9:30-9:40 - undeclared record: Neg'
 - 'while extracting - at 9:42-9:53 - undeclared record: Neg'

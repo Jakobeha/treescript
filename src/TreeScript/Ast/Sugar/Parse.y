@@ -11,6 +11,7 @@ import TreeScript.Ast.Sugar.Types
 import TreeScript.Misc
 
 import qualified Data.List.NonEmpty as N
+import Data.Semigroup
 }
 
 %name parseSequence
@@ -18,9 +19,10 @@ import qualified Data.List.NonEmpty as N
 %monad { Result }
 %tokentype { L.Lexeme Range }
 %token
-  '=>' { L.LexemePunc (L.PuncEqArrow $$) }
-  '|' { L.LexemePunc (L.PuncVertLine $$) }
+  '---' { L.LexemePunc (L.PuncBigSeparator $$) }
+  '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
+  '&' { L.LexemePunc (L.PuncAnd $$) }
   ':' { L.LexemePunc (L.PuncColon $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }
@@ -41,18 +43,30 @@ import qualified Data.List.NonEmpty as N
 %%
 
 Program : eof { Program $1 [] }
-        | NonEmptyProgram eof { Program (boundingRange $ $2 N.:| map getAnn $1) (reverse $1) }
+        | NonEmptyProgram eof { Program (sconcat $ $2 N.:| map getAnn $1) (reverse $1) }
         ;
 NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
 TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          | Reducer { TopLevelReducer $1 }
+         | GroupDecl { TopLevelGroupDecl $1 }
          ;
-RecordDecl : Record '.' { RecordDecl (boundingRange [getAnn $1, $2]) $1 }
+RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Reducer : Value ':' Value ';' { Reducer (boundingRange [getAnn $1, $2, getAnn $3, $4]) $1 $3 }
+Reducer : ReducerClause ':' ReducerClause ';' { Reducer (getAnn $1 <> $2 <> getAnn $3 <> $4) $1 $3 }
         ;
+ReducerClause : Value Groups { ReducerClause (sconcat $ getAnn $1 N.:| map getAnn $2) $1 (reverse $2) }
+              ;
+GroupDecl : Group ';' '---' { GroupDecl (getAnn $1 <> $2 <> $3) $1 [] }
+          | Group ':' NonEmptyGroups ';' '---' { GroupDecl (sconcat $ getAnn $1 N.<| $2 N.<| $4 N.<| $5 N.:| map getAnn $3) $1 (reverse $3) }
+          ;
+Groups : { [] }
+       | NonEmptyGroups { $1 }
+       ;
+NonEmptyGroups : Group { [$1] }
+               | Groups Group { $2 : $1 }
+               ;
 Value : Primitive { ValuePrimitive $1 }
       | Record { ValueRecord $1 }
       | Bind { ValueBind $1 }
@@ -62,26 +76,33 @@ Primitive : int { PrimInteger (getAnn $1) (annd $1) }
           | float { PrimFloat (getAnn $1) (annd $1) }
           | string { PrimString (getAnn $1) (annd $1) }
           ;
-Record : UpperSym '[' ']' { Record (boundingRange [getAnn $1, $2, $3]) $1 [] }
-       | UpperSym '[' NonEmptyGenProperties ']' { Record (boundingRange $ (getAnn $1) N.<| $2 N.<| $4 N.:| map getAnn $3) $1 (reverse $3) }
+Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) False $1 (annd $2) }
+       | '#' UpperSym GenProperties { Record ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
        ;
+Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) $2 (annd $3) }
+      ;
+GenProperties : '[' ']' { Annd ($1 <> $2) [] }
+              | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }
 NonEmptyGenProperties : GenProperty { [$1] }
                       | NonEmptyGenProperties ';' GenProperty { $3 : $1 }
                       ;
 GenProperty : LowerSym { GenPropertyDecl $1 }
-            | Value { GenProperty $1 }
+            | Value { GenPropertyRecord $1 }
+            | GroupProperty { GenPropertyGroup $1 }
             ;
+GroupProperty : LowerSym ':' Value { GroupProperty (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
+              ;
 Bind : '\\' { Bind $1 Nothing }
-     | '\\' LowerSym { Bind (boundingRange [$1, getAnn $2]) (Just $2) }
+     | '\\' LowerSym { Bind ($1 <> getAnn $2) (Just $2) }
      | splicedBind { Bind (getAnn $1) (fmap (Symbol (getAnn $1)) (annd $1)) }
      ;
-SpliceCode : LowerSym SpliceText { SpliceCode (boundingRange [getAnn $1, getAnn $2]) $1 $2 }
+SpliceCode : LowerSym SpliceText { SpliceCode (getAnn $1 <> getAnn $2) $1 $2 }
            ;
 SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
-           | codeStart Value SpliceTextTail { SpliceTextCons (boundingRange [getAnn $1, getAnn $2, getAnn $3]) (annd $1) $2 $3 }
+           | codeStart Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
            ;
 SpliceTextTail : codeEnd { SpliceTextNil (getAnn $1) (annd $1) }
-               | codeMiddle Value SpliceTextTail { SpliceTextCons (boundingRange [getAnn $1, getAnn $2, getAnn $3]) (annd $1) $2 $3 }
+               | codeMiddle Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
                ;
 LowerSym : lowerSym { Symbol (getAnn $1) (annd $1) }
          ;
