@@ -8,14 +8,14 @@
 #include "misc.h"
 #include "reduce.h"
 
-bool reduce_nested(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x) {
+bool reduce_nested(surface_reducer reduce_surface, const match_arr in_matches, value* x) {
   value in = *x;
   if (in.type == RECORD) {
     value_record in_record = in.as_record;
     if (strings_equal(in_record.head, "E")) {
       *x = in_record.props[0];
       free(in_record.props);
-      return reduce_aux(reduce_surface, in_matches, x);
+      return reduce_aux(reduce_surface, REDUCE_STANDARD, in_matches, x);
     } else {
       bool reduced = false;
       for (int i = 0; i < in_record.num_props; i++) {
@@ -30,7 +30,7 @@ bool reduce_nested(bool (*reduce_surface)(const match_arr in_matches, value* x),
   }
 }
 
-bool reduce_children(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x) {
+bool reduce_children(surface_reducer reduce_surface, const match_arr in_matches, value* x) {
   value* in_props = malloc(sizeof(value) * 1);
   in_props[0] = *x;
   value in = {
@@ -42,9 +42,9 @@ bool reduce_children(bool (*reduce_surface)(const match_arr in_matches, value* x
     }
   };
 
-  if (reduce_surface(in_matches, &in)) {
+  if (reduce_surface(REDUCE_EVALCTX, in_matches, &in)) {
     *x = in;
-    return reduce_nested(reduce_surface, in_matches, x);
+    return true;
   } else {
     return false;
   }
@@ -52,12 +52,14 @@ bool reduce_children(bool (*reduce_surface)(const match_arr in_matches, value* x
 
 // \reduce_extras
 
-bool reduce_main(const match_arr in_matches, value* x) {
+bool reduce_main(reduce_type type, const match_arr in_matches, value* x) {
   // \reduce_main
 }
 
-bool reduce_aux(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x) {
-  return reduce_surface(in_matches, x) || reduce_children(reduce_surface, in_matches, x);
+bool reduce_aux(surface_reducer reduce_surface, reduce_type type, const match_arr in_matches, value* x) {
+  return
+    reduce_surface(type, in_matches, x) ||
+    (type == REDUCE_STANDARD && reduce_children(reduce_surface, in_matches, x));
 }
 
 void reduce(value* x) {
@@ -65,5 +67,5 @@ void reduce(value* x) {
   for (int i = 0; i < MAX_NUM_BINDS; i++) {
     matches[i].is_set = false;
   }
-  while (reduce_aux(reduce_main, matches, x)) { ; }
+  while (reduce_aux(reduce_main, REDUCE_STANDARD, matches, x)) { ; }
 }

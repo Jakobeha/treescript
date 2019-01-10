@@ -3,9 +3,9 @@
 A language to transform source code from/between different languages.
 
 ```treescript
-objc'for (\i = 0; \i < \n; \i++) \expr' &Env[]: swift'for \i in 0..<\n \expr'
+objc'for (\i = 0; \i < \n; \i++) \expr' &Env[]: swift'for \i in 0..<\n \expr';
 
-&Env[];
+&Env[].
 ---
 TypeOf[\i]: "Int";
 TypeOf[\n]: "Int";
@@ -45,49 +45,139 @@ Eventually TreeScript could even transform its own syntax trees (with a TreeScri
 
 ### Writing Source Code
 
-A TreeScript program is made up of **reducers**. When the program is transforming other source code, a reducer takes a specific block of code and replaces it with another block of code.
+A TreeScript program consists of **reducers** (syntax - `<input>: <output>;`). A reducer takes a specific block of code and replaces it with another block of code.
 
-```treescript
-c'int a = 2 + 2;': c'int a = 4;'
-```
+> ```treescript
+> r'print("Hello")': r'cat("World")';
+> ```
+>
+> The above program transforms:
+>
+> ```r
+> print("Hello")
+> print("Hi")
+> print("Hello")
+> ```
+>
+> into
+>
+> ```r
+> cat("World")
+> print("Hi")
+> cat("World")
+> ```
 
-This is a full program. It transforms
+A reducer can be abstracted with **binds** (syntax - `\<term>`), so it can transform code of a more general form.
 
-```c
-int foo() {
-  int a = 2 + 2;
-  int b = 2 + 2;
-  int c = 4 + 5;
-  int d = b + 7;
-  return c + d;
-}
+> ```treescript
+> r'print(\msg)': r'cat(\msg)';
+> ```
+>
+> The above program transforms:
+>
+> ```r
+> print("Hello")
+> print("Hola")
+> print("Bonjour")
+> ```
+>
+> into
+>
+> ```r
+> cat("Hello")
+> cat("Hola")
+> cat("Bonjour")
+> ```
 
-void bar(int x) {
-  int a = 2 + 2;
-  int b = a + x;
-}
-```
+Internally, code snippets are represented by **values** - every value is either a **primitive** (number or string, e.g. `"foo"`) or **records** (syntax - `<name>[<property>; ...]`).
 
-into
+> ```treescript
+> r'print(\msg)': r'cat(\msg)';
+> ```
+>
+> This program is actually desugared into:
+>
+> ```treescript
+> R_Call[R_Symbol["print"]; Cons[\msg; Nil[]]]: R_Call[R_Symbol["cat"]; Cons[\msg; Nil[]]];
+> ```
 
-```c
-int foo() {
-  int a = 4;
-  int b = 2 + 2;
-  int c = 4 + 5;
-  int d = b + 7;
-  return c + d;
-}
+You can declare your own helper records, which act as intermediate forms while transforming code.
 
-void bar(int x) {
-  int a = 4;
-  int b = a + x;
-}
-```
+> ```treescript
+> Print[msg].
+>
+> r'print(\msg)': Print[\msg];
+> r'write("stdin", \msg)': Print[\msg];
+> Print["Hello"]: r'cat("World")';
+> Print[\msg]: r'cat(\msg)';
+> ```
+>
+> The above program transforms:
+>
+> ```r
+> print("Hello")
+> print("Hola")
+> write("stdin", "Bonjour")
+> write("stdin", "Hello")
+> ```
+>
+> into
+>
+> ```r
+> cat("World")
+> cat("Hola")
+> cat("Bonjour")
+> cat("World")
+> ```
 
-A reducer can be abstracted with **binds**, so it can transform
+One thing to note is that *reducers won't automatically transform nested statements (e.g. statements in functions)*. You need to define **evaluation reducers** (syntax - `E[<input>]: <output>`) to describe which nested statements to transform.
 
-TODO Describe the language's syntax and semantics
+> ```treescript
+> r'print(\msg)': r'cat(\msg)';
+> ```
+>
+> The above program transforms:
+>
+> ```r
+> print("Hello")
+>
+> foo <- function() {
+>   print("World")
+> }
+> foo()
+> ```
+>
+> into
+>
+> ```r
+> cat("Hello")
+>
+> foo <- function() {
+>   print("World")
+> }
+> foo()
+> ```
+>
+> Notice that the second `print` *isn't* transformed. To fix this, define an evaluation reducer:
+>
+> ```treescript
+> r'print(\msg)': r'cat(\msg)';
+> E[r'\x <- \y']: r'\x <- \(E[\y])';
+> E[r'function() { \stmt }']: r'function() { \(E[\stmt]) }';
+> ```
+>
+> Now the program correctly transforms the source code into
+>
+> ```r
+> cat("Hello")
+>
+> foo <- function() {
+>   cat("World")
+> }
+> foo()
+> ```
+
+TODO Describe groups
 
 ### Running Source Code
 

@@ -24,6 +24,9 @@
 				},
 				{
 					"include": "#function"
+				},
+				{
+					"include": "#group"
 				}
 			]
 		},
@@ -48,6 +51,10 @@
 			"name": "support.class.treescript",
 			"match": "#([A-Z]\\w*)"
 		},
+		"group": {
+			"name": "support.class.treescript",
+			"match": "&([A-Z]\\w*)"
+		},
 		"general": {
 			"patterns": [
 				{
@@ -68,7 +75,7 @@
 			"patterns": [
 				{
 					"name": "meta.target.r.treescript",
-					"begin": "(r')|(\\))",
+					"begin": "(r')",
 					"end": "(')|(\\\\\\()",
 					"captures": {
 						"1": {
@@ -99,7 +106,7 @@
 				},
 				{
 					"name": "meta.target.scheme.treescript",
-					"begin": "(scheme')|(\\))",
+					"begin": "(scheme')",
 					"end": "(')|(\\\\\\()",
 					"captures": {
 						"1": {
@@ -184,7 +191,7 @@
 		},
 		"punctuation": {
 			"name": "keyword.operator.treescript",
-			"match": "=>|[?:=.;|]"
+			"match": "---|[?:=.;|]"
 		}
 	}
 }

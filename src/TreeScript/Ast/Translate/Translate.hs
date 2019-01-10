@@ -266,7 +266,7 @@ applyGroupExpr groupDefs matches outRef groupRef = do
       idxEncoded = pprint idx
   tell [(idx, stmts)]
   put $ idx + 1
-  pure (idx, [text|while (reduce_aux(reduce_extra_$idxEncoded, $matches, $outRef)) { ; }|])
+  pure (idx, [text|while (reduce_aux(reduce_extra_$idxEncoded, REDUCE_STANDARD, $matches, $outRef)) { ; }|])
 
 produceGroupExpr :: V.Vector (GroupDef an) -> T.Text -> GroupRef an -> ExtraFuncs an T.Text
 produceGroupExpr groupDefs out = fmap snd . applyGroupExpr groupDefs "matches" ("&" <> out)
@@ -283,22 +283,34 @@ reduceGroupExpr groupDefs groupRef = do
   let idxEncoded = pprint idx
   pure
     [text|
-      if (reduce_aux(reduce_extra_$idxEncoded, in_matches, x)) {
+      if (reduce_aux(reduce_extra_$idxEncoded, type, in_matches, x)) {
         //printf("<Produce extra %d> ", $idxEncoded);
         $applyGroup
         return true;
       }|]
 
-reduceReducerExpr :: V.Vector (GroupDef an) -> Reducer an -> ExtraFuncs an T.Text
-reduceReducerExpr groups (Reducer _ input output) = do
+reduceReducerExpr :: V.Vector (GroupDef an) -> T.Text -> Reducer an -> ExtraFuncs an T.Text
+reduceReducerExpr groups funcName (Reducer _ input output) = do
   produceOut <- produceClauseExpr groups "out" output
   let suc
         = [text|
             //printf("<Produce!> ");
             $produceOut
-            free_value(in);
-            *x = out;
-            return true;|]
+            switch (type) {
+            case REDUCE_STANDARD:
+              free_value(in);
+              *x = out;
+              return true;
+            case REDUCE_EVALCTX:
+              if (reduce_nested(reduce_$funcName, in_matches, &out)) {
+                free_value(in);
+                *x = out;
+                return true;
+              } else {
+                free_value(out);
+                break;
+              }
+            }|]
   consumeAndProduce <- consumeClauseExpr groups suc "in" input
   pure
     [text|
@@ -307,25 +319,25 @@ reduceReducerExpr groups (Reducer _ input output) = do
       }
       $consumeAndProduce|]
 
-reduceStatementExpr :: V.Vector (GroupDef an) -> Statement an -> ExtraFuncs an T.Text
-reduceStatementExpr groupDefs (StatementGroup groupRef) = reduceGroupExpr groupDefs groupRef
-reduceStatementExpr groups (StatementReducer red) = reduceReducerExpr groups red
+reduceStatementExpr :: V.Vector (GroupDef an) -> T.Text -> Statement an -> ExtraFuncs an T.Text
+reduceStatementExpr groupDefs _ (StatementGroup groupRef) = reduceGroupExpr groupDefs groupRef
+reduceStatementExpr groups funcName (StatementReducer red) = reduceReducerExpr groups funcName red
 
 translateExtraReduceSurface :: V.Vector (GroupDef an) -> Int -> [Statement an] -> WriterT T.Text (State Int) ()
 translateExtraReduceSurface groups idx stmts = do
   let idxEncoded = pprint idx
-  body <- translateReduceSurface groups stmts
+  body <- translateReduceSurface groups ("extra_" <> idxEncoded) stmts
   tell
     [text|
-      bool reduce_extra_$idxEncoded(const match_arr in_matches, value* x) {
+      bool reduce_extra_$idxEncoded(reduce_type type, const match_arr in_matches, value* x) {
         //printf("<Reduce extra %d> ", $idxEncoded);
         $body
       }
     |]
 
-translateReduceSurface :: V.Vector (GroupDef an) -> [Statement an] -> WriterT T.Text (State Int) T.Text
-translateReduceSurface groups stmts = do
-  (reduceExprs, extraReduces) <- lift $ runWriterT $ T.unlines <$> traverse (reduceStatementExpr groups) stmts
+translateReduceSurface :: V.Vector (GroupDef an) -> T.Text -> [Statement an] -> WriterT T.Text (State Int) T.Text
+translateReduceSurface groups funcName stmts = do
+  (reduceExprs, extraReduces) <- lift $ runWriterT $ T.unlines <$> traverse (reduceStatementExpr groups funcName) stmts
   let body
         = [text|
             value in = *x;
@@ -341,7 +353,7 @@ translateReduceSurfaces :: Program an -> SessionRes (T.Text, T.Text)
 translateReduceSurfaces prog = do
   let mainStmts = programMainStatements prog
       groups = V.fromList $ programGroups prog
-  pure $ (`evalState` 0) $ runWriterT $ translateReduceSurface groups mainStmts
+  pure $ (`evalState` 0) $ runWriterT $ translateReduceSurface groups "main" mainStmts
 
 -- | Generates C code from a @Core@ AST.
 translate :: Program an -> SessionRes Translated

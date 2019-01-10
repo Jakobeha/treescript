@@ -4,10 +4,17 @@
 #include <stdbool.h>
 #include "types.h"
 
-bool reduce_nested(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x);
-bool reduce_children(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x);
-bool reduce_main(const match_arr in_matches, value* x);
-bool reduce_aux(bool (*reduce_surface)(const match_arr in_matches, value* x), const match_arr in_matches, value* x);
+typedef enum {
+  REDUCE_STANDARD,
+  REDUCE_EVALCTX
+} reduce_type;
+
+typedef bool (*surface_reducer)(reduce_type type, const match_arr in_matches, value* x);
+
+bool reduce_nested(surface_reducer reduce_surface, const match_arr in_matches, value* x);
+bool reduce_children(surface_reducer reduce_surface, const match_arr in_matches, value* x);
+bool reduce_main(reduce_type type, const match_arr in_matches, value* x);
+bool reduce_aux(surface_reducer reduce_surface, reduce_type type, const match_arr in_matches, value* x);
 void reduce(value* x);
 
 #endif
