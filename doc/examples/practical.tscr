@@ -8,7 +8,6 @@ for (\i in \iter) {
 
   for (\i in \iter) {
     y[[\i]] <- \expr
-    cat("Foo")
   }
 
   \x <<- as.data.frame(y)

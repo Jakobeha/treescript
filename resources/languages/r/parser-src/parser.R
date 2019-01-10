@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 # TODO Fix handling dots (specifically cases like (foo . (bar)))
 library(stringr)
+library(stringi)
 library(rlang)
 options(useFancyQuotes = FALSE)
 
@@ -16,8 +17,7 @@ writeNode <- function(node) {
 }
 writeString <- function(expr) {
   writeWord("string")
-  # From https://stackoverflow.com/questions/14836754/is-there-an-r-function-to-escape-a-string-for-regex-characters
-  writeWord(dQuote(str_replace_all(expr, "([\"\\\\])", "\\\\\\1")))
+  writeWord(dQuote(stri_escape_unicode(expr)))
 }
 writeSeparator <- function() {
   cat("\n")
