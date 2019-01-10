@@ -52,7 +52,9 @@ spec = do
   let forExampleFile :: (TestFile -> IO ()) -> IO ()
       forExampleFile f =
         forM_ exampleFiles $ \file ->
-          denoteFailIn ("file " <> fileName (testFileSrcFile file)) $ f file
+          unless (testInfoSkip $ testFileTestInfo file) $
+            denoteFailIn ("file " <> fileName (testFileSrcFile file)) $
+              f file
       forExampleIntermediateIn :: M.Map TestFile (MVar (Maybe a)) -> (TestFile -> a -> IO ()) -> IO ()
       forExampleIntermediateIn xVars f =
         forM_ (M.toAscList xVars) $ \(file, xVar) ->
@@ -176,7 +178,7 @@ spec = do
             assertProperFailure testInfo execRes
     describe "The compiled executable" $
       it "Transforms source code" $ \_ ->
-        forExampleExec $ \(TestFile _ _ execTests) execPath ->
+        forExampleExec $ \(TestFile _ testInfo execTests) execPath ->
           forM_ execTests $ \(ExecTest name inTxt inExt outTxt outExt) -> denoteFailIn ("executable test " <> name) $ do
             let execProg
                   = CmdProgram
@@ -187,9 +189,12 @@ spec = do
               inAstData <- codeToAstData inTxt inExt
               outAstData <- runCmdProgram execProg inAstData
               astDataToCode outAstData outExt
-            case progOutRes of
-              ResultFail progErr ->
-                assertFailureText $ pprint progErr
-              Result progErrs progOutTxt -> do
-                assertNoErrors progErrs
-                T.strip progOutTxt `shouldBe` T.strip outTxt
+            if name `elem` testInfoCantRun testInfo then
+              assertProperFailure testInfo progOutRes
+            else
+              case progOutRes of
+                ResultFail progErr ->
+                  assertFailureText $ pprint progErr
+                Result progErrs progOutTxt -> do
+                  assertNoErrors progErrs
+                  T.strip progOutTxt `shouldBe` T.strip outTxt

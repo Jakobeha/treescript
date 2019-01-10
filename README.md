@@ -45,6 +45,48 @@ Eventually TreeScript could even transform its own syntax trees (with a TreeScri
 
 ### Writing Source Code
 
+A TreeScript program is made up of **reducers**. When the program is transforming other source code, a reducer takes a specific block of code and replaces it with another block of code.
+
+```treescript
+c'int a = 2 + 2;': c'int a = 4;'
+```
+
+This is a full program. It transforms
+
+```c
+int foo() {
+  int a = 2 + 2;
+  int b = 2 + 2;
+  int c = 4 + 5;
+  int d = b + 7;
+  return c + d;
+}
+
+void bar(int x) {
+  int a = 2 + 2;
+  int b = a + x;
+}
+```
+
+into
+
+```c
+int foo() {
+  int a = 4;
+  int b = 2 + 2;
+  int c = 4 + 5;
+  int d = b + 7;
+  return c + d;
+}
+
+void bar(int x) {
+  int a = 4;
+  int b = a + x;
+}
+```
+
+A reducer can be abstracted with **binds**, so it can transform
+
 TODO Describe the language's syntax and semantics
 
 ### Running Source Code

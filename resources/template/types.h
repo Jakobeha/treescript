@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#define MAX_NUM_BINDS 1 // \max_num_binds
+
 struct value;
 
 typedef enum {
@@ -27,5 +29,12 @@ typedef struct value {
     value_record as_record;
   };
 } value;
+
+typedef struct {
+  bool is_set;
+  value value;
+} match;
+
+typedef match match_arr[MAX_NUM_BINDS];
 
 #endif

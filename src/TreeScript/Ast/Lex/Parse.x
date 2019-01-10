@@ -26,6 +26,7 @@ $hexit = [0-9 A-F a-f]
 $large = [A-Z \xc0-\xd6 \xd8-\xde]
 $small = [a-z \xdf-\xf6 \xf8-\xff \_]
 $alpha = [$small $large]
+$alphaNum = [$alpha $digit]
 $asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\(\)\,\;\[\]\`\{\}]
 $unicodeSymbol = [] -- TODO
 $symbol = [$asciiSymbol $unicodeSymbol]
@@ -35,12 +36,12 @@ $stringChar = [$white $digit $alpha $symbol]
 @decimal = $digit+
 @octal = $octit+
 @hexadecimal = $hexit+
-@integer = '-'? (@decimal | [oO] @octal | [xX] @hexadecimal)
+@integer = '-'? (@decimal | 0 [oO] @octal | 0 [xX] @hexadecimal)
 @decimalSuffix = '.' $digit*
 @exponentSuffix = [eE] '-'? @decimal
 @float = '-'? @decimal @decimalSuffix? @exponentSuffix?
-@lowerSymbol = $small $alpha*
-@upperSymbol = $large $alpha*
+@lowerSymbol = $small $alphaNum*
+@upperSymbol = $large $alphaNum*
 
 $control = [$large \@\[\\\]\^\_]
 @ascii = \^ $control | NUL | SOH | STX | ETX | EOT | ENQ | ACK | BEL | BS

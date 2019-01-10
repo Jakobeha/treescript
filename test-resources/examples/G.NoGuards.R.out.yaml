@@ -1,3 +1,2 @@
-desugars?: false
-errors:
-- "while extracting - at 1:1-1:2 - no (valid) plugin for language with extension 'r'"
+cantRun:
+- basic

@@ -3,11 +3,14 @@ for (\i in \iter) {
   \x[[\i]] <- \expr
 }
 ': r'
-y <- as.list(\x)
+{
+  y <- as.list(\x)
 
-for (\i in \iter) {
-  y[[\i]] <- \expr
+  for (\i in \iter) {
+    y[[\i]] <- \expr
+    cat("Foo")
+  }
+
+  \x <<- as.data.frame(y)
 }
-
-\x <- as.data.frame(y)
 ';

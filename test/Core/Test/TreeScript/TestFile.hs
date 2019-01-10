@@ -37,7 +37,8 @@ data TestFile
 
 data TestInfo
   = TestInfo
-  { testInfoPrintLex :: Bool
+  { testInfoSkip :: Bool
+  , testInfoPrintLex :: Bool
   , testInfoPrintSugar :: Bool
   , testInfoPrintCore :: Bool
   , testInfoPrintTranslate :: Bool
@@ -46,13 +47,15 @@ data TestInfo
   , testInfoIsDesugarable :: Bool
   , testInfoIsTranslatable :: Bool
   , testInfoIsCompilable :: Bool
+  , testInfoCantRun :: [T.Text]
   , testInfoFatalErrorMsg :: T.Text
   , testInfoErrorMsgs :: [T.Text]
   } deriving (Eq, Ord, Read, Show)
 
 instance FromJSON TestInfo where
   parseJSON = withObject "TestInfo" $ \x -> TestInfo
-    <$> x .:? "printLex?" .!= False
+    <$> x .:? "skip?" .!= False
+    <*> x .:? "printLex?" .!= False
     <*> x .:? "printSugar?" .!= False
     <*> x .:? "printCore?" .!= False
     <*> x .:? "printTranslate?" .!= False
@@ -61,6 +64,7 @@ instance FromJSON TestInfo where
     <*> x .:? "desugars?" .!= True
     <*> x .:? "translates?" .!= True
     <*> x .:? "compiles?" .!= True
+    <*> x .:? "cantRun" .!= []
     <*> x .:? "error" .!= ""
     <*> x .:? "errors" .!= []
 

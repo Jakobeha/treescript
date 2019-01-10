@@ -113,19 +113,17 @@ data Reducer an
   , reducerOutput :: ReducerClause an
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Defines a group which will consist of the following reducers.
-data GroupDecl an
-  = GroupDecl
-  { groupDeclAnn :: an
-  , groupDeclGroup :: Group an
-  , groupDeclSupers :: [Group an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+-- | Performs some transformations on values.
+data Statement an
+  = StatementGroup (Group an)
+  | StatementReducer (Reducer an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Not nested in anything other than the program.
 data TopLevel an
   = TopLevelRecordDecl (RecordDecl an)
-  | TopLevelReducer (Reducer an)
-  | TopLevelGroupDecl (GroupDecl an)
+  | TopLevelStatement (Statement an)
+  | TopLevelGroupDecl (Group an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -193,19 +191,16 @@ instance TreePrintable ReducerClause where
 
 instance TreePrintable Reducer where
   treePrint par _ (Reducer _ input output)
-    = par input <> ": " <> par output <> ";"
+    = par input <> ": " <> par output
 
-instance TreePrintable GroupDecl where
-  treePrint par _ (GroupDecl _ group sups)
-    = par group <> printSups <> ";\n---"
-    where printSups
-            | null sups = mempty
-            | otherwise = ": " <> mintercalate " " (map par sups)
+instance TreePrintable Statement where
+  treePrint par _ (StatementGroup group) = par group <> ";"
+  treePrint par _ (StatementReducer red) = par red <> ";"
 
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelReducer red) = par red
-  treePrint par _ (TopLevelGroupDecl decl) = par decl
+  treePrint par _ (TopLevelStatement stmt) = par stmt
+  treePrint par _ (TopLevelGroupDecl group) = par group <> ".\n---"
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels

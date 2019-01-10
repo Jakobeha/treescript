@@ -90,13 +90,18 @@ data Reducer an
   , reducerOutput :: ReducerClause an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Defines a group of reducers, which can be referenced by other reducers.
+-- | Performs some transformations on values.
+data Statement an
+  = StatementGroup (GroupRef an)
+  | StatementReducer (Reducer an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefProps :: [Bind an]
-  , groupDefSupers :: [GroupRef an]
-  , groupDefImmReducers :: [Reducer an]
+  , groupDefStatements :: [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -104,16 +109,16 @@ data Program an
   = Program
   { programAnn :: an
   , programRecordDecls :: [RecordDecl an]
-  , programMainReducers :: [Reducer an]
+  , programMainStatements :: [Statement an]
   , programGroups :: [GroupDef an]
   }
 
 instance (Semigroup an) => Semigroup (Program an) where
-  Program xAnn xDecls xReds xGroups <> Program yAnn yDecls yReds yGroups
+  Program xAnn xDecls xStmts xGroups <> Program yAnn yDecls yStmts yGroups
     = Program
     { programAnn = xAnn <> yAnn
     , programRecordDecls = xDecls <> yDecls
-    , programMainReducers = xReds <> yReds
+    , programMainStatements = xStmts <> yStmts
     , programGroups = xGroups <> yGroups
     }
 
@@ -122,7 +127,7 @@ instance (Monoid an) => Monoid (Program an) where
     = Program
     { programAnn = mempty
     , programRecordDecls = mempty
-    , programMainReducers = mempty
+    , programMainStatements = mempty
     , programGroups = mempty
     }
 
@@ -135,7 +140,7 @@ instance Printable RecordHead where
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
-    = head' <> "[" <> T.intercalate "; " props <> "]"
+    = head' <> "[" <> T.intercalate "; " props <> "]."
 
 instance Printable (Primitive an) where
   pprint (PrimInteger _ int) = pprint int
@@ -164,14 +169,18 @@ instance Printable (ReducerClause an) where
 
 instance Printable (Reducer an) where
   pprint (Reducer _ input output)
-    = pprint input <> ": " <> pprint output <> ";"
+    = pprint input <> ": " <> pprint output
+
+instance Printable (Statement an) where
+  pprint (StatementGroup group) = pprint group <> ";"
+  pprint (StatementReducer red) = pprint red <> ";"
 
 instance Printable (Program an) where
-  pprint (Program _ decls reds groups)
-    = T.unlines $ map pprint decls ++ map pprint reds ++ zipWith printGroupDef [0..] groups
+  pprint (Program _ decls stmts groups)
+    = T.unlines $ map pprint decls ++ [T.empty] ++ map pprint stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
 
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ props supers reds)
+printGroupDef head' (GroupDef _ props reds)
   = T.unlines $ printDecl : map pprint reds
   where printDecl
            = "&"
@@ -179,11 +188,7 @@ printGroupDef head' (GroupDef _ props supers reds)
           <> "["
           <> T.intercalate "; " (map pprint props)
           <> "]"
-          <> printSupers
-          <> ";\n---"
-        printSupers
-          | null supers = T.empty
-          | otherwise = ": " <> T.intercalate " " (map pprint supers)
+          <> ".\n---"
 
 mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
 mkBuiltinDecl isFunc head' numProps
@@ -198,7 +203,8 @@ mkBuiltinDecl isFunc head' numProps
 
 builtinDecls :: [RecordDeclCompact]
 builtinDecls =
-  [ mkBuiltinDecl False "Unit" 0
+  [ mkBuiltinDecl False "E" 1
+  , mkBuiltinDecl False "Unit" 0
   , mkBuiltinDecl False "True" 0
   , mkBuiltinDecl False "False" 0
   , mkBuiltinDecl False "Nil" 0

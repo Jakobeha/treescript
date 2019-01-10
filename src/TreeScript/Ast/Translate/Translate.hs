@@ -11,9 +11,15 @@ import TreeScript.Ast.Core
 import TreeScript.Misc
 import TreeScript.Plugin
 
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 import Data.Maybe
+import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import NeatInterpolation
+
+type ExtraFuncs an a = WriterT [(Int, [Statement an])] (State Int) a
 
 translateNumProps :: Program an -> SessionRes T.Text
 translateNumProps prog = do
@@ -101,10 +107,12 @@ consumeBindExpr suc inp (Bind _ idx)
   | idx == 0 = suc
   | otherwise
   = [text|
-      if (!set_matches[$idx0Encoded] || values_equal($inp, matches[$idx0Encoded])) {
+      if (!matches[$idx0Encoded].is_set || values_equal($inp, matches[$idx0Encoded].value)) {
         //printf("<Consume bind %d> ", $idx0Encoded);
-        set_matches[$idx0Encoded] = true;
-        matches[$idx0Encoded] = $inp;
+        matches[$idx0Encoded] = (match){
+          .is_set = true,
+          .value = $inp
+        };
         $suc
       }|]
   where idx0Encoded = pprint $ idx - 1
@@ -114,9 +122,55 @@ consumeValueExpr suc inp (ValuePrimitive prim) = consumePrimExpr suc inp prim
 consumeValueExpr suc inp (ValueRecord record) = consumeRecordExpr suc inp record
 consumeValueExpr suc inp (ValueBind bind) = consumeBindExpr suc inp bind
 
-consumeClauseExpr :: T.Text -> T.Text -> ReducerClause an -> T.Text
-consumeClauseExpr suc inp (ReducerClause _ value groups)
-  = consumeValueExpr suc inp value -- TODO Add groups
+consumeGroupGroupExpr :: V.Vector (GroupDef an) -> T.Text -> GroupRef an -> ExtraFuncs an T.Text
+consumeGroupGroupExpr groupDefs suc groupRef
+  = T.unlines <$> traverse (consumeGroupStatementExpr groupDefs suc) stmts
+  where stmts = allGroupRefStatements groupDefs groupRef
+
+requireBind :: T.Text -> Int -> T.Text
+requireBind suc idx
+  = [text|
+      if (matches[$idx0Encoded].is_set) {
+        $suc
+      }|]
+  where idx0Encoded = pprint $ idx - 1
+
+consumeGroupReducerExpr :: V.Vector (GroupDef an) -> T.Text -> Reducer an -> ExtraFuncs an T.Text
+consumeGroupReducerExpr groups suc (Reducer _ input output) = do
+  produceInput <- produceClauseExpr groups "aux" input
+  consumeOutput <- consumeClauseExpr groups "temp_bool = true;" "aux" output
+  let binds = bindsInClause input
+      bindsSuc
+        = [text|
+            temp_bool = false;
+            {
+              $produceInput
+              reduce(&aux);
+              $consumeOutput
+              free_value(aux);
+            }|]
+      checkReducer = S.foldl' requireBind bindsSuc binds
+  pure
+    [text|
+      temp_bool = true;
+      $checkReducer
+      if (temp_bool) {
+        $suc
+      }|]
+
+consumeGroupStatementExpr :: V.Vector (GroupDef an) -> T.Text -> Statement an -> ExtraFuncs an T.Text
+consumeGroupStatementExpr groupDefs suc (StatementGroup groupRef) = consumeGroupGroupExpr groupDefs suc groupRef
+consumeGroupStatementExpr groups suc (StatementReducer red) = consumeGroupReducerExpr groups suc red
+
+consumeGroupExpr :: V.Vector (GroupDef an) -> T.Text -> GroupRef an -> ExtraFuncs an T.Text
+consumeGroupExpr groups suc group
+  = foldM (\suc' -> consumeGroupStatementExpr groups suc') suc stmts
+  where stmts = allGroupRefStatements groups group
+
+consumeClauseExpr :: V.Vector (GroupDef an) -> T.Text -> T.Text -> ReducerClause an -> ExtraFuncs an T.Text
+consumeClauseExpr groupDefs suc inp (ReducerClause _ value groupRefs) = do
+  consumeGroups <- foldM (\suc' -> consumeGroupExpr groupDefs suc') suc groupRefs
+  pure $ consumeValueExpr consumeGroups inp value
 
 producePrimExpr :: T.Text -> Primitive an -> T.Text
 producePrimExpr out (PrimInteger _ int)
@@ -194,7 +248,10 @@ produceBindExpr out (Bind _ idx)
         .type = PRIM_STRING,
         .as_string = strdup("<WARNING: output bind with unbound identifier>")
       };|] -- Should never happen in valid code
-  | otherwise = [text|value $out = dup_value(matches[$idx0Encoded]);|]
+  | otherwise
+  = [text|
+      assert(matches[$idx0Encoded].is_set);
+      value $out = dup_value(matches[$idx0Encoded].value);|]
   where idx0Encoded = pprint $ idx - 1
 
 produceValueExpr :: T.Text -> Value an -> T.Text
@@ -202,50 +259,99 @@ produceValueExpr out (ValuePrimitive prim) = producePrimExpr out prim
 produceValueExpr out (ValueRecord record) = produceRecordExpr out record
 produceValueExpr out (ValueBind bind) = produceBindExpr out bind
 
-produceClauseExpr :: T.Text -> ReducerClause an -> T.Text
-produceClauseExpr out (ReducerClause _ value groups)
-  = produceValueExpr out value -- TODO add groups
+applyGroupExpr :: V.Vector (GroupDef an) -> T.Text -> T.Text -> GroupRef an -> ExtraFuncs an (Int, T.Text)
+applyGroupExpr groupDefs matches outRef groupRef = do
+  idx <- get
+  let stmts = allGroupRefStatements groupDefs groupRef
+      idxEncoded = pprint idx
+  tell [(idx, stmts)]
+  put $ idx + 1
+  pure (idx, [text|while (reduce_aux(reduce_extra_$idxEncoded, $matches, $outRef)) { ; }|])
 
-reduceExpr :: Int -> Reducer an -> T.Text
-reduceExpr maxNumBinds (Reducer _ input output)
-  = [text|
-      for (int i = 0; i < $maxNumBindsEncoded; i++) {
-        set_matches[i] = false;
+produceGroupExpr :: V.Vector (GroupDef an) -> T.Text -> GroupRef an -> ExtraFuncs an T.Text
+produceGroupExpr groupDefs out = fmap snd . applyGroupExpr groupDefs "matches" ("&" <> out)
+
+produceClauseExpr :: V.Vector (GroupDef an) -> T.Text -> ReducerClause an -> ExtraFuncs an T.Text
+produceClauseExpr groupDefs out (ReducerClause _ value groupRefs)
+  = T.unlines . (produceValue :) <$> produceGroups
+  where produceValue = produceValueExpr out value
+        produceGroups = traverse (produceGroupExpr groupDefs out) groupRefs
+
+reduceGroupExpr :: V.Vector (GroupDef an) -> GroupRef an -> ExtraFuncs an T.Text
+reduceGroupExpr groupDefs groupRef = do
+  (idx, applyGroup) <- applyGroupExpr groupDefs "in_matches" "x" groupRef
+  let idxEncoded = pprint idx
+  pure
+    [text|
+      if (reduce_aux(reduce_extra_$idxEncoded, in_matches, x)) {
+        //printf("<Produce extra %d> ", $idxEncoded);
+        $applyGroup
+        return true;
+      }|]
+
+reduceReducerExpr :: V.Vector (GroupDef an) -> Reducer an -> ExtraFuncs an T.Text
+reduceReducerExpr groups (Reducer _ input output) = do
+  produceOut <- produceClauseExpr groups "out" output
+  let suc
+        = [text|
+            //printf("<Produce!> ");
+            $produceOut
+            free_value(in);
+            *x = out;
+            return true;|]
+  consumeAndProduce <- consumeClauseExpr groups suc "in" input
+  pure
+    [text|
+      for (int i = 0; i < MAX_NUM_BINDS; i++) {
+        matches[i] = in_matches[i];
       }
       $consumeAndProduce|]
-  where maxNumBindsEncoded = pprint maxNumBinds
-        consumeAndProduce = consumeClauseExpr suc "in" input
-        suc
-          = [text|
-              //printf("<Produce!> ");
-              $produceOut
-              free_value(in);
-              *x = out;
-              return true;|]
-        produceOut = produceClauseExpr "out" output
 
-translateReduceSurface :: Program an -> SessionRes T.Text
-translateReduceSurface prog = do
-  let reducers = programMainReducers prog
-      maxNumBinds = maxNumBindsInReducers reducers
-      maxNumBindsEncoded = pprint maxNumBinds
-      reduceExprs = T.unlines $ map (reduceExpr maxNumBinds) reducers
-  pure $
+reduceStatementExpr :: V.Vector (GroupDef an) -> Statement an -> ExtraFuncs an T.Text
+reduceStatementExpr groupDefs (StatementGroup groupRef) = reduceGroupExpr groupDefs groupRef
+reduceStatementExpr groups (StatementReducer red) = reduceReducerExpr groups red
+
+translateExtraReduceSurface :: V.Vector (GroupDef an) -> Int -> [Statement an] -> WriterT T.Text (State Int) ()
+translateExtraReduceSurface groups idx stmts = do
+  let idxEncoded = pprint idx
+  body <- translateReduceSurface groups stmts
+  tell
     [text|
-      value in = *x;
-      bool set_matches[$maxNumBindsEncoded];
-      value matches[$maxNumBindsEncoded];
-      bool temp_bool;
-      $reduceExprs
-      //printf("<Reduce fail> ");
-      return false;|]
+      bool reduce_extra_$idxEncoded(const match_arr in_matches, value* x) {
+        //printf("<Reduce extra %d> ", $idxEncoded);
+        $body
+      }
+    |]
+
+translateReduceSurface :: V.Vector (GroupDef an) -> [Statement an] -> WriterT T.Text (State Int) T.Text
+translateReduceSurface groups stmts = do
+  (reduceExprs, extraReduces) <- lift $ runWriterT $ T.unlines <$> traverse (reduceStatementExpr groups) stmts
+  let body
+        = [text|
+            value in = *x;
+            match_arr matches;
+            bool temp_bool;
+            $reduceExprs
+            //printf("<Reduce fail> ");
+            return false;|]
+  forM_ extraReduces $ uncurry $ translateExtraReduceSurface groups
+  pure body
+
+translateReduceSurfaces :: Program an -> SessionRes (T.Text, T.Text)
+translateReduceSurfaces prog = do
+  let mainStmts = programMainStatements prog
+      groups = V.fromList $ programGroups prog
+  pure $ (`evalState` 0) $ runWriterT $ translateReduceSurface groups mainStmts
 
 -- | Generates C code from a @Core@ AST.
 translate :: Program an -> SessionRes Translated
 translate prog = do
+  let maxNumBinds = pprint $ maxNumBindsInProgram prog
   numProps <- translateNumProps prog
-  reduceSurface <- translateReduceSurface prog
+  (mainReduceSurface, extraReduceSurfaces) <- translateReduceSurfaces prog
   pure Translated
-    { translatedNumProps = numProps
-    , translatedReduceSurface = reduceSurface
+    { translatedMaxNumBinds = maxNumBinds
+    , translatedNumProps = numProps
+    , translatedMainReduceSurface = mainReduceSurface
+    , translatedExtraReduceSurfaces = extraReduceSurfaces
     }

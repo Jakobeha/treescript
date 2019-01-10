@@ -1,3 +1,5 @@
+# all optional
+skip?: Bool
 printLex?: Bool
 printSugar?: Bool
 printCore?: Bool
@@ -7,5 +9,8 @@ parses?: Bool
 desugars?: Bool
 translates?: Bool
 compiles?: Bool
+cantRun: [String]
 error: String
 errors: [String]
+# if everything should be default
+useDefaults: true

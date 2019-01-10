@@ -13,7 +13,7 @@ int main(int argc, const char* argv[]) {
   char* next_word;
   while ((next_word = scan_word()) != NULL) {
     value next = scan_value(next_word);
-    while (reduce(&next)) { ; }
+    reduce(&next);
     print_value(next);
     printf("\n");
     free(next_word);

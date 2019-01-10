@@ -42,6 +42,9 @@ runCmdProgram (CmdProgram stage ppath) inp = do
         , std_err = CreatePipe
         }
   (Just pin, Just pout, Just perr, phandle) <- liftCmdIO $ createProcess pproc
+  -- Not sure why but not setting these encodings sometimes causes an "invalid byte sequence" error
+  liftCmdIO $ hSetEncoding pout latin1
+  liftCmdIO $ hSetEncoding perr latin1
   liftCmdIO $ T.hPutStr pin inp
   liftCmdIO $ hClose pin
   exitCode <- liftCmdIO $ waitForProcess phandle

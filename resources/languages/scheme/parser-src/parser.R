@@ -43,7 +43,9 @@ for (line in readLines(stdin, warn=FALSE)) {
       if (level == 0) {
         raiseSyntax("unmatched closing paren")
       }
-      if (!didCons) {
+      if (didCons) {
+        didCons <- FALSE
+      } else {
         writeNode("Nil")
       }
       level <- level - 1

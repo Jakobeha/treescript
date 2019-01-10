@@ -11,6 +11,7 @@ repository:
     - include: "#propKey"
     - include: "#bind"
     - include: "#function"
+    - include: "#group"
   recordHead:
     name: entity.name.function.treescript
     match: '[A-Z]\w*'
@@ -25,6 +26,9 @@ repository:
   function:
     name: support.class.treescript
     match: '#([A-Z]\w*)'
+  group:
+    name: support.class.treescript
+    match: '&([A-Z]\w*)'
 
   general:
     patterns:
@@ -86,4 +90,4 @@ repository:
       end: '\*\/'
   punctuation:
     name: keyword.operator.treescript
-    match: '=>|[?:=.;|]'
+    match: '---|[?:=.;|]'

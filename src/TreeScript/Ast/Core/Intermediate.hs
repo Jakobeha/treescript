@@ -20,11 +20,12 @@ import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import GHC.Generics
 
 -- = Bind identifier/index environment
 
-type GroupEnv = M.Map T.Text (Int, M.Map T.Text Int)
+type GroupEnv = M.Map T.Text (Int, V.Vector (C.Bind Range), M.Map T.Text Int)
 
 data BindEnv
   = BindEnv
@@ -35,6 +36,8 @@ data BindEnv
 type GroupSessionRes a = ReaderT GroupEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+
+type FreeSessionRes a = StateT Int (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 data Variance
   = VarianceContravariant
@@ -74,25 +77,21 @@ data Reducer an
   , reducerOutput :: ReducerClause an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Performs some transformations on values.
+data Statement an
+  = StatementGroup (GroupRef an)
+  | StatementReducer (Reducer an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Defines a group of reducers, which can be referenced by other reducers.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
   , groupDefProps :: [(T.Text, C.Bind an)]
-  , groupDefSupers :: [GroupRef an]
-  , groupDefImmReducers :: [Reducer an]
+  , groupDefStatements :: [Statement an]
   , groupDefBindEnv :: BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | A full TreeScript program.
-data Program an
-  = Program
-  { programAnn :: an
-  , programRecordDecls :: [C.RecordDecl an]
-  , programMainReducers :: [C.Reducer an]
-  , programGroups :: [GroupDef an]
-  }
 
 emptyBindEnv :: BindEnv
 emptyBindEnv

@@ -12,13 +12,19 @@ import qualified Data.Text as T
 -- | All the generated C code for a program.
 data Translated
   = Translated
-  { translatedNumProps :: T.Text
-  , translatedReduceSurface :: T.Text
+  { translatedMaxNumBinds :: T.Text
+  , translatedNumProps :: T.Text
+  , translatedMainReduceSurface :: T.Text
+  , translatedExtraReduceSurfaces :: T.Text
   }
 
 instance Printable Translated where
-  pprint (Translated numProps reduceSurface)
-     = "// \\get_record_num_props\n"
+  pprint (Translated maxNumBinds numProps mainReduceSurface extraReduceSurfaces)
+     = "// \\max_num_binds\n"
+    <> maxNumBinds
+    <> "\n\n// \\get_record_num_props\n"
     <> numProps
-    <> "\n\n// \\reduce_surface\n"
-    <> reduceSurface
+    <> "\n\n// \\reduce_main\n"
+    <> mainReduceSurface
+    <> "\n\n// \\reduce_extras\n"
+    <> extraReduceSurfaces

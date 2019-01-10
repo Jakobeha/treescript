@@ -49,18 +49,18 @@ NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
 TopLevel : RecordDecl { TopLevelRecordDecl $1 }
-         | Reducer { TopLevelReducer $1 }
-         | GroupDecl { TopLevelGroupDecl $1 }
+         | Statement { TopLevelStatement $1 }
+         | Group '.' '---' { TopLevelGroupDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Reducer : ReducerClause ':' ReducerClause ';' { Reducer (getAnn $1 <> $2 <> getAnn $3 <> $4) $1 $3 }
+Statement : Group ';' { StatementGroup $1 }
+          | Reducer ';' { StatementReducer $1 }
+          ;
+Reducer : ReducerClause ':' ReducerClause { Reducer (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
         ;
 ReducerClause : Value Groups { ReducerClause (sconcat $ getAnn $1 N.:| map getAnn $2) $1 (reverse $2) }
               ;
-GroupDecl : Group ';' '---' { GroupDecl (getAnn $1 <> $2 <> $3) $1 [] }
-          | Group ':' NonEmptyGroups ';' '---' { GroupDecl (sconcat $ getAnn $1 N.<| $2 N.<| $4 N.<| $5 N.:| map getAnn $3) $1 (reverse $3) }
-          ;
 Groups : { [] }
        | NonEmptyGroups { $1 }
        ;
