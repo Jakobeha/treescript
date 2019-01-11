@@ -17,6 +17,7 @@ module TreeScript.Misc.Error
   , prependMsgToErr
   , addRangeToErr
   , isSuccess
+  , resultErrors
   , forceSuccess
   , traverseDropFatals
   , mapResultT
@@ -224,10 +225,15 @@ addRangeToErr rng (Error stage Nothing msg)
 addRangeToErr _ err@(Error _ (Just _) _)
   = error $ "tried to add range to error which already has one (" ++ T.unpack (pprint err) ++ ")"
 
--- | Is the result a success?
+-- | Does the result have no errors?
 isSuccess :: Result a -> Bool
 isSuccess (ResultFail _) = False
 isSuccess (Result errs _) = null errs
+
+-- | All the errors in the result.
+resultErrors :: Result a -> [Error]
+resultErrors (ResultFail err) = [err]
+resultErrors (Result errs _) = errs
 
 -- | Raises an error if the result has any errors.
 forceSuccess :: Result a -> a

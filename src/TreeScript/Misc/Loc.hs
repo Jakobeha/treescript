@@ -5,6 +5,7 @@ module TreeScript.Misc.Loc
   ( Loc (..)
   , Range (..)
   , loc1
+  , mkLocFromSrc
   , advanceLoc
   , mkRange
   , singletonRange
@@ -54,6 +55,21 @@ loc1
   , locLine = 1
   , locColumn = 1
   }
+
+-- | Creates a location from a line, column, and source text.
+mkLocFromSrc :: T.Text -> Int -> Int -> Loc
+mkLocFromSrc src line col
+  = Loc
+  { locOffset = offset
+  , locLine = line
+  , locColumn = col
+  }
+  where offset
+          = (+ (col - 1))
+          $ sum
+          $ map T.length
+          $ take (line - 1)
+          $ T.splitOn "\n" src
 
 -- | Advance location past the given text.
 advanceLoc :: Loc -> T.Text -> Loc

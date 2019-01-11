@@ -39,12 +39,16 @@
       {
         "language": "treescript",
         "scopeName": "source.treescript",
-        "path": "./syntaxes/treescript.tmLanguage.json"
+        "path": "./syntaxes/treescript.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.target.r.treescript": "source.r",
+          "meta.target.scheme.treescript": "source.scheme"
+        }
       }
     ],
     "configuration": {
       "type": "object",
-      "title": "TreeScript IDE Configuration",
+      "title": "TreeScript",
       "properties": {
         "treescript.enable": {
           "scope": "resource",

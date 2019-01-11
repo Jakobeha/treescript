@@ -96,7 +96,7 @@
 							}
 						},
 						{
-							"name": "keyword.operator.r",
+							"name": "keyword.operator.prevent-meta.r",
 							"match": "[\\(\\[\\{\\}\\]\\)]"
 						},
 						{
@@ -106,7 +106,7 @@
 				},
 				{
 					"name": "meta.target.scheme.treescript",
-					"begin": "(scheme')",
+					"begin": "(scm')",
 					"end": "(')|(\\\\\\()",
 					"captures": {
 						"1": {
@@ -125,6 +125,10 @@
 									"name": "entity.name.tag.treescript"
 								}
 							}
+						},
+						{
+							"name": "keyword.operator.prevent-meta.scheme",
+							"match": "[\\(\\[\\{\\}\\]\\)]"
 						},
 						{
 							"include": "source.scheme"

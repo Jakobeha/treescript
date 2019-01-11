@@ -50,17 +50,19 @@ repository:
         match: '\\([a-z]\w*)'
         captures:
           '1': { name: entity.name.tag.treescript }
-      - name: keyword.operator.r
+      - name: keyword.operator.prevent-meta.r
         match: '[\(\[\{\}\]\)]'
       - include: source.r
     - name: meta.target.scheme.treescript
-      begin: "(scheme')"
+      begin: "(scm')"
       end: "(')|(\\\\\\()"
       captures:
         '1': { name: string.quoted.single.treescript }
         '2': { name: constant.character.escape.treescript }
       patterns:
       - *escapeAbstraction
+      - name: keyword.operator.prevent-meta.scheme
+        match: '[\(\[\{\}\]\)]'
       - include: source.scheme
     - name: meta.target.other.treescript
       begin: "((?:[a-z]\\w*)?')|(\\))"

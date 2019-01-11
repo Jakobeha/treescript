@@ -79,12 +79,21 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - treescript
+    - aeson
     - containers
+    - data-default
+    - filepath
     - fsnotify
+    - haskell-lsp >= 0.8.0.1
+    - hslogger
+    - lens
     - mtl
     - optparse-applicative
     - rainbow
+    - stm
+    - temporary
     - text
+    - yi-rope
 
 tests:
   treescript-test:

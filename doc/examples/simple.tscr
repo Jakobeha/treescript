@@ -1,8 +1,7 @@
 Subst[body; old; new].
-
 //Lambda application
 scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
-
+asd
 E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
 
 &Subst[].

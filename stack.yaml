@@ -39,6 +39,8 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
+- haskell-lsp-0.8.0.1
+- haskell-lsp-types-0.8.0.1
 - megaparsec-7.0.4
 - neat-interpolation-0.3.2.4
 

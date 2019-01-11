@@ -8,6 +8,7 @@ module Run
   ) where
 
 import Action
+import Server.Run
 import TreeScript
 import qualified TreeScript.Misc.Ext.Text as T
 
@@ -26,7 +27,7 @@ runAction (ActionCompile compile') = runCompile compile'
 runAction (ActionRun run') = runRun run'
 
 runServe :: IO ()
-runServe = error "TODO implement"
+runServe = serve
 
 runCompile :: Compile -> IO ()
 runCompile (Compile input output True)
