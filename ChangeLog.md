@@ -100,4 +100,20 @@ Started to add functions and "groups"
 - Some documentation
 - TODO Add more documentation, add ability to translate to C (`Translate` phase)
 
+## 1/12/19
+
+Libraries
+
+- Renamed "servers" to libraries
+- Changed library specification and implementation:
+  - Directly inserts library into compiled C program and calls function, instead of communicating with an external command-line program
+  - Functions are qualified by library
+  - (From previous changes) functions have fixed numbers of arguments, libraries have names in spec
+- Added `Base` library with some simple functions - arithmatic and string appending
+  - May change these functions later, e.g. make them fail more gracefully
+- Added test for library which also uses Y-combinator
+- Bugfixes, refactors, documentation improvements, etc.
+
+Working on VSCode extension / language server on a separate branch
+
 ## Unreleased changes

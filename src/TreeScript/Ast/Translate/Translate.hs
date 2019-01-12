@@ -21,6 +21,20 @@ import NeatInterpolation
 
 type ExtraFuncs an a = WriterT [(Int, [Statement an])] (State Int) a
 
+libCopy :: Library -> CopyInfo
+libCopy lib = CopyInfo (libraryCodeDir lib) (T.unpack $ librarySpecName $ librarySpec lib)
+
+libImport :: Library -> T.Text
+libImport library = "#include \"" <> name <> "/interface.h\""
+  where name = librarySpecName $ librarySpec library
+
+translateLibraries :: Program an -> SessionRes ([CopyInfo], T.Text)
+translateLibraries prog = do
+  libs <- getAllProgramUsedLibraries prog
+  let libCopies = map libCopy libs
+      libImports = T.unlines $ map libImport libs
+  pure (libCopies, libImports)
+
 translateNumProps :: Program an -> SessionRes T.Text
 translateNumProps prog = do
   let translateNumPropsDecl (RecordDeclCompact (RecordHead isFunc name) numProps)
@@ -88,7 +102,7 @@ consumeRecordExpr suc inp (Record _ (RecordHead True head') props)
       {
         value func_props[$numPropsEncoded];
         $produceProps
-        value func_out = apply_function($headEncoded, func_props);
+        value func_out = call_$head'(func_props);
         temp_bool = values_equal($inp, func_out);
         for (int i = 0; i < $numPropsEncoded; i++) {
           free_value(func_props[i]);
@@ -98,8 +112,7 @@ consumeRecordExpr suc inp (Record _ (RecordHead True head') props)
       if (temp_bool) {
         $suc
       }|]
-  where headEncoded = pprint head'
-        numPropsEncoded = pprint $ length props
+  where numPropsEncoded = pprint $ length props
         produceProps = producePropsExpr "func" props
 
 consumeBindExpr :: T.Text -> T.Text -> Bind an -> T.Text
@@ -230,13 +243,12 @@ produceRecordExpr out (Record _ (RecordHead True head') props)
       {
         value func_props[$numPropsEncoded];
         $produceProps
-        $out = apply_function($headEncoded, func_props);
+        $out = call_$head'(func_props);
         for (int i = 0; i < $numPropsEncoded; i++) {
           free_value(func_props[i]);
         }
       }|]
-  where headEncoded = pprint head'
-        numPropsEncoded = pprint $ length props
+  where numPropsEncoded = pprint $ length props
         produceProps = producePropsExpr "func" props
 
 produceBindExpr :: T.Text -> Bind an -> T.Text
@@ -358,11 +370,14 @@ translateReduceSurfaces prog = do
 -- | Generates C code from a @Core@ AST.
 translate :: Program an -> SessionRes Translated
 translate prog = do
+  (libCopies, libImports) <- translateLibraries prog
   let maxNumBinds = pprint $ maxNumBindsInProgram prog
   numProps <- translateNumProps prog
   (mainReduceSurface, extraReduceSurfaces) <- translateReduceSurfaces prog
   pure Translated
-    { translatedMaxNumBinds = maxNumBinds
+    { translatedLibCopies = libCopies
+    , translatedLibImports = libImports
+    , translatedMaxNumBinds = maxNumBinds
     , translatedNumProps = numProps
     , translatedMainReduceSurface = mainReduceSurface
     , translatedExtraReduceSurfaces = extraReduceSurfaces

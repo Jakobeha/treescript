@@ -1,0 +1,29 @@
+Add[lhs].
+LT[lhs].
+Subst[body; old; new].
+
+//Lambda application
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
+//Addition
+scm'(+ \(Scheme_Atom[\x]))': Add[\x];
+scm'(\(Add[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_Add[\x; \y]];
+//Less than
+scm'(< \(Scheme_Atom[\x]))': LT[\x];
+scm'(\(LT[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_LessThan[\x; \y]];
+//If
+scm'(if #true \true \false)': \true;
+scm'(if #false \true \false)': \false;
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+E[scm'(if \cond \true \false)']: scm'(if \(E[\cond]) \true \false)';
+E[scm'(list \x \y \z)']: scm'(list \(E[\x]) \(E[\y]) \(E[\z]))';
+
+&Subst[].
+---
+Subst[\old; \old; \new]: \new;
+Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
+Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
+Subst[scm'(if \cond \true \false)'; \old; \new]: scm'(if \(Subst[\cond; \old; \new]) \(Subst[\true; \old; \new]) \(Subst[\false; \old; \new]))';
+Subst[scm'(list \x \y \z)'; \old; \new]: scm'(list \(Subst[\x; \old; \new]) \(Subst[\y; \old; \new]) \(Subst[\z; \old; \new]))';
+Subst[\body; \; \]: \body;
+E[scm'(\x . \xs)']: scm'(\(E[\x]) . \(E[\xs]))';

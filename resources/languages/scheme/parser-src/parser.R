@@ -57,6 +57,12 @@ for (line in readLines(stdin, warn=FALSE)) {
       } else {
         didCons <- TRUE
       }
+    } else if (token == "#true") {
+      writeNode("Atom")
+      writeWord("True")
+    } else if (token == "#false") {
+      writeNode("Atom")
+      writeWord("False")
     } else if (suppressWarnings(all(!is.na(as.numeric(token))))) {
       writeNode("Atom")
       if (grepl("\\.", token)) {

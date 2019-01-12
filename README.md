@@ -37,7 +37,7 @@ TreeScript could also:
 - Print a language - convert it's syntax tree into text
 - Parse a language - convert text into a syntax tree
 
-TreeScript programs can do more when given a language server with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "TreeScript" wouldn't be doing much, and there would be a lot of communication back and forth between the TreeScript program and server, which could be inefficient (although apparently socket communication can be very fast).
+TreeScript programs can do more when given a library with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "TreeScript" wouldn't be doing much, and there would be a lot of communication back and forth between the TreeScript program and library, which could be inefficient.
 
 Eventually TreeScript could even transform its own syntax trees (with a TreeScript language plugin).
 
@@ -260,23 +260,19 @@ Language parsers are specifically designed to be used by the TreeScript compiler
 
 A language printer is the opposite of a language parser - it's a command-line program which reads AST data for a language and outputs it's source text.
 
-### Server
+### Library
 
-A server is provides additonal functions for TreeScript programs. The functions may or may not be for a particular langugage - e.g. they can include a function which takes a method identifier and provides its definition, or an additional math function.
+A library provides additonal functions for TreeScript programs. Each function may or may not be for a particular langugage - e.g. it could be a function which takes a method identifier and provides its definition, or an additional math function. Each function is prefixed with the library's name - e.g. if the library `Base` wanted to provide the function `Add`, it would be referenced in code by `#Base_Add`.
 
-A server consists of a command-line program and a server specification.
+A library consists of extra C code and a library specification.
 
-### Server Program
+### Library Code
 
-When a TreeScript program includes a function which isn't builtin, it looks for a server which provides the function. If it finds a server, it runs its command-line program, inputting the current context, the function name, and each argument as AST data (the current context consists of the program's command-line argument path, and the index of the syntax tree which is being processed when the function is called. The context would be important e.g. if the program wanted to lookup the body of a class whose name was passed as an argument).
+A library is implemented in C code. Every library has one file, `interface.h` - for each of its functions, this header defines a corresponding C function, `value call_<library name>_<function name>(value* args);` (the type `value` is declared in `../types.h`, which the interface should `#include`). When a TreeScript program encounters a function, it calls the defined C function, inputting each argument as a `value`.
 
-### Server Specification
+### Library Specification
 
-The server specification declares all the functions the server provides. Each function has a name. Functions can take any number of arguments - they can even take variable arguments.
-
-A server doesn't need to fully implement a function it provides - it can return "undefined" for some inputs (e.g. if the wrong number of arguments is provided) - although it must declare all functions it implements.
-
-Multiple servers can provide the same function, and the TreeScript program will keep trying each server (in undefined order) until it gets a result. If no servers return a result, the TreeScript program will fail.
+The library specification declares all the functions the library provides. (Like each AST node in a language specification) each function has a name and number of arguments. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
 
 ---
 
@@ -284,11 +280,24 @@ Multiple servers can provide the same function, and the TreeScript program will 
 
 ```json
 {
+  "name": "Base",
   "functions": [
-    "Add",
-    "Subtract",
-    "Multiply",
-    "Divide"
+    {
+      "name": "Add",
+      "args": 2
+    },
+    {
+      "name": "Subtract",
+      "args": 2
+    },
+    {
+      "name": "Multiply",
+      "args": 2
+    },
+    {
+      "name": "Divide",
+      "args": 2
+    },
   ]
 }
 ```
@@ -389,13 +398,19 @@ This simple TreeScript program will "interpret" lambda calculus programs written
 ```treescript
 Subst[body; old; new].
 
-//Function application
-scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
-Subst[Scheme_Var[\old]; \old; \new]: \new;
+//Lambda application
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+
+&Subst[].
+---
+Subst[\old; \old; \new]: \new;
 Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
 Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
 Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';
 ```
 
 It gets desugared into something like (technically invalid syntax, good for the example):
@@ -403,28 +418,36 @@ It gets desugared into something like (technically invalid syntax, good for the 
 ```treescript
 Subst[body; old; new].
 
-//Function application
+//Lambda application
 Scheme_Cons[
-  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
   Scheme_Cons[\3; Scheme_Nil[]]
-]: Subst[\2; \1; \3];
+]: Subst[\2; \1; \3] &Subst[];
+E[Scheme_Cons[\1; Scheme_Cons[\2; Scheme_Nil[]]]]: Scheme_Cons[E[\1]; Scheme_Cons[E[\2]; Scheme_Nil[]]];
+
+&Subst[].
+---
 Subst[\1; \1; \2]: \2;
 Subst[
-  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
   \1;
   \
-]: Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+]: Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
 Subst[
-  Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
+  Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]];
   \3;
   \4
-]: Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; Subst[\2; \3; \4]]];
+]: Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; Subst[\2; \3; \4]]];
 Subst[
   Scheme_Cons[\1; Scheme_Cons[\2; Scheme_Nil[]]];
   \3;
   \4
 ]: Scheme_Cons[Subst[\1; \3; \4]; Scheme_Cons[Subst[\2; \3; \4]; Scheme_Nil[]]];
 Subst[\1; \; \]: \1;
+E[
+  Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; \2]]
+]: Scheme_Cons[Scheme_Symbol["lambda"]; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\1]; Scheme_Nil[]]; E[\2]]];
+E[Scheme_Cons[Scheme_Symbol["lambda"]; \1; Scheme_Cons[\2; Scheme_Nil[]]]]: Scheme_Cons[E[\1]; Scheme_Cons[E[\2]; Scheme_Nil[]]];
 ```
 
 And compiled into somthing like (not necessarily actual output, this was taken from output at one point):
@@ -460,40 +483,38 @@ if (in.type == RECORD && strings_equal(in.as_record.head, "Scheme_Cons")) {
 
 ### Functions
 
-This example is broken - it uses a builtin function to allow integer addition.
+This example uses a builtin function to allow integer addition. Note, however, that it's broken.
 
 ```treescript
 Subst[body; old; new].
 
 //Lambda application
-scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
-Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
-Subst[\body; \; \]: \body;
-
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
 //Addition
-scm'((+ \(Scheme_Integer[\x])) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
+scm'((+ \(Scheme_Atom[\x])) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_Add[\x; \y]];
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+
+&Subst[].
+---
+...
 ```
 
-However, it misses some cases, e.g. `(((lambda (f) ((f x) x)) +) 2)` should reduce to `4` but doesn't. This example handles addition properly:
+Specifically, the above example misses some cases, e.g. `(((lambda (f) ((f x) x)) +) 2)` should reduce to `4` but doesn't. This example handles addition properly:
 
 ```treescript
 Add[lhs].
 Subst[body; old; new].
 
 //Lambda application
-scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg];
-Subst[Scheme_Var[\old]; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
-Subst[\body; \; \]: \body;
-
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
 //Addition
-scm'(+ \(Scheme_Integer[\x])': Add[\x];
-scm'(\(Add[\x]) \(Scheme_Integer[\y]))': Scheme_Integer[#Add[\x; \y]];
+scm'(+ \(Scheme_Atom[\x]))': Add[\x];
+scm'(\(Add[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_Add[\x; \y]];
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+
+&Subst[].
+---
+...
 ```
 
 ### Optimization

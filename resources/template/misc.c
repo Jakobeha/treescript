@@ -7,10 +7,6 @@
 #include "helpers.h"
 #include "misc.h"
 
-int get_record_num_props(char* head) {
-  // \get_record_num_props
-}
-
 bool records_equal(value_record x, value_record y) {
   if (!strings_equal(x.head, y.head)) {
     return false;
@@ -98,4 +94,30 @@ void free_value(value x) {
       free_record(x.as_record);
       break;
   }
+}
+
+value bool_to_value(bool x) {
+  if (x) {
+    return (value){
+      .type = RECORD,
+      .as_record = (value_record){
+        .head = "True",
+        .num_props = 0,
+        .props = NULL
+      }
+    };
+  } else {
+    return (value){
+      .type = RECORD,
+      .as_record = (value_record){
+        .head = "False",
+        .num_props = 0,
+        .props = NULL
+      }
+    };
+  }
+}
+
+int get_record_num_props(char* head) {
+  // \get_record_num_props
 }

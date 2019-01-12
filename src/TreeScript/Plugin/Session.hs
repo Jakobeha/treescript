@@ -13,12 +13,13 @@ module TreeScript.Plugin.Session
   , runSessionResVirtual
   , runPreSessionRes
   , runSessionResReal
-  , langFromExt
+  , langWithExt
+  , libraryWithName
   ) where
 
 import TreeScript.Plugin.CmdProgram
 import TreeScript.Plugin.Language
-import TreeScript.Plugin.Server
+import TreeScript.Plugin.Library
 import TreeScript.Misc
 
 import Control.Monad.Logger hiding (LogLevel (..))
@@ -50,8 +51,8 @@ data Settings
 data SessionEnv
   = SessionEnv
   { sessionEnvSettings :: Settings
-  , sessionEnvLanguages :: [Language] -- ^ Languages with plugins.
-  , sessionEnvServers :: [ServerSpec] -- ^ Servers (just specifications).
+  , sessionEnvLanguages :: [Language]
+  , sessionEnvLibraries :: [Library]
   , sessionEnvTemplateDir :: FilePath
   }
 
@@ -92,7 +93,7 @@ emptySessionEnv
   = SessionEnv
   { sessionEnvSettings = defaultSettings
   , sessionEnvLanguages = []
-  , sessionEnvServers = []
+  , sessionEnvLibraries = []
   , sessionEnvTemplateDir = ""
   }
 
@@ -171,18 +172,22 @@ mkLanguage pluginPath name = do
         }
     }
 
-mkServer :: FilePath -> String -> PreSessionRes ServerSpec
-mkServer pluginPath name = do
+mkLibrary :: FilePath -> String -> PreSessionRes Library
+mkLibrary pluginPath name = do
   let path = pluginPath </> name
       specPath = path </> "spec.yaml"
+      codeDir = path </> "code"
   specDecoded <- liftLoadIO $ decodeFileEither specPath
   spec <-
     case specDecoded of
       Left err
         -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
       Right res -> pure res
-  validatePluginName name $ serverSpecName spec
-  pure spec
+  validatePluginName name $ librarySpecName spec
+  pure Library
+    { librarySpec = spec
+    , libraryCodeDir = codeDir
+    }
 
 listDirPlugins :: FilePath -> PreSessionRes [String]
 listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
@@ -192,7 +197,7 @@ getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
 getEnvAtPath pluginPath = do
   let settingsPath = pluginPath </> "settings.yaml"
       languagesPath = pluginPath </> "languages"
-      serversPath = pluginPath </> "servers"
+      librariesPath = pluginPath </> "libraries"
       templateDirPath = pluginPath </> "template"
   settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
   settings <-
@@ -202,11 +207,11 @@ getEnvAtPath pluginPath = do
         pure defaultSettings
       Right res -> pure res
   languages <- traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
-  servers <- traverseDropFatals (mkServer serversPath) =<< listDirPlugins serversPath
+  libraries <- traverseDropFatals (mkLibrary librariesPath) =<< listDirPlugins librariesPath
   pure SessionEnv
     { sessionEnvSettings = settings
     , sessionEnvLanguages = languages
-    , sessionEnvServers = servers
+    , sessionEnvLibraries = libraries
     , sessionEnvTemplateDir = templateDirPath
     }
 
@@ -262,13 +267,25 @@ runSessionResReal session = runPreSessionRes $ do
     session
 
 -- | Gets the language for the given extension in the session. Fails if no language found.
-langFromExt :: Stage -> T.Text -> SessionRes Language
-langFromExt stage ext = do
+langWithExt :: Stage -> T.Text -> SessionRes Language
+langWithExt stage ext = do
   langs <- sessionEnvLanguages <$> getSessionEnv
   case find (\lang -> langSpecExtension (languageSpec lang) == ext) langs of
     Nothing -> mkFail Error
       { errorStage = stage
       , errorRange = Nothing
       , errorMsg = "no (valid) plugin for language with extension '" <> ext <> "'"
+      }
+    Just res -> pure res
+
+-- | Gets the library with the given name in the session. Fails if no language found.
+libraryWithName :: Stage -> T.Text -> SessionRes Library
+libraryWithName stage name = do
+  libraries <- sessionEnvLibraries <$> getSessionEnv
+  case find (\library -> librarySpecName (librarySpec library) == name) libraries of
+    Nothing -> mkFail Error
+      { errorStage = stage
+      , errorRange = Nothing
+      , errorMsg = "no (valid) plugin for library with name '" <> name <> "'"
       }
     Just res -> pure res

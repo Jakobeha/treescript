@@ -15,7 +15,7 @@ import System.FilePath
 -- | Parse the input code, run the TreeScript executable at the given path, print its output, and return the result.
 runCode :: FilePath -> Code -> SessionRes Code
 runCode execPath (Code inExt inText) = do
-  inLang <- langFromExt StageReadArgs inExt
+  inLang <- langWithExt StageReadArgs inExt
   let inParser = languageParser inLang
   inAstData <- runCmdProgram inParser inText
   let execProg

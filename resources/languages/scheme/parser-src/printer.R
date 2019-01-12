@@ -17,15 +17,15 @@ for (line in readLines(stdin)) {
     word_and_inp <- get_next_word(inp)
     word <- word_and_inp[2]
     inp <- word_and_inp[3]
-    
+
     if (is.na(inp)) {
       break
     }
-    
+
     if (in_cdr && word != "Scheme_Cons" && word != "Scheme_Nil") {
       cat(" . ")
     }
-    
+
     if (word == "splice") {
       idx_and_inp <- get_next_word(inp)
       idx <- idx_and_inp[2]
@@ -42,12 +42,16 @@ for (line in readLines(stdin)) {
         cat(lit)
       } else {
         stop(paste("expected \"string\", got: ", word))
-      }    
+      }
     } else if (word == "Scheme_Atom") {
       word_and_inp <- get_next_word(inp)
       word <- word_and_inp[2]
       inp <- word_and_inp[3]
-      if (word == "integer" || word == "float") {
+      if (word == "True") {
+        cat("#true")
+      } else if (word == "False") {
+        cat("#false")
+      } else if (word == "integer" || word == "float") {
         num_and_inp <- get_next_word(inp)
         num <- num_and_inp[2]
         inp <- num_and_inp[3]
@@ -74,7 +78,7 @@ for (line in readLines(stdin)) {
     } else {
       stop(paste("unknown word: ", word))
     }
-    
+
     if (word != "Scheme_Cons") {
       if (in_cdr) {
         cat(")")
@@ -83,6 +87,6 @@ for (line in readLines(stdin)) {
       }
     }
   }
-  
+
   cat("\n")
 }

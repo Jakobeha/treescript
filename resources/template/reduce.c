@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #include "helpers.h"
+#include "libraries.h"
 #include "misc.h"
 #include "reduce.h"
 

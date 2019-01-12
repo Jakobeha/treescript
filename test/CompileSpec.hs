@@ -75,14 +75,14 @@ spec = do
       codeToAstData txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langFromExt undefined ext
+          lang <- langWithExt undefined ext
           let parser = languageParser lang
           runCmdProgram parser txt
       astDataToCode :: T.Text -> T.Text -> ResultT IO T.Text
       astDataToCode txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langFromExt undefined ext
+          lang <- langWithExt undefined ext
           let printer = languagePrinter lang
           runCmdProgram printer txt
       assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()

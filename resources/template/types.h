@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <stdbool.h>
+
 #define MAX_NUM_BINDS 1 // \max_num_binds
 
 struct value;

@@ -160,7 +160,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
   let txt = flattenSpliceText spliceText
       unparsedSplices = spliceTextValues spliceText
   splices <- traverse parseValue unparsedSplices
-  lang <- lift $ overErrors (addRangeToErr langExtRng) $ langFromExt StageExtracting langExt
+  lang <- lift $ overErrors (addRangeToErr langExtRng) $ langWithExt StageExtracting langExt
   ress <- overErrors (addRangeToErr rng) $ lift $ runLanguageParser lang txt splices
   case ress of
     [res] -> pure $ (rng `fromMaybe`) <$> res

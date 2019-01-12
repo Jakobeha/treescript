@@ -22,6 +22,8 @@ module TreeScript.Ast.Core.Analyze
   , langSpecDecls
   , allImportedDecls
   , getAllProgramDecls
+  , allProgramRecordHeads
+  , getAllProgramUsedLibraries
   , allGroupDefStatements
   , allGroupRefStatements
   ) where
@@ -35,6 +37,7 @@ import Data.Maybe
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup.Foldable
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Vector as V
 
 -- | Applies to each child value, then combines all results.
@@ -182,11 +185,26 @@ langSpecDecls spec
           , recordDeclCompactNumProps = numArgs
           }
 
+librarySpecDecls :: LibrarySpec -> [RecordDeclCompact]
+librarySpecDecls spec
+  = map functionSpecToCompactDecl $ librarySpecFunctions spec
+  where libraryName = librarySpecName spec
+        functionSpecToCompactDecl (FunctionSpec funcName numArgs)
+          = RecordDeclCompact
+          { recordDeclCompactHead
+              = RecordHead
+              { recordHeadIsFunc = True
+              , recordHeadName = libraryName <> "_" <> funcName
+              }
+          , recordDeclCompactNumProps = numArgs
+          }
+
 -- | All record declarations imported by a program in the given environment.
 allImportedDecls :: SessionEnv -> [RecordDeclCompact]
 allImportedDecls env
-  -- TODO Server functions
-  = builtinDecls ++ concatMap (langSpecDecls . languageSpec) (sessionEnvLanguages env)
+   = builtinDecls
+  ++ concatMap (langSpecDecls . languageSpec) (sessionEnvLanguages env)
+  ++ concatMap (librarySpecDecls . librarySpec) (sessionEnvLibraries env)
 
 -- | All declarations accessible from the program, declared and imported.
 getAllProgramDecls :: Program an -> SessionRes [RecordDeclCompact]
@@ -195,6 +213,35 @@ getAllProgramDecls prog = do
   let declaredDecls = map compactRecordDecl $ programRecordDecls prog
       importedDecls = allImportedDecls env
   pure $ declaredDecls ++ importedDecls
+
+valueRecordHeads1 :: Value an -> [RecordHead]
+valueRecordHeads1 (ValuePrimitive _) = []
+valueRecordHeads1 (ValueRecord record) = [recordHead record]
+valueRecordHeads1 (ValueBind _) = []
+
+-- | Heads of all records in the program.
+allProgramRecordHeads :: Program an -> [RecordHead]
+allProgramRecordHeads prog
+   = foldMap (foldValuesInStatement valueRecordHeads1)
+   $ programMainStatements prog
+  ++ concatMap groupDefStatements (programGroups prog)
+
+recordHeadUsedLibName1 :: RecordHead -> Maybe T.Text
+recordHeadUsedLibName1 (RecordHead isFunc name)
+  | isFunc
+  = case T.splitOn "_" name of
+      [libName, _] -> Just libName
+      _ -> error $ T.unpack $ "unexpected function name - " <> name
+  | otherwise = Nothing
+
+allProgramUsedLibNames :: Program an -> [T.Text]
+allProgramUsedLibNames
+  = nub . mapMaybe recordHeadUsedLibName1 . allProgramRecordHeads
+
+-- | Gets all libraries used by the program.
+getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
+getAllProgramUsedLibraries
+  = traverse (libraryWithName StageExtracting) . allProgramUsedLibNames
 
 -- | The statements in the group and super-groups, substituting exported binds.
 allGroupDefStatements :: [Value an] -> GroupDef an -> [Statement an]
