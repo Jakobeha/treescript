@@ -82,14 +82,16 @@ treescript :-
 <state_comment> \* \/ { unnestBlockComment }
 <state_comment> . ;
 <state_comment> \n { skip }
-<state_code_block> \' { exitCodeBlock True `andBegin` initialState }
-<state_code_block> \\ \( { exitCodeBlock False `andBegin` initialState }
+<state_code_block> \' { exitCodeBlock SpliceFragEndWholeBlock `andBegin` initialState }
+<state_code_block> \\ \. \. \. \( { exitCodeBlock SpliceFragEndStartSpliceList `andBegin` initialState }
+<state_code_block> \\ \( { exitCodeBlock SpliceFragEndStartSplice `andBegin` initialState }
 <state_code_block> \\ \' { addCharToCodeBlock '\'' }
 <state_code_block> \\ \\ { addCharToCodeBlock '\\' }
-<state_code_block> \\ { exitCodeBlock False `andBegin` state_code_block_bind }
+<state_code_block> \\ \. \. \. { exitCodeBlock SpliceFragEndStartSpliceList `andBegin` state_code_block_bind }
+<state_code_block> \\ { exitCodeBlock SpliceFragEndStartSplice `andBegin` state_code_block_bind }
 <state_code_block> [. \n] { addCurrentToCodeBlock }
 <state_code_block_bind> @lowerSymbol { exitCodeBlockBind True `andBegin` state_code_block }
-<state_code_block_bind> $white { exitCodeBlockBind False `andBegin` state_code_block }
+<state_code_block_bind> [\_ $white] { exitCodeBlockBind False `andBegin` state_code_block }
 
 {
 
@@ -262,8 +264,8 @@ addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlockDirect chr
           | len == 1 = B.C.head str
           | otherwise = error "addCurrentToCodeBlock: not a single character"
 
-exitCodeBlock :: Bool -> Action
-exitCodeBlock isEnd inp len = do
+exitCodeBlock :: SpliceFragEnd -> Action
+exitCodeBlock end inp len = do
   contentStr <- T.pack . reverse <$> getLexerCodeBlockValue
   setLexerCodeBlockState False
   startLoc <- getLexerCodeBlockStartLoc
@@ -271,7 +273,7 @@ exitCodeBlock isEnd inp len = do
   let rng = Range{ rangeStart = startLoc, rangeEnd = inputEndLoc inp len }
   return $ LexemePrim $ PrimCode SpliceFrag
     { spliceFragStart = isStart
-    , spliceFragEnd = isEnd
+    , spliceFragEnd = end
     , spliceFragContent = Annd rng contentStr
     }
 

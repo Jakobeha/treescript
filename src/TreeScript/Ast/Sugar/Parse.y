@@ -32,10 +32,12 @@ import Data.Semigroup
   int { L.LexemePrim (L.PrimInteger $$) }
   float { L.LexemePrim (L.PrimFloat $$) }
   string { L.LexemePrim (L.PrimString $$) }
-  codeWhole { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ True True)) }
-  codeStart { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ True False)) }
-  codeMiddle { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False False)) }
-  codeEnd { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False True)) }
+  codeWhole { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ True L.SpliceTextEndWholeBlock)) }
+  codeStart { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ True L.SpliceTextEndStartSplice)) }
+  codeStartList { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ True L.SpliceTextEndStartSpliceList)) }
+  codeMiddle { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False L.SpliceTextEndStartSplice)) }
+  codeMiddleList { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False L.SpliceTextEndStartSpliceList)) }
+  codeEnd { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False L.SpliceTextEndWholeBlock)) }
   upperSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseUpper) }
   lowerSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseLower) }
   splicedBind { L.LexemeSplicedBind $$ }
@@ -54,9 +56,10 @@ TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Statement : Group ';' { StatementGroup $1 }
+Statement : GroupStmt ';' { StatementGroup $1 }
           | Reducer ';' { StatementReducer $1 }
           ;
+GroupStmt : Group LowerSym { GroupStmt (getAnn $1 <> getAnn $2) $1 $2 }
 Reducer : ReducerClause ':' ReducerClause { Reducer (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
         ;
 ReducerClause : Value Groups { ReducerClause (sconcat $ getAnn $1 N.:| map getAnn $2) $1 (reverse $2) }
@@ -99,10 +102,12 @@ Bind : '\\' { Bind $1 Nothing }
 SpliceCode : LowerSym SpliceText { SpliceCode (getAnn $1 <> getAnn $2) $1 $2 }
            ;
 SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
-           | codeStart Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
+           | codeStart Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) False $2 $3 }
+           | codeStartList Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) True $2 $3 }
            ;
 SpliceTextTail : codeEnd { SpliceTextNil (getAnn $1) (annd $1) }
-               | codeMiddle Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
+               | codeMiddle Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) False $2 $3 }
+               | codeMiddleList Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) True $2 $3 }
                ;
 LowerSym : lowerSym { Symbol (getAnn $1) (annd $1) }
          ;

@@ -31,12 +31,19 @@ data Punc an
   | PuncEof an -- ^ End of file
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Describes the transition from inside of a text block to back outside.
+data SpliceFragEnd
+  = SpliceFragEndWholeBlock -- ^ Ends the entire text block.
+  | SpliceFragEndStartSplice -- ^ Starts a single value splice.
+  | SpliceFragEndStartSpliceList -- ^ Starts a list splice.
+  deriving (Eq, Ord, Read, Show)
+
 -- | Fragment of a code block (in the future might also handle strings) which might contain splices.
 data SpliceFrag an
   = SpliceFrag
   { spliceFragContent :: (Annd T.Text an) -- ^ Text in between the start and end of this enclosure, and the entire enclosure's annotation __(structured this way for the Happy parser)__.
   , spliceFragStart :: Bool -- ^ Does this start the text block, or end a splice?
-  , spliceFragEnd :: Bool -- ^ Does this end the text block, or start a splice?
+  , spliceFragEnd :: SpliceFragEnd -- ^ Does this end the text block, or start a splice?
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Primitive
@@ -84,14 +91,16 @@ instance Annotatable Program where
   getAnn (Program lexemes) = getAnn lexemes
 
 instance Printable (SpliceFrag an) where
-  pprint (SpliceFrag content isStart isEnd)
+  pprint (SpliceFrag content isStart end)
     = pprintStart <> pprint (annd content) <> pprintEnd
     where pprintStart
             | isStart = "'"
             | otherwise = ")"
           pprintEnd
-            | isEnd = "'"
-            | otherwise = "\\("
+            = case end of
+                SpliceFragEndWholeBlock -> "'"
+                SpliceFragEndStartSplice -> "\\("
+                SpliceFragEndStartSpliceList -> "\\...("
 
 instance Printable (Punc an) where
   pprint (PuncBigSeparator _) = "---"
@@ -124,14 +133,16 @@ instance Printable (Program an) where
   pprint (Program lexemes) = T.concat $ map pprint $ annd lexemes
 
 instance ReducePrintable (SpliceFrag an) where
-  reducePrint (SpliceFrag content isStart isEnd)
+  reducePrint (SpliceFrag content isStart end)
     = reducePrintStart <> reducePrint (annd content) <> reducePrintEnd
     where reducePrintStart
             | isStart = "'"
             | otherwise = ""
           reducePrintEnd
-            | isEnd = "'"
-            | otherwise = "\\"
+            = case end of
+                SpliceFragEndWholeBlock -> "'"
+                SpliceFragEndStartSplice -> "\\"
+                SpliceFragEndStartSpliceList -> "\\..."
 
 instance ReducePrintable (Punc an) where
   reducePrint = pprint
