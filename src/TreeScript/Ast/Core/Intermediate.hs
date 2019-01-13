@@ -77,9 +77,17 @@ data Reducer an
   , reducerOutput :: ReducerClause an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Applies a group's statements inside another group, in a certain way.
+data GroupStmt an
+  = GroupStmt
+  { groupStmtAnn :: an
+  , groupStmtRef :: GroupRef an
+  , groupStmtMode :: C.GroupMode
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (GroupRef an)
+  = StatementGroup (GroupStmt an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 

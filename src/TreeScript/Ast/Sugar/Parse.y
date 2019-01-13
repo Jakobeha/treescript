@@ -54,8 +54,10 @@ TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Statement : Group ';' { StatementGroup $1 }
+Statement : GroupStmt ';' { StatementGroup $1 }
           | Reducer ';' { StatementReducer $1 }
+          ;
+GroupStmt : Group Symbol { GroupStmt (getAnn $1 <> getAnn $2) $1 $2 }
           ;
 Reducer : ReducerClause ':' ReducerClause { Reducer (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
         ;

@@ -149,7 +149,8 @@ flattenSpliceText :: S.SpliceText Range -> T.Text
 flattenSpliceText spliceText = flattenRest 0 spliceText
   where flattenRest :: Int -> S.SpliceText Range -> T.Text
         flattenRest _ (S.SpliceTextNil _ txt) = txt
-        flattenRest n (S.SpliceTextCons _ txt _ rst) = txt <> "\\" <> pprint n <> flattenRest (n + 1) rst
+        flattenRest n (S.SpliceTextCons _ txt _ rst)
+          = txt <> "\\" <> pprint n <> flattenRest (n + 1) rst
 
 spliceTextValues :: S.SpliceText Range -> [S.Value Range]
 spliceTextValues (S.SpliceTextNil _ _) = []
@@ -184,6 +185,19 @@ parseGroupRef1 :: S.Group Range -> I.BindSessionRes (I.GroupRef Range)
 parseGroupRef1 (S.Group rng head' props)
   = I.GroupRef rng head' <$> traverseDropFatals parseGroupProperty1 props
 
+parseGroupMode :: S.Symbol Range -> I.BindSessionRes GroupMode
+parseGroupMode (S.Symbol rng txt)
+  = case txt of
+      "thorough" -> pure GroupModeThorough
+      "setup" -> pure GroupModeSetup
+      "cleanup" -> pure GroupModeCleanup
+      "splice" -> pure GroupModeSplice
+      _ -> mkFail $ parseError rng $ "not a valid group mode (expected \"thorough\", \"setup\", \"cleanup\", or \"splice\"): " <> txt
+
+parseGroupStmt1 :: S.GroupStmt Range -> I.BindSessionRes (I.GroupStmt Range)
+parseGroupStmt1 (S.GroupStmt rng ref mode)
+  = I.GroupStmt rng <$> parseGroupRef1 ref <*> parseGroupMode mode
+
 parseReducerClause1 :: S.ReducerClause Range -> I.BindSessionRes (I.ReducerClause Range)
 parseReducerClause1 (S.ReducerClause rng val groups)
   = I.ReducerClause rng <$> parseValue val <*> traverseDropFatals parseGroupRef1 groups
@@ -193,7 +207,7 @@ parseReducer1 (S.Reducer rng input output)
   = I.Reducer rng <$> parseReducerClause1 input <*> parseReducerClause1 output
 
 parseStatement1 :: S.Statement Range -> I.BindSessionRes (I.Statement Range)
-parseStatement1 (S.StatementGroup group) = I.StatementGroup <$> parseGroupRef1 group
+parseStatement1 (S.StatementGroup group) = I.StatementGroup <$> parseGroupStmt1 group
 parseStatement1 (S.StatementReducer red) = I.StatementReducer <$> parseReducer1 red
 
 parseGroupPropDecl1 :: S.GenProperty Range -> I.BindSessionRes (T.Text, Bind Range)
@@ -274,6 +288,11 @@ parseGroupRef2 bindEnv (I.GroupRef rng (S.Symbol headRng head') props) = do
         , groupRefProps = props'
         }
 
+parseGroupStmt2 :: I.BindEnv -> I.GroupStmt Range -> I.GroupSessionRes (GroupStmt Range)
+parseGroupStmt2 bindEnv (I.GroupStmt rng ref mode)
+  = mkGroupStmt <$> parseGroupRef2 bindEnv ref
+  where mkGroupStmt ref' = GroupStmt rng ref' mode
+
 parseReducerClause2 :: I.BindEnv -> I.ReducerClause Range -> I.GroupSessionRes (ReducerClause Range)
 parseReducerClause2 bindEnv (I.ReducerClause rng val groups)
   = ReducerClause rng val <$> traverseDropFatals (parseGroupRef2 bindEnv) groups
@@ -285,7 +304,7 @@ parseReducer2 bindEnv (I.Reducer rng input output)
   <*> parseReducerClause2 bindEnv output
 
 parseStatement2 :: I.BindEnv -> I.Statement Range -> I.GroupSessionRes (Statement Range)
-parseStatement2 bindEnv (I.StatementGroup group) = StatementGroup <$> parseGroupRef2 bindEnv group
+parseStatement2 bindEnv (I.StatementGroup group) = StatementGroup <$> parseGroupStmt2 bindEnv group
 parseStatement2 bindEnv (I.StatementReducer red) = StatementReducer <$> parseReducer2 bindEnv red
 
 parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
@@ -355,22 +374,21 @@ invalidRecordErrs decls reds
                       numProps = length props
         invalidRecordErrorsValue1 (ValueBind _) = []
 
-unboundOutputErrsCovariantValue1 :: S.Set Int -> Value Range -> [Error]
-unboundOutputErrsCovariantValue1 _ (ValuePrimitive _) = []
-unboundOutputErrsCovariantValue1 _ (ValueRecord _) = []
-unboundOutputErrsCovariantValue1 binds (ValueBind (Bind rng idx))
-  | S.member idx binds = []
-  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
-  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
-
 unboundOutputErrsValue :: I.Variance -> Value Range -> [Error]
 unboundOutputErrsValue I.VarianceContravariant (ValuePrimitive _) = []
 unboundOutputErrsValue I.VarianceContravariant (ValueRecord (Record _ head' props))
+  | head' == flushRecordHead = []
   | recordHeadIsFunc head' = concatMap (unboundOutputErrsValue $ I.VarianceCovariant S.empty) props
   | otherwise = concatMap (unboundOutputErrsValue I.VarianceContravariant) props
 unboundOutputErrsValue I.VarianceContravariant (ValueBind _) = []
-unboundOutputErrsValue (I.VarianceCovariant binds) val
-  = foldValue (unboundOutputErrsCovariantValue1 binds) val
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValuePrimitive _) = []
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValueRecord (Record _ head' props))
+  | head' = flushRecordHead = []
+  | otherwise = foldMap (unboundOutputErrsValue $ I.VarianceCovariant binds) props
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
+  | S.member idx binds = []
+  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
+  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
 
 unboundOutputErrsGroup :: S.Set Int -> Bool -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
 unboundOutputErrsGroup extraBinds isCovariant group
@@ -419,7 +437,7 @@ unboundOutputErrsReducer extraBinds isCovariant (Reducer _ input output)
   <*> unboundOutputErrsClause I.VarianceContravariant output
 
 unboundOutputErrs1 :: S.Set Int -> Bool -> Statement Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrs1 extraBinds isCovariant (StatementGroup group) = unboundOutputErrsGroup extraBinds isCovariant group
+unboundOutputErrs1 extraBinds isCovariant (StatementGroup group) = unboundOutputErrsGroup extraBinds isCovariant $ groupStmtRef group
 unboundOutputErrs1 extraBinds isCovariant (StatementReducer red) = unboundOutputErrsReducer extraBinds isCovariant red
 
 unboundOutputErrs :: S.Set Int -> Bool -> [Statement Range] -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]

@@ -64,7 +64,12 @@ mapValuesInReducer f (Reducer ann input output)
 
 -- | Applies to each value, then combines all results.
 mapValuesInStatement :: (Value an -> Value an) -> Statement an -> Statement an
-mapValuesInStatement f (StatementGroup group) = StatementGroup $ mapValuesInGroupRef f group
+mapValuesInStatement f (StatementGroup (GroupStmt ann group mode))
+  = StatementGroup GroupStmt
+  { groupStmtAnn = ann
+  , groupStmtRef = mapValuesInGroupRef f group
+  , groupStmtMode = mode
+  }
 mapValuesInStatement f (StatementReducer red) = StatementReducer $ mapValuesInReducer f red
 
 -- | Applies to each child value, then combines all results.
@@ -92,7 +97,7 @@ foldValuesInReducer f (Reducer _ input output)
 
 -- | Applies to each value, then combines all results.
 foldValuesInStatement :: (Monoid r) => (Value an -> r) -> Statement an -> r
-foldValuesInStatement f (StatementGroup group) = foldValuesInGroupRef f group
+foldValuesInStatement f (StatementGroup groupStmt) = foldValuesInGroupRef f $ groupStmtRef groupStmt
 foldValuesInStatement f (StatementReducer red) = foldValuesInReducer f red
 
 -- | Applies to each child value, then combines all results.
@@ -120,8 +125,11 @@ traverseValuesInReducer f (Reducer ann input output)
 
 -- | Applies to each value, then combines all results.
 traverseValuesInStatement :: (Monad w) => (Value an -> w (Value an)) -> Statement an -> w (Statement an)
-traverseValuesInStatement f (StatementGroup group) = StatementGroup <$> traverseValuesInGroupRef f group
-traverseValuesInStatement f (StatementReducer red) = StatementReducer <$> traverseValuesInReducer f red
+traverseValuesInStatement f (StatementGroup (GroupStmt ann group mode))
+  = StatementGroup . mkGroupStmt <$> traverseValuesInGroupRef f group
+  where mkGroupStmt group' = GroupStmt ann group' mode
+traverseValuesInStatement f (StatementReducer red)
+  = StatementReducer <$> traverseValuesInReducer f red
 
 substMany1 :: [(Value an, Value an)] -> Value an -> Value an
 substMany1 substs x
@@ -150,7 +158,7 @@ maxNumBindsInReducer groups (Reducer _ input output)
   = max (maxNumBindsInClause groups input) (maxNumBindsInClause groups output)
 
 maxNumBindsInStatement :: V.Vector (GroupDef an) -> Statement an -> Int
-maxNumBindsInStatement groupDefs (StatementGroup groupRef) = maxNumBindsInGroupRef groupDefs groupRef
+maxNumBindsInStatement groupDefs (StatementGroup groupStmt) = maxNumBindsInGroupRef groupDefs $ groupStmtRef groupStmt
 maxNumBindsInStatement groups (StatementReducer red) = maxNumBindsInReducer groups red
 
 maxNumBindsInStatements :: V.Vector (GroupDef an) -> [Statement an] -> Int

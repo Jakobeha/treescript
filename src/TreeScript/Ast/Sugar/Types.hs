@@ -73,6 +73,14 @@ data Group an
   , groupProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Applies a group's statements inside another group, in a certain way.
+data GroupStmt an
+  = GroupStmt
+  { groupStmtAnn :: an
+  , groupStmtRef :: Group an
+  , groupStmtMode :: Symbol an
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Contains a head and properties. A parent in the AST.
 data Record an
   = Record
@@ -97,7 +105,7 @@ data Value an
   | ValueSpliceCode (SpliceCode an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | An input or output of a reducer
+-- | An input or output of a reducer.
 data ReducerClause an
   = ReducerClause
   { reducerClauseAnn :: an
@@ -115,7 +123,7 @@ data Reducer an
 
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (Group an)
+  = StatementGroup (GroupStmt an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -141,9 +149,9 @@ instance TreePrintable SpliceText where
   treePrint par leaf spliceText = "'" <> printRest spliceText
     where printRest (SpliceTextNil _ txt) = leaf txt <> "'"
           printRest (SpliceTextCons _ txt val rst)
-            = leaf txt <> printSpliced val <> printRest rst
-          printSpliced val@(ValueBind _) = par val
-          printSpliced val = "\\(" <> par val <> ")"
+            = leaf txt <> "\\" <> printSpliced val <> printRest rst
+          printSpliced (ValueBind (Bind _ sym)) = foldMap par sym
+          printSpliced val = "(" <> par val <> ")"
 
 instance TreePrintable SpliceCode where
   treePrint par _ (SpliceCode _ lang txt) = par lang <> par txt
@@ -167,6 +175,10 @@ instance TreePrintable GenProperty where
 instance TreePrintable Group where
   treePrint par _ (Group _ head' props)
     = "&" <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
+
+instance TreePrintable GroupStmt where
+  treePrint par _ (GroupStmt _ group mode)
+    = par group <> " " <> par mode
 
 instance TreePrintable Record where
   treePrint par _ (Record _ isFun head' props)

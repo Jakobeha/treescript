@@ -74,6 +74,22 @@ data GroupRef an
   , groupRefProps :: [Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Describes how a group is applied inside another group.
+data GroupMode
+  = GroupModeThorough
+  | GroupModeSetup
+  | GroupModeCleanup
+  | GroupModeSplice
+  deriving (Eq, Ord, Read, Show)
+
+-- | Applies a group's statements inside another group, in a certain way.
+data GroupStmt an
+  = GroupStmt
+  { groupStmtAnn :: an
+  , groupStmtRef :: GroupRef an
+  , groupStmtMode :: GroupMode
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | The input or output of a reducer.
 data ReducerClause an
   = ReducerClause
@@ -92,7 +108,7 @@ data Reducer an
 
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (GroupRef an)
+  = StatementGroup (GroupStmt an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -163,6 +179,16 @@ instance Printable (GroupRef an) where
   pprint (GroupRef _ head' props)
     = "&" <> pprint head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
 
+instance Printable GroupMode where
+  pprint GroupModeThorough = "thorough"
+  pprint GroupModeSetup = "setup"
+  pprint GroupModeCleanup = "cleanup"
+  pprint GroupModeSplice = "splice"
+
+instance Printable (GroupStmt an) where
+  pprint (GroupStmt _ group mode)
+    = pprint group <> " " <> pprint mode
+
 instance Printable (ReducerClause an) where
   pprint (ReducerClause _ val groups)
     = T.intercalate " " $ pprint val : map pprint groups
@@ -209,7 +235,17 @@ builtinDecls =
   , mkBuiltinDecl False "False" 0
   , mkBuiltinDecl False "Nil" 0
   , mkBuiltinDecl False "Cons" 2
+  , mkBuiltinDecl False "Hole" 0
+  , mkBuiltinDecl True "Flush" 1
   ]
+
+-- | The head of a special record, whose contents can contain unassigned binds in covariant or contravariant positions.
+flushRecordHead :: RecordHead
+flushRecordHead
+  = RecordHead
+  { recordHeadIsFunc = True
+  , recordHeadName = "Flush"
+  }
 
 compactRecordDecl :: RecordDecl an -> RecordDeclCompact
 compactRecordDecl (RecordDecl _ head' props)
