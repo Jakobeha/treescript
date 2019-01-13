@@ -1,3 +1,4 @@
+#include "reduce.h"
 #include <assert.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -7,9 +8,10 @@
 #include "helpers.h"
 #include "libraries.h"
 #include "misc.h"
-#include "reduce.h"
 
-bool reduce_nested(surface_reducer reduce_surface, const match_arr in_matches, value* x) {
+bool reduce_nested(surface_reducer reduce_surface,
+                   const match_arr in_matches,
+                   value* x) {
   value in = *x;
   if (in.type == RECORD) {
     value_record in_record = in.as_record;
@@ -31,17 +33,14 @@ bool reduce_nested(surface_reducer reduce_surface, const match_arr in_matches, v
   }
 }
 
-bool reduce_children(surface_reducer reduce_surface, const match_arr in_matches, value* x) {
+bool reduce_children(surface_reducer reduce_surface,
+                     const match_arr in_matches,
+                     value* x) {
   value* in_props = malloc(sizeof(value) * 1);
   in_props[0] = *x;
-  value in = {
-    .type = RECORD,
-    .as_record = (value_record){
-      .head = "E",
-      .num_props = 1,
-      .props = in_props
-    }
-  };
+  value in = {.type = RECORD,
+              .as_record = (value_record){
+                  .head = "E", .num_props = 1, .props = in_props}};
 
   if (reduce_surface(REDUCE_EVALCTX, in_matches, &in)) {
     *x = in;
@@ -57,10 +56,13 @@ bool reduce_main(reduce_type type, const match_arr in_matches, value* x) {
   // \reduce_main
 }
 
-bool reduce_aux(surface_reducer reduce_surface, reduce_type type, const match_arr in_matches, value* x) {
-  return
-    reduce_surface(type, in_matches, x) ||
-    (type == REDUCE_STANDARD && reduce_children(reduce_surface, in_matches, x));
+bool reduce_aux(surface_reducer reduce_surface,
+                reduce_type type,
+                const match_arr in_matches,
+                value* x) {
+  return reduce_surface(type, in_matches, x) ||
+         (type == REDUCE_STANDARD &&
+          reduce_children(reduce_surface, in_matches, x));
 }
 
 void reduce(value* x) {
@@ -68,5 +70,5 @@ void reduce(value* x) {
   for (int i = 0; i < MAX_NUM_BINDS; i++) {
     matches[i].is_set = false;
   }
-  while (reduce_aux(reduce_main, REDUCE_STANDARD, matches, x)) { ; }
+  reduce_aux(reduce_main, REDUCE_STANDARD, matches, x);
 }

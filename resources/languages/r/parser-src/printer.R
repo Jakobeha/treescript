@@ -1,8 +1,11 @@
 #!/usr/bin/env Rscript
-# TODO Fix handling dots (specifically cases like (foo . (bar)))
-library(stringr)
-library(stringi)
-library(rlang)
+suppressPackageStartupMessages({
+  library(magrittr)
+  library(purrr)
+  library(rlang)
+  library(stringi)
+  library(stringr)
+})
 options(useFancyQuotes = FALSE)
 
 stdin <- file("stdin")
@@ -13,9 +16,42 @@ raiseSyntax <- function(msg) {
   quit(save="no", status=1, runLast=FALSE)
 }
 
+formatFancy <- function(expr) {
+  recurse <- function(expr, f) {
+    recurseF <- function(expr) {
+      recurse(f(expr), f)
+    }
+    if (is.call(expr)) {
+      as.call(lapply(expr, recurseF))
+    } else if (is.pairlist(expr)) {
+      as.pairlist(lapply(expr, recurseF))
+    } else {
+      expr
+    }
+  }
+  flattenNested <- function(expr) {
+    if (is.call(expr) && expr[[1]] == as.symbol("{")) {
+      as.call(flatten(lapply(expr, flatten1)))
+    } else {
+      expr
+    }
+  }
+  flatten1 <- function(expr) {
+    if (is_call(expr) && expr[[1]] == as.symbol("{")) {
+      as.list(expr[-1])
+    } else {
+      list(expr)
+    }
+  }
+
+  expr %>%
+    recurse(flattenNested) %>%
+    flatten1()
+}
+
 for (line in readLines(stdin)) {
   inp <- paste0(line, " ")
-  
+
   checkRead <- function(type, nextAndInp) {
     if (is.na(nextAndInp[2])) {
       raiseSyntax(paste0("while parsing ", type, ", expected more words from: ", inp))
@@ -104,12 +140,16 @@ for (line in readLines(stdin)) {
       raiseSyntax(paste("value of unknown type:", word))
     )
   }
-  
+
   expr <- readExpr()
 
   if (!grepl("\\s*", inp)) {
     raiseSyntax(paste("extra words after value:", inp))
   }
-  
-  expr_print(expr)
+
+  exprs <- formatFancy(expr)
+
+  for (expr in exprs) {
+    expr_print(expr)
+  }
 }

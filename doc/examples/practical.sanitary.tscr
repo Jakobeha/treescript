@@ -1,20 +1,53 @@
+Processed[name; expr].
+Find[x; xs].
+
+&OptimizeFor[];
+&Cleanup[];
+
+&OptimizeFor[].
+---
 r'
 for (\i in \iter) {
-  \x[[\i]] <- \expr
+  ...\in
 }
-' &Group[]: r'
-\y <- as.list(\x)
+' &Env[] &Contains[x: r'\x[[\i]] <- \']: Processed["OptimizeFor"; r'
+if (is.data.frame(\x)) {
+  \y <- as.list(\x)
 
-for (\i in \iter) {
-  \y[[\i]] <- \expr
+  for (\i in \iter) {
+    ...\out
+  }
+
+  \x <- as.data.frame(\y)
 }
+'] &Subst[old: r'\x[[\i]] <- \expr'; new: '\y[[\i]] <- \expr'];
+&Recurse[];
 
-\x <- as.data.frame(\y)
-';
-
-&Group[i; x; iter; y];
+&Cleanup[].
 ---
-\i: R_Var[\; \];
-\x: R_Var[\; "data.frame"];
-#Includes[\iter; \x]: False[];
-R_Var[#FreeId[]; "data.list"]: \y;
+Processed[\; \expr]: \expr;
+&Recurse[];
+
+&Env[i; x; y].
+---
+\i: R_Symbol[\];
+\x: R_Symbol[\];
+R_Symbol[#Base_FreeString[R_Symbol[Hole[]]]]: \y;
+
+&Recurse[].
+---
+E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; #Base_Map[E[Hole[]]; \exprs]];
+
+&Contains[in; x].
+---
+Find[#Flush[\x]; \in]: \x;
+
+&Subst[in; out; old; new].
+---
+\out &Match[out: Nil[]]: Nil[];
+\out &Match[out: Cons[\old; \rst]]: Cons[\new; \rst];
+\out &Match[out: Cons[\x; \rst]]: Cons[\x; \rst];
+
+&Match[in; out].
+---
+\out: \in;

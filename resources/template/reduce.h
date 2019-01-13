@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include "types.h"
 
+#define MAX_NUM_BINDS 1  // \max_num_binds
+
 typedef enum {
   REDUCE_STANDARD,
   REDUCE_EVALCTX

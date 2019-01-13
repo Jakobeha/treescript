@@ -1,5 +1,9 @@
 name: Base
 functions:
+- name: IsEqual
+  args: 2
+- name: Map
+  args: 2
 - name: Add
   args: 2
 - name: Subtract
@@ -7,6 +11,8 @@ functions:
 - name: Multiply
   args: 2
 - name: Divide
+  args: 2
+- name: GreaterThan
   args: 2
 - name: LessThan
   args: 2

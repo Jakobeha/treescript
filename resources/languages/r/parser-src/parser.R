@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 # TODO Fix handling dots (specifically cases like (foo . (bar)))
-library(stringr)
-library(stringi)
 library(rlang)
+library(stringi)
+library(stringr)
 options(useFancyQuotes = FALSE)
 
 raiseSyntax <- function(msg) {
@@ -49,9 +49,9 @@ writeExpr <- function(expr) {
     writeNode("Literal")
     if (is.null(expr)) {
       writeWord("Unit")
-    } else if (expr == TRUE) {
+    } else if (identical(expr, TRUE)) {
       writeWord("True")
-    } else if (expr == FALSE) {
+    } else if (identical(expr, FALSE)) {
       writeWord("False")
     } else if (is.numeric(expr)) {
       if (expr%%1 == 0) {

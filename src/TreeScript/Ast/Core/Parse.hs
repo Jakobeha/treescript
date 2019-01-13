@@ -325,6 +325,7 @@ parseRaw (S.Program rng topLevels) = do
 
 -- == Validation
 
+
 duplicateDeclErrs :: [RecordDeclCompact] -> [RecordDecl Range] -> [Error]
 duplicateDeclErrs imported decls
   = catMaybes $ zipWith duplicateDeclErr decls (inits decls)
@@ -355,22 +356,21 @@ invalidRecordErrs decls reds
                       numProps = length props
         invalidRecordErrorsValue1 (ValueBind _) = []
 
-unboundOutputErrsCovariantValue1 :: S.Set Int -> Value Range -> [Error]
-unboundOutputErrsCovariantValue1 _ (ValuePrimitive _) = []
-unboundOutputErrsCovariantValue1 _ (ValueRecord _) = []
-unboundOutputErrsCovariantValue1 binds (ValueBind (Bind rng idx))
-  | S.member idx binds = []
-  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
-  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
-
 unboundOutputErrsValue :: I.Variance -> Value Range -> [Error]
 unboundOutputErrsValue I.VarianceContravariant (ValuePrimitive _) = []
 unboundOutputErrsValue I.VarianceContravariant (ValueRecord (Record _ head' props))
+  | head' == flushRecordHead = []
   | recordHeadIsFunc head' = concatMap (unboundOutputErrsValue $ I.VarianceCovariant S.empty) props
   | otherwise = concatMap (unboundOutputErrsValue I.VarianceContravariant) props
 unboundOutputErrsValue I.VarianceContravariant (ValueBind _) = []
-unboundOutputErrsValue (I.VarianceCovariant binds) val
-  = foldValue (unboundOutputErrsCovariantValue1 binds) val
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValuePrimitive _) = []
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValueRecord (Record _ head' props))
+  | head' = flushRecordHead = []
+  | otherwise = foldMap (unboundOutputErrsValue $ I.VarianceCovariant binds) props
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
+  | S.member idx binds = []
+  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
+  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
 
 unboundOutputErrsGroup :: S.Set Int -> Bool -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
 unboundOutputErrsGroup extraBinds isCovariant group
