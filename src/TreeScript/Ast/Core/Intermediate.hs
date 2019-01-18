@@ -89,6 +89,7 @@ data GroupDef an
   { groupDefAnn :: an
   , groupDefHead :: T.Text
   , groupDefProps :: [(T.Text, C.Bind an)]
+  , groupDefRepeats :: Bool
   , groupDefStatements :: [Statement an]
   , groupDefBindEnv :: BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)

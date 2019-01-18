@@ -1,53 +1,70 @@
 Processed[name; expr].
 Find[x; xs].
+Found[x].
+NotFound[].
 
 &OptimizeFor[];
 &Cleanup[];
 
 &OptimizeFor[].
----
+===
 r'
 for (\i in \iter) {
   ...\in
 }
-' &Env[] &Contains[x: r'\x[[\i]] <- \']: Processed["OptimizeFor"; r'
+' &Env[] &Contains[x: r'\x[[\i]] <- \_']: Processed["OptimizeFor"; r'
 if (is.data.frame(\x)) {
   \y <- as.list(\x)
 
   for (\i in \iter) {
-    ...\out
+    ...\in
   }
 
   \x <- as.data.frame(\y)
 }
-'] &Subst[old: r'\x[[\i]] <- \expr'; new: '\y[[\i]] <- \expr'];
-&Recurse[];
+'] &Subst[old: r'\x[[\i]] <- \expr'; new: r'\y[[\i]] <- \expr'];
+E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; #Base_Map[E[Hole[1]]; \exprs]];
+E[r'if (\pred) \body']: r'if (\pred) \(E[\body])';
 
 &Cleanup[].
----
+===
 Processed[\; \expr]: \expr;
-&Recurse[];
+E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; #Base_Map[E[Hole[1]]; \exprs]];
+E[r'if (\pred) \body']: r'if (\pred) \(E[\body])';
 
 &Env[i; x; y].
 ---
 \i: R_Symbol[\];
 \x: R_Symbol[\];
-R_Symbol[#Base_FreeString[R_Symbol[Hole[]]]]: \y;
-
-&Recurse[].
----
-E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; #Base_Map[E[Hole[]]; \exprs]];
+#Base_FreeString["y"; R_Symbol[Hole[1]]]: \y;
 
 &Contains[in; x].
 ---
-Find[#Flush[\x]; \in]: \x;
+Find[#Flush[\x]; \in] &Find[]: Found[\x];
 
-&Subst[in; out; old; new].
----
-\out &Match[out: Nil[]]: Nil[];
-\out &Match[out: Cons[\old; \rst]]: Cons[\new; \rst];
-\out &Match[out: Cons[\x; \rst]]: Cons[\x; \rst];
+&Find[].
+===
+Find[\; Nil[]]: NotFound[];
+Find[\x; Cons[\y; \]] &IsTrue[x: #Base_Matches[\x; \y]]: Found[\y];
+Find[\x; Cons[\; \xs]]: Find[\x; \xs];
 
-&Match[in; out].
+&SubstIn[in; old; new].
 ---
-\out: \in;
+\in: \in &Subst[];
+E[Cons[\fst; \rst]]: Cons[E[\fst]; E[\rst]];
+E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; E[\exprs]];
+E[R_PairList[\exprs]]: R_PairList[E[\exprs]];
+E[r'if (\pred) \body']: r'if (\pred) \(E[\body])';
+E[r'for (\x in \y) \body']: r'for (\x in \y) \(E[\body])';
+E[Processed[\f; \x]]: Processed[\f; E[\x]];
+
+&Subst[old; new].
+===
+\old: \new;
+E[R_Call[\fun; \exprs]]: R_Call[E[\fun]; #Base_Map[E[Hole[1]]; \exprs]];
+E[R_PairList[\exprs]]: R_PairList[#Base_Map[E[Hole[1]]; \exprs]];
+E[Processed[\f; \x]]: Processed[\f; E[\x]];
+
+&IsTrue[x].
+---
+\x: True[];

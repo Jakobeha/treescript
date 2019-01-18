@@ -6,30 +6,22 @@ IsEqual[x; y].
 
 &Curry[];
 &Apply[];
-
-//Helpers
-AndMap[\f; Scheme_Nil[]]: Scheme_Nil[];
-AndMap[\f; Scheme_Cons[\x; \xs]] &IsTrue[x: Apply[\f; \x]]: AndMap[\f; \xs];
-AndMap[\; Scheme_Cons[\; \]]: False[];
-Apply[IsSymbol[]; Scheme_Symbol[\]]: True[];
-Apply[IsSymbol[]; \]: False[];
-IsEqual[\x; \x]: True[];
-IsEqual[\; \]: False[];
+&Helpers[];
 
 &Curry[].
----
+===
 scm'(lambda (\x \x2 . \xs) \body)': scm'(lambda (\x) (lambda (\x2 . \xs) \body))';
 scm'(\f \arg . \args)' &NonEmpty[xs: \args] &IsFalse[x: IsEqual[\f; scm'lambda']]: scm'((\f \arg) . \args)';
 E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
 E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';
 
 &Apply[].
----
+===
 scm'((lambda (\x) \body) \arg)' &Env[]: Subst[\body; \x; \arg] &Subst[];
 E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
 
 &Subst[].
----
+===
 Subst[\old; \old; \new]: \new;
 Subst[scm'(lambda (\old) \body)'; \old; \] &Env[x: \old]: scm'(lambda (\old) \body)';
 Subst[scm'(lambda (\x) \body)'; \old; \new] &Env[]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
@@ -56,3 +48,13 @@ AndMap[IsSymbol[]; \xs]: True[];
 &IsFalse[x].
 ---
 \x: False[];
+
+&Helpers[].
+===
+AndMap[\f; Scheme_Nil[]]: Scheme_Nil[];
+AndMap[\f; Scheme_Cons[\x; \xs]] &IsTrue[x: Apply[\f; \x]]: AndMap[\f; \xs];
+AndMap[\; Scheme_Cons[\; \]]: False[];
+Apply[IsSymbol[]; Scheme_Symbol[\]]: True[];
+Apply[IsSymbol[]; \]: False[];
+IsEqual[\x; \x]: True[];
+IsEqual[\; \]: False[];

@@ -2,6 +2,8 @@ name: Base
 functions:
 - name: IsEqual
   args: 2
+- name: Matches
+  args: 2
 - name: Map
   args: 2
 - name: Add
@@ -17,4 +19,6 @@ functions:
 - name: LessThan
   args: 2
 - name: Append
+  args: 2
+- name: FreeString
   args: 2

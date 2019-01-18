@@ -68,32 +68,35 @@ mapValuesInStatement f (StatementGroup group) = StatementGroup $ mapValuesInGrou
 mapValuesInStatement f (StatementReducer red) = StatementReducer $ mapValuesInReducer f red
 
 -- | Applies to each child value, then combines all results.
-foldValue :: (Semigroup r) => (Value an -> r) -> Value an -> r
-foldValue f (ValuePrimitive prim) = f $ ValuePrimitive prim
-foldValue f (ValueRecord record)
+foldValue :: (Semigroup r) => (Value an -> r) -> Bool -> Value an -> r
+foldValue f _ (ValuePrimitive prim) = f $ ValuePrimitive prim
+foldValue f flush (ValueRecord record)
+  | recordHead record == flushRecordHead && not flush
+  = f $ ValueRecord record
+  | otherwise
   = foldl' foldInValue (f (ValueRecord record)) (recordProps record)
-  where foldInValue res val = res <> foldValue f val
-foldValue f (ValueBind bind) = f $ ValueBind bind
+  where foldInValue res val = res <> foldValue f flush val
+foldValue f _ (ValueBind bind) = f $ ValueBind bind
 
 -- | Applies to each value, then combines all results.
-foldValuesInGroupRef :: (Monoid r) => (Value an -> r) -> GroupRef an -> r
-foldValuesInGroupRef f = foldMap (foldValue f) . groupRefProps
+foldValuesInGroupRef :: (Monoid r) => (Value an -> r) -> Bool -> GroupRef an -> r
+foldValuesInGroupRef f flush = foldMap (foldValue f flush) . groupRefProps
 
 -- | Applies to each value, then combines all results.
-foldValuesInClause :: (Semigroup r) => (Value an -> r) -> ReducerClause an -> r
-foldValuesInClause f (ReducerClause _ val []) = foldValue f val
-foldValuesInClause f (ReducerClause _ val groups)
-  = fold1 $ foldValue f val N.:| mapMaybe (foldValuesInGroupRef $ Just . f) groups
+foldValuesInClause :: (Semigroup r) => (Value an -> r) -> Bool -> ReducerClause an -> r
+foldValuesInClause f flush (ReducerClause _ val []) = foldValue f flush val
+foldValuesInClause f flush (ReducerClause _ val groups)
+  = fold1 $ foldValue f flush val N.:| mapMaybe (foldValuesInGroupRef (Just . f) flush) groups
 
 -- | Applies to each value, then combines all results.
-foldValuesInReducer :: (Semigroup r) => (Value an -> r) -> Reducer an -> r
-foldValuesInReducer f (Reducer _ input output)
-  = foldValuesInClause f input <> foldValuesInClause f output
+foldValuesInReducer :: (Semigroup r) => (Value an -> r) -> Bool -> Reducer an -> r
+foldValuesInReducer f flush (Reducer _ input output)
+  = foldValuesInClause f flush input <> foldValuesInClause f flush output
 
 -- | Applies to each value, then combines all results.
-foldValuesInStatement :: (Monoid r) => (Value an -> r) -> Statement an -> r
-foldValuesInStatement f (StatementGroup group) = foldValuesInGroupRef f group
-foldValuesInStatement f (StatementReducer red) = foldValuesInReducer f red
+foldValuesInStatement :: (Monoid r) => (Value an -> r) -> Bool -> Statement an -> r
+foldValuesInStatement f flush (StatementGroup group) = foldValuesInGroupRef f flush group
+foldValuesInStatement f flush (StatementReducer red) = foldValuesInReducer f flush red
 
 -- | Applies to each child value, then combines all results.
 traverseValue :: (Monad w) => (Value an -> w (Value an)) -> Value an -> w (Value an)
@@ -135,7 +138,7 @@ numBindsInValue1 (ValueRecord _) = 0
 numBindsInValue1 (ValueBind (Bind _ idx)) = idx
 
 maxNumBindsInValue :: Value an -> Int
-maxNumBindsInValue = getMax0 . foldValue (Max0 . numBindsInValue1)
+maxNumBindsInValue = getMax0 . foldValue (Max0 . numBindsInValue1) True
 
 maxNumBindsInClause :: V.Vector (GroupDef an) -> ReducerClause an -> Int
 maxNumBindsInClause groupDefs (ReducerClause _ value groupRefs)
@@ -143,7 +146,7 @@ maxNumBindsInClause groupDefs (ReducerClause _ value groupRefs)
 
 maxNumBindsInGroupRef :: V.Vector (GroupDef an) -> GroupRef an -> Int
 maxNumBindsInGroupRef groupDefs groupRef
-  = maxNumBindsInStatements groupDefs $ allGroupRefStatements groupDefs groupRef
+  = maxNumBindsInStatements groupDefs $ snd $ allGroupRefStatements groupDefs groupRef
 
 maxNumBindsInReducer :: V.Vector (GroupDef an) -> Reducer an -> Int
 maxNumBindsInReducer groups (Reducer _ input output)
@@ -168,7 +171,7 @@ bindsInValue1 (ValuePrimitive _) = S.empty
 bindsInValue1 (ValueRecord _) = S.empty
 bindsInValue1 (ValueBind bind) = S.singleton $ bindContent bind
 
-bindsInClause :: ReducerClause an -> S.Set Int
+bindsInClause :: Bool -> ReducerClause an -> S.Set Int
 bindsInClause = foldValuesInClause bindsInValue1
 
 langSpecDecls :: LangSpec -> [RecordDeclCompact]
@@ -222,7 +225,7 @@ valueRecordHeads1 (ValueBind _) = []
 -- | Heads of all records in the program.
 allProgramRecordHeads :: Program an -> [RecordHead]
 allProgramRecordHeads prog
-   = foldMap (foldValuesInStatement valueRecordHeads1)
+   = foldMap (foldValuesInStatement valueRecordHeads1 True)
    $ programMainStatements prog
   ++ concatMap groupDefStatements (programGroups prog)
 
@@ -231,7 +234,7 @@ recordHeadUsedLibName1 (RecordHead isFunc name)
   | isFunc
   = case T.splitOn "_" name of
       [libName, _] -> Just libName
-      _ -> error $ T.unpack $ "unexpected function name - " <> name
+      _ -> Nothing
   | otherwise = Nothing
 
 allProgramUsedLibNames :: Program an -> [T.Text]
@@ -243,13 +246,13 @@ getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
 getAllProgramUsedLibraries
   = traverse (libraryWithName StageExtracting) . allProgramUsedLibNames
 
--- | The statements in the group and super-groups, substituting exported binds.
-allGroupDefStatements :: [Value an] -> GroupDef an -> [Statement an]
-allGroupDefStatements props (GroupDef _ propIdxs stmts)
-  = map (mapValuesInStatement $ substMany1 propSubsts) stmts
+-- | The statements in the group and super-groups, substituting exported binds, and whether they repeat.
+allGroupDefStatements :: [Value an] -> GroupDef an -> (Bool, [Statement an])
+allGroupDefStatements props (GroupDef _ propIdxs repeats stmts)
+  = (repeats, map (mapValuesInStatement $ substMany1 propSubsts) stmts)
   where propSubsts = zip (map ValueBind propIdxs) props
 
--- | The statements in the referenced group, substituting exported binds.
-allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> [Statement an]
+-- | The statements in the referenced group, substituting exported binds, and whether they repeat.
+allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> (Bool, [Statement an])
 allGroupRefStatements groups (GroupRef _ idx props)
   = allGroupDefStatements props $ groups V.! idx

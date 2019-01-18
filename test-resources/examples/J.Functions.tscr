@@ -2,6 +2,10 @@ Add[lhs].
 LT[lhs].
 Subst[body; old; new].
 
+&Apply[];
+
+&Apply[].
+===
 //Lambda application
 scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
 //Addition
@@ -18,7 +22,7 @@ E[scm'(if \cond \true \false)']: scm'(if \(E[\cond]) \true \false)';
 E[scm'(list \x \y \z)']: scm'(list \(E[\x]) \(E[\y]) \(E[\z]))';
 
 &Subst[].
----
+===
 Subst[\old; \old; \new]: \new;
 Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
 Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';

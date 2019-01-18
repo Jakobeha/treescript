@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../helpers.h"
 #include "../misc.h"
 
 #define CALL_BASE_ARITH(Name, op)                                     \
@@ -46,14 +47,20 @@
     }                                                                \
   }
 
-value setup_Base() {}
+void setup_Base() {}
 
-value teardown_Base() {}
+void teardown_Base() {}
 
 value call_Base_IsEqual(value* props) {
   value lhs = props[0];
   value rhs = props[1];
   return bool_to_value(values_equal(lhs, rhs));
+}
+
+value call_Base_Matches(value* props) {
+  value lhs = props[0];
+  value rhs = props[1];
+  return bool_to_value(values_match(lhs, rhs));
 }
 
 value call_Base_Map(value* props) {
@@ -64,8 +71,10 @@ value call_Base_Map(value* props) {
     if (strings_equal(xs_rec.head, "Nil")) {
       return NIL_VALUE;
     } else if (strings_equal(xs_rec.head, "Cons")) {
-      value y = subst_value(func, HOLE_VALUE, xs.props[0]);
-      value ys = call_Base_Map((value[]){func, xs.props[1]});
+      value hole = hole_value(1);
+      value y = subst_value(func, hole, xs_rec.props[0]);
+      free_value(hole);
+      value ys = call_Base_Map((value[]){func, xs_rec.props[1]});
       return cons_value(y, ys);
     }
   }
@@ -98,4 +107,13 @@ value call_Base_Append(value* props) {
             "invalid types passed to function 'Append' - expected strings\n");
     exit(1);
   }
+}
+
+value call_Base_FreeString(value* props) {
+  value base = props[0];
+  value template = props[1];
+  if (base.type == PRIM_STRING) {
+  }
+  // TODO
+  return subst_value(template, hole_value(1), dup_value(base));
 }

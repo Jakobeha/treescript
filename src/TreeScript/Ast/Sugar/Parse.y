@@ -19,7 +19,8 @@ import Data.Semigroup
 %monad { Result }
 %tokentype { L.Lexeme Range }
 %token
-  '---' { L.LexemePunc (L.PuncBigSeparator $$) }
+  '---' { L.LexemePunc (L.PuncThinLineSep $$) }
+  '===' { L.LexemePunc (L.PuncThickLineSep $$) }
   '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
   '&' { L.LexemePunc (L.PuncAnd $$) }
@@ -50,12 +51,15 @@ NonEmptyProgram : TopLevel { [$1] }
                 ;
 TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          | Statement { TopLevelStatement $1 }
-         | Group '.' '---' { TopLevelGroupDecl $1 }
+         | GroupDecl { TopLevelGroupDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
 Statement : Group ';' { StatementGroup $1 }
           | Reducer ';' { StatementReducer $1 }
+          ;
+GroupDecl : Group '.' '---' { GroupDecl (getAnn $1 <> $2 <> $3) $1 False }
+          | Group '.' '===' { GroupDecl (getAnn $1 <> $2 <> $3) $1 True }
           ;
 Reducer : ReducerClause ':' ReducerClause { Reducer (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
         ;

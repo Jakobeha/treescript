@@ -101,6 +101,7 @@ data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefProps :: [Bind an]
+  , groupDefRepeats :: Bool
   , groupDefStatements :: [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -180,7 +181,7 @@ instance Printable (Program an) where
     = T.unlines $ map pprint decls ++ [T.empty] ++ map pprint stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
 
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ props reds)
+printGroupDef head' (GroupDef _ props repeats reds)
   = T.unlines $ printDecl : map pprint reds
   where printDecl
            = "&"
@@ -188,7 +189,11 @@ printGroupDef head' (GroupDef _ props reds)
           <> "["
           <> T.intercalate "; " (map pprint props)
           <> "]"
-          <> ".\n---"
+          <> ".\n"
+          <> printRepeats
+        printRepeats
+          | repeats = "==="
+          | otherwise = "---"
 
 mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
 mkBuiltinDecl isFunc head' numProps
@@ -209,7 +214,17 @@ builtinDecls =
   , mkBuiltinDecl False "False" 0
   , mkBuiltinDecl False "Nil" 0
   , mkBuiltinDecl False "Cons" 2
+  , mkBuiltinDecl False "Hole" 1
+  , mkBuiltinDecl True "Flush" 1
   ]
+
+-- | The head of a special record, whose contents can contain unassigned binds in covariant or contravariant positions.
+flushRecordHead :: RecordHead
+flushRecordHead
+  = RecordHead
+  { recordHeadIsFunc = True
+  , recordHeadName = "Flush"
+  }
 
 compactRecordDecl :: RecordDecl an -> RecordDeclCompact
 compactRecordDecl (RecordDecl _ head' props)

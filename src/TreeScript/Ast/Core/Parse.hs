@@ -207,8 +207,8 @@ parseGroupPropDecl1 (S.GenPropertyRecord val) = do
 parseGroupPropDecl1 (S.GenPropertyGroup prop) = do
   mkFail $ parseError (getAnn prop) "expected lowercase symbol, got group property"
 
-parseEmptyGroupDef1 :: S.Group Range -> I.FreeSessionRes (I.GroupDef Range)
-parseEmptyGroupDef1 (S.Group rng (S.Symbol _ head') props) = do
+parseEmptyGroupDef1 :: S.GroupDecl Range -> I.FreeSessionRes (I.GroupDef Range)
+parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ (S.Symbol _ head') props) repeats) = do
   nextFree <- get
   (props', bindEnv)
      <- lift
@@ -219,21 +219,22 @@ parseEmptyGroupDef1 (S.Group rng (S.Symbol _ head') props) = do
     { I.groupDefAnn = rng
     , I.groupDefHead = head'
     , I.groupDefProps = props'
+    , I.groupDefRepeats = repeats
     , I.groupDefStatements = []
     , I.groupDefBindEnv = bindEnv
     }
 
-parseRestGroupDefs1 :: S.Group Range -> [S.TopLevel Range] -> I.FreeSessionRes (N.NonEmpty (I.GroupDef Range))
+parseRestGroupDefs1 :: S.GroupDecl Range -> [S.TopLevel Range] -> I.FreeSessionRes (N.NonEmpty (I.GroupDef Range))
 parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
 parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
 parseRestGroupDefs1 decl (S.TopLevelStatement stmt : xs) = do
-  I.GroupDef yRng yHead yProps yStmts yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
+  I.GroupDef yRng yHead yProps yRepeats yStmts yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
   nextFree <- get
   let yBindEnv' = yBindEnv{ I.bindEnvNextFree = nextFree }
   (stmt', yBindEnv'') <- lift $ runStateT (parseStatement1 stmt) yBindEnv'
   put $ I.bindEnvNextFree yBindEnv''
   let yStmts' = stmt' : yStmts
-  pure $ I.GroupDef (getAnn stmt <> yRng) yHead yProps yStmts' yBindEnv'' N.:| ys
+  pure $ I.GroupDef (getAnn stmt <> yRng) yHead yProps yRepeats yStmts' yBindEnv'' N.:| ys
 parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
 
@@ -289,8 +290,8 @@ parseStatement2 bindEnv (I.StatementGroup group) = StatementGroup <$> parseGroup
 parseStatement2 bindEnv (I.StatementReducer red) = StatementReducer <$> parseReducer2 bindEnv red
 
 parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
-parseGroupDef2 (I.GroupDef rng _ props stmts bindEnv)
-    = GroupDef rng (map (\(_, bind) -> bind) props)
+parseGroupDef2 (I.GroupDef rng _ props repeats stmts bindEnv)
+    = GroupDef rng (map (\(_, bind) -> bind) props) repeats
   <$> traverseDropFatals (parseStatement2 bindEnv) stmts
 
 parseGroupDefEnv :: Int -> I.GroupDef Range -> (T.Text, (Int, V.Vector (Bind Range), M.Map T.Text Int))
@@ -339,8 +340,8 @@ invalidRecordErrs :: [RecordDeclCompact] -> [Reducer Range] -> [Error]
 invalidRecordErrs decls reds
   = concatMap invalidRecordErrorsReducer reds
   where invalidRecordErrorsReducer (Reducer _ input output)
-           = foldValuesInClause invalidRecordErrorsValue1 input
-          ++ foldValuesInClause invalidRecordErrorsValue1 output
+           = foldValuesInClause invalidRecordErrorsValue1 True input
+          ++ foldValuesInClause invalidRecordErrorsValue1 True output
         invalidRecordErrorsValue1 (ValuePrimitive _) = []
         invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
           = case find (\decl -> recordDeclCompactHead decl == head') decls of
@@ -357,80 +358,78 @@ invalidRecordErrs decls reds
         invalidRecordErrorsValue1 (ValueBind _) = []
 
 unboundOutputErrsValue :: I.Variance -> Value Range -> [Error]
-unboundOutputErrsValue I.VarianceContravariant (ValuePrimitive _) = []
+unboundOutputErrsValue _ (ValuePrimitive _) = []
 unboundOutputErrsValue I.VarianceContravariant (ValueRecord (Record _ head' props))
   | head' == flushRecordHead = []
   | recordHeadIsFunc head' = concatMap (unboundOutputErrsValue $ I.VarianceCovariant S.empty) props
   | otherwise = concatMap (unboundOutputErrsValue I.VarianceContravariant) props
 unboundOutputErrsValue I.VarianceContravariant (ValueBind _) = []
-unboundOutputErrsValue (I.VarianceCovariant binds) (ValuePrimitive _) = []
 unboundOutputErrsValue (I.VarianceCovariant binds) (ValueRecord (Record _ head' props))
-  | head' = flushRecordHead = []
+  | head' == flushRecordHead = []
   | otherwise = foldMap (unboundOutputErrsValue $ I.VarianceCovariant binds) props
 unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
   | S.member idx binds = []
-  | idx == 0 = [parseError rng $ "unlabeled bind in non-matching position"]
-  | otherwise = [parseError rng $ "bind in non-matching position has unassigned label"]
+  | idx == 0 = [parseError rng "unlabeled bind in non-matching position"]
+  | otherwise = [parseError rng "bind in non-matching position has unassigned label"]
 
-unboundOutputErrsGroup :: S.Set Int -> Bool -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrsGroup extraBinds isCovariant group
-  = (unboundOutputErrsGroupProp group ++) <$> unboundOutputErrsGroupStmts group
-  where variance
-          | isCovariant = I.VarianceCovariant extraBinds
-          | otherwise = I.VarianceContravariant
-        unboundOutputErrsGroupProp = concatMap (unboundOutputErrsValue variance) . groupRefProps
-        unboundOutputErrsGroupStmts (GroupRef _ idx props) = do
-          groups' <- get
-          let (group', coChecked, contraChecked) = groups' V.! idx
-              checked
-                | isCovariant = coChecked
-                | otherwise = contraChecked
-          if checked then
-            pure []
-          else do
-            let stmts = allGroupDefStatements props group'
-                newGroups
-                  | isCovariant = groups' V.// [(idx, (group', True, contraChecked))]
-                  | otherwise = groups' V.// [(idx, (group', coChecked, True))]
-            put newGroups
-            unboundOutputErrs extraBinds isCovariant stmts
+unboundOutputErrsGroup :: S.Set Int -> Bool -> S.Set Int -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrsGroup extraBinds isCovariant stk (GroupRef rng idx props)
+  | S.member idx stk
+  = pure [parseError rng "recursive group reference - contained in its own definition"]
+  | otherwise = do
+    groups' <- get
+    let stk' = S.insert idx stk
+        (group', coChecked, contraChecked) = groups' V.! idx
+        checked
+          | isCovariant = coChecked
+          | otherwise = contraChecked
+    if checked then
+      pure []
+    else do
+      let (_, stmts) = allGroupDefStatements props group'
+          stkStmts = map (stk', ) stmts
+          newGroups
+            | isCovariant = groups' V.// [(idx, (group', True, contraChecked))]
+            | otherwise = groups' V.// [(idx, (group', coChecked, True))]
+      put newGroups
+      unboundOutputErrs extraBinds isCovariant stkStmts
 
-unboundOutputErrsClause :: I.Variance -> ReducerClause Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrsClause variance clause@(ReducerClause _ val groups)
-  = (unboundOutputErrsValue variance val ++) . concat <$> traverse (unboundOutputErrsGroup extraBinds isCovariant) groups
+unboundOutputErrsClause :: I.Variance -> S.Set Int -> ReducerClause Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrsClause variance stk clause@(ReducerClause _ val groups)
+  = (unboundOutputErrsValue variance val ++) . concat <$> traverse (unboundOutputErrsGroup extraBinds isCovariant stk) groups
   where isCovariant
           = case variance of
               I.VarianceContravariant -> False
               I.VarianceCovariant _ -> True
         extraBinds
           = case variance of
-              I.VarianceContravariant -> bindsInClause clause
+              I.VarianceContravariant -> bindsInClause True clause
               I.VarianceCovariant binds -> binds
 
-unboundOutputErrsReducer :: S.Set Int -> Bool -> Reducer Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrsReducer extraBinds isCovariant (Reducer _ input output)
+unboundOutputErrsReducer :: S.Set Int -> Bool -> S.Set Int -> Reducer Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrsReducer extraBinds isCovariant stk (Reducer _ input output)
     | isCovariant
     = (++)
-  <$> unboundOutputErrsClause I.VarianceContravariant input
-  <*> unboundOutputErrsClause (I.VarianceCovariant $ extraBinds <> bindsInClause input) output
+  <$> unboundOutputErrsClause I.VarianceContravariant stk input
+  <*> unboundOutputErrsClause (I.VarianceCovariant $ extraBinds <> bindsInClause True input) stk output
     | otherwise
     = (++)
-  <$> unboundOutputErrsClause (I.VarianceCovariant $ extraBinds <> bindsInClause output) input
-  <*> unboundOutputErrsClause I.VarianceContravariant output
+  <$> unboundOutputErrsClause (I.VarianceCovariant $ extraBinds <> bindsInClause True output) stk input
+  <*> unboundOutputErrsClause I.VarianceContravariant stk output
 
-unboundOutputErrs1 :: S.Set Int -> Bool -> Statement Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrs1 extraBinds isCovariant (StatementGroup group) = unboundOutputErrsGroup extraBinds isCovariant group
-unboundOutputErrs1 extraBinds isCovariant (StatementReducer red) = unboundOutputErrsReducer extraBinds isCovariant red
+unboundOutputErrs1 :: S.Set Int -> Bool -> S.Set Int -> Statement Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrs1 extraBinds isCovariant stk (StatementGroup group) = unboundOutputErrsGroup extraBinds isCovariant stk group
+unboundOutputErrs1 extraBinds isCovariant stk (StatementReducer red) = unboundOutputErrsReducer extraBinds isCovariant stk red
 
-unboundOutputErrs :: S.Set Int -> Bool -> [Statement Range] -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
+unboundOutputErrs :: S.Set Int -> Bool -> [(S.Set Int, Statement Range)] -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
 unboundOutputErrs extraBinds isCovariant stmts
-  = concat <$> traverse (unboundOutputErrs1 extraBinds isCovariant) stmts
+  = concat <$> traverse (uncurry $ unboundOutputErrs1 extraBinds isCovariant) stmts
 
 validationErrs :: SessionEnv -> Program Range -> [Error]
 validationErrs env (Program _ decls stmts groups)
    = duplicateDeclErrs importedDecls decls
   ++ invalidRecordErrs allDecls allReds
-  ++ evalState (unboundOutputErrs S.empty True stmts) groupsVec
+  ++ evalState (unboundOutputErrs S.empty True $ map (S.empty, ) stmts) groupsVec
   where importedDecls = allImportedDecls env
         allDecls = map compactRecordDecl decls ++ importedDecls
         allStmts = stmts ++ concatMap groupDefStatements groups

@@ -73,6 +73,15 @@ data Group an
   , groupProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Declares a group - reducers below will be part of the group.
+data GroupDecl an
+  = GroupDecl
+  { groupDeclAnn :: an
+  , groupDeclGroup :: Group an
+  , groupDeclRepeat :: Bool
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+
 -- | Contains a head and properties. A parent in the AST.
 data Record an
   = Record
@@ -123,7 +132,7 @@ data Statement an
 data TopLevel an
   = TopLevelRecordDecl (RecordDecl an)
   | TopLevelStatement (Statement an)
-  | TopLevelGroupDecl (Group an)
+  | TopLevelGroupDecl (GroupDecl an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -168,6 +177,13 @@ instance TreePrintable Group where
   treePrint par _ (Group _ head' props)
     = "&" <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
 
+instance TreePrintable GroupDecl where
+  treePrint par _ (GroupDecl _ group repeats)
+    = par group <> ".\n" <> printRepeats
+    where printRepeats
+            | repeats = "==="
+            | otherwise = "---"
+
 instance TreePrintable Record where
   treePrint par _ (Record _ isFun head' props)
     = printIsFun <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
@@ -200,7 +216,7 @@ instance TreePrintable Statement where
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelRecordDecl decl) = par decl
   treePrint par _ (TopLevelStatement stmt) = par stmt
-  treePrint par _ (TopLevelGroupDecl group) = par group <> ".\n---"
+  treePrint par _ (TopLevelGroupDecl decl) = par decl
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels

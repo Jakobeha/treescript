@@ -13,7 +13,7 @@ open(stdin)
 
 raiseSyntax <- function(msg) {
   write(paste0("syntax error - ", msg), stderr())
-  quit(save="no", status=1, runLast=FALSE)
+  paste0("<syntax error - ", msg, ">")
 }
 
 formatFancy <- function(expr) {
@@ -107,7 +107,7 @@ for (line in readLines(stdin)) {
         c(head, rest)
       },
       "Nil" = list(),
-      raiseSyntax(paste("expected a list, got:", word))
+      c(raiseSyntax(paste("expected a list, got:", word)))
     )
   }
   readExpr <- function() {
@@ -142,13 +142,10 @@ for (line in readLines(stdin)) {
   }
 
   expr <- readExpr()
-
-  if (!grepl("\\s*", inp)) {
-    raiseSyntax(paste("extra words after value:", inp))
-  }
-
   exprs <- formatFancy(expr)
-
+  if (!grepl("\\s*", inp)) {
+    exprs <- c(exprs, list(raiseSyntax(paste("extra words after value:", inp))))
+  }
   for (expr in exprs) {
     expr_print(expr)
   }

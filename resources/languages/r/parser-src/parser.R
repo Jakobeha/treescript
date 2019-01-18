@@ -1,5 +1,4 @@
 #!/usr/bin/env Rscript
-# TODO Fix handling dots (specifically cases like (foo . (bar)))
 library(rlang)
 library(stringi)
 library(stringr)
@@ -23,27 +22,36 @@ writeSeparator <- function() {
   cat("\n")
 }
 writeList <- function(writeElem, lst) {
-  lstNames <- names(lst)
   lstLength <- length(lst)
-  if (lstLength > 0) {
-    for (idx in 1:lstLength) {
-      elem <- lst[[idx]]
-      name <- lstNames[[idx]]
-      writeWord("Cons")
-      if (!is.null(name) && name != "") {
-        writeNode("Named")
-        writeString(name)
-      }
-      if (is_missing(elem)) {
-        writeNode("Missing")
-      } else {
-        writeElem(elem)
+  if (
+    lstLength == 1 &&
+    is_symbol(fst <- lst[[1]]) &&
+    !missing(fst) &&
+    !is.na(spliceIdx <- str_match(as_string(fst), "^spliceList_([0-9]+)$")[[2]])
+  ) {
+    writeWord("splice")
+    writeWord(spliceIdx)
+  } else {
+    lstNames <- names(lst)
+    if (lstLength > 0) {
+      for (idx in 1:lstLength) {
+        elem <- lst[[idx]]
+        name <- lstNames[[idx]]
+        writeWord("Cons")
+        if (!is.null(name) && name != "") {
+          writeNode("Named")
+          writeString(name)
+        }
+        if (is_missing(elem)) {
+          writeNode("Missing")
+        } else {
+          writeElem(elem)
+        }
       }
     }
+    writeWord("Nil")
   }
-  writeWord("Nil")
 }
-
 writeExpr <- function(expr) {
   if (is_syntactic_literal(expr)) { # Constants
     writeNode("Literal")
@@ -90,7 +98,9 @@ writeExpr <- function(expr) {
 stdin = file("stdin")
 open(stdin)
 
-text <- gsub("(?<!\\\\)\\\\([0-9]+)", "splice_\\1", readLines(stdin), perl=TRUE)
+suppressWarnings({
+  text <- gsub("(?<!\\\\)\\\\([0-9]+)", "splice_\\1", gsub("\\.\\.\\.\\\\([0-9]+)", "spliceList_\\1", readLines(stdin)), perl=TRUE)
+})
 exprs <- parse(text = text)
 for (expr in exprs) {
   writeExpr(expr)

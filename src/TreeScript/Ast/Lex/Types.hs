@@ -19,7 +19,8 @@ import GHC.Generics
 
 -- | Punctuation, used for control flow.
 data Punc an
-  = PuncBigSeparator an -- ^ @---@
+  = PuncThinLineSep an -- ^ @---@
+  | PuncThickLineSep an -- ^ @===@
   | PuncHash an -- ^ @#@
   | PuncBackSlash an -- ^ @\\@
   | PuncAnd an -- ^ @&@
@@ -94,7 +95,8 @@ instance Printable (SpliceFrag an) where
             | otherwise = "\\("
 
 instance Printable (Punc an) where
-  pprint (PuncBigSeparator _) = "---"
+  pprint (PuncThinLineSep _) = "---"
+  pprint (PuncThickLineSep _) = "==="
   pprint (PuncHash _) = "#"
   pprint (PuncBackSlash _) = "\\"
   pprint (PuncAnd _) = "&"

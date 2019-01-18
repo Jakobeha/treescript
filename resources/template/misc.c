@@ -7,14 +7,14 @@
 #include <strings.h>
 #include "helpers.h"
 
-bool records_equal(value_record x, value_record y) {
+bool records_equal_gen(bool allow_match, value_record x, value_record y) {
   if (!strings_equal(x.head, y.head)) {
     return false;
   }
 
   assert(x.num_props == y.num_props);
   for (int i = 0; i < x.num_props; i++) {  //== y.num_props
-    if (!values_equal(x.props[i], y.props[i])) {
+    if (!values_equal_gen(allow_match, x.props[i], y.props[i])) {
       return false;
     }
   }
@@ -22,7 +22,11 @@ bool records_equal(value_record x, value_record y) {
   return true;
 }
 
-bool values_equal(value x, value y) {
+bool values_equal_gen(bool allow_match, value x, value y) {
+  if (allow_match && is_hole_value(x)) {
+    return true;
+  }
+
   if (x.type != y.type) {
     return false;
   }
@@ -37,8 +41,16 @@ bool values_equal(value x, value y) {
     case PRIM_STRING:
       return strings_equal(x.as_string, y.as_string);
     case RECORD:
-      return records_equal(x.as_record, y.as_record);
+      return records_equal_gen(allow_match, x.as_record, y.as_record);
   }
+}
+
+bool values_equal(value x, value y) {
+  return values_equal_gen(false, x, y);
+}
+
+bool values_match(value x, value y) {
+  return values_equal_gen(true, x, y);
 }
 
 value_record dup_record(value_record x) {
@@ -61,6 +73,11 @@ value dup_value(value x) {
     case RECORD:
       return (value){.type = RECORD, .as_record = dup_record(x.as_record)};
   }
+}
+
+match dup_match(match x) {
+  return (match){.is_set = x.is_set,
+                 .value = x.is_set ? dup_value(x.value) : x.value};
 }
 
 void free_record(value_record x) {
@@ -104,6 +121,18 @@ value cons_value(value first, value rest) {
                      .head = "Cons", .num_props = 2, .props = props}};
 }
 
+value hole_value(int idx) {
+  value* props = malloc(sizeof(value) * 1);
+  props[0] = (value){.type = PRIM_INTEGER, .as_integer = idx};
+  return (value){.type = RECORD,
+                 .as_record = (value_record){
+                     .head = "Hole", .num_props = 1, .props = props}};
+}
+
+bool is_hole_value(value x) {
+  return (x.type == RECORD) && strings_equal(x.as_record.head, "Hole");
+}
+
 value subst_value(value x, value old, value rep) {
   if (values_equal(x, old)) {
     return dup_value(rep);
@@ -114,7 +143,7 @@ value subst_value(value x, value old, value rep) {
       case PRIM_FLOAT:
       case PRIM_STRING:
         return dup_value(x);
-      case RECORD:
+      case RECORD: {
         value_record x_rec = x.as_record;
         value* props = malloc0(sizeof(value) * x_rec.num_props);
         for (int i = 0; i < x_rec.num_props; i++) {
@@ -124,6 +153,7 @@ value subst_value(value x, value old, value rep) {
                        .as_record = (value_record){.head = x_rec.head,
                                                    .num_props = x_rec.num_props,
                                                    .props = props}};
+      }
     }
   }
 }
