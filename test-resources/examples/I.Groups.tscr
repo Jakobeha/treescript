@@ -1,6 +1,7 @@
 Subst[body; old; new].
 AndMap[f; xs].
 Apply[f; x].
+IsEqual[x; y].
 IsSymbol[].
 
 &Curry[];
@@ -9,14 +10,10 @@ IsSymbol[].
 &Curry[].
 ===
 scm'(lambda (\x \x2 . \xs) \body)': scm'(lambda (\x) (lambda (\x2 . \xs) \body))';
-&CurryApp[];
+scm'(\f \arg . \args)' &NonEmpty[xs: \args] &IsFalse[x: IsEqual[\f; scm'lambda']]: scm'((\f \arg) . \args)';
 E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
 E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';
 
-&CurryApp[].
----
-scm'(lambda (\x) \body)': scm'(lambda (\x) \body)';
-scm'(\f \arg . \args)' &NonEmpty[xs: \args]: scm'((\f \arg) . \args)';
 
 &Apply[].
 ===
@@ -44,6 +41,10 @@ AndMap[IsSymbol[]; \xs] &Helpers[]: True[];
 ---
 \x &Helpers[]: True[];
 
+&IsFalse[x].
+---
+\x &Helpers[]: False[];
+
 &NonEmpty[xs].
 ---
 \xs: Scheme_Cons[\; \];
@@ -55,3 +56,5 @@ AndMap[\f; Scheme_Cons[\x; \xs]] &IsTrue[x: Apply[\f; \x]]: AndMap[\f; \xs];
 AndMap[\; Scheme_Cons[\; \]]: False[];
 Apply[IsSymbol[]; Scheme_Symbol[\]]: True[];
 Apply[IsSymbol[]; \]: False[];
+IsEqual[\x; \x]: True[];
+IsEqual[\; \]: False[];

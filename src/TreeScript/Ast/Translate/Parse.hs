@@ -47,41 +47,45 @@ parseConsumes (ValuePrimitive prim) = [ConsumePrimitive prim]
 parseConsumes (ValueRecord (Record head' props))
   = ConsumeRecord head' : concatMap parseConsumes props
 
-parseReducerClause :: V.Vector (C.GroupDef an) -> C.ReducerClause an -> ReducerClause
-parseReducerClause groupDefs (C.ReducerClause _ val groupRefs)
+parseReducerClause :: C.ReducerClause an -> ReducerClause
+parseReducerClause (C.ReducerClause _ val groups)
   = ReducerClause
   { reducerClauseConsumes = parseConsumes val'
   , reducerClauseProduce = val'
-  , reducerClauseGroups = map (parseGroup groupDefs) groupRefs
+  , reducerClauseGroups = map parseGroupRef groups
   }
   where val' = parseValue val
 
-parseGroup :: V.Vector (C.GroupDef an) -> C.GroupRef an -> Group
-parseGroup groupDefs groupRef = Group
-  { groupRepeats = repeats
-  , groupStatements = map (map $ parseStatement groupDefs) $ A.elems stmts
-  }
-  where (repeats, stmts) = C.allGroupRefStatements groupDefs groupRef
-
-parseReducer :: V.Vector (C.GroupDef an) -> C.Reducer an -> Reducer
-parseReducer groups (C.Reducer _ input output) = Reducer
-  { reducerInput = parseReducerClause groups input
-  , reducerOutput = parseReducerClause groups output
+parseGroupRef :: C.GroupRef an -> GroupRef
+parseGroupRef (C.GroupRef _ idx props) = GroupRef
+  { groupRefIdx = idx
+  , groupRefProps = map parseValue props
   }
 
-parseStatement :: V.Vector (C.GroupDef an) -> C.Statement an -> Statement
-parseStatement groupDefs (C.StatementGroup groupRef)
-  = StatementGroup $ parseGroup groupDefs groupRef
-parseStatement groups (C.StatementReducer reducer)
-  = StatementReducer $ parseReducer groups reducer
-
-parseMainGroup :: C.Program an -> SessionRes Group
-parseMainGroup prog = pure Group
-  { groupRepeats = False
-  , groupStatements = [map (parseStatement groups) stmts]
+parseReducer :: C.Reducer an -> Reducer
+parseReducer (C.Reducer _ input output) = Reducer
+  { reducerInput = parseReducerClause input
+  , reducerOutput = parseReducerClause output
   }
-  where stmts = C.programMainStatements prog
-        groups = V.fromList $ C.programGroups prog
+
+parseStatement :: C.Statement an -> Statement
+parseStatement (C.StatementGroup group)
+  = StatementGroup $ parseGroupRef group
+parseStatement (C.StatementReducer reducer)
+  = StatementReducer $ parseReducer reducer
+
+parseGroupDef :: C.GroupDef an -> GroupDef
+parseGroupDef (C.GroupDef _ props repeats stmts) = GroupDef
+  { groupDefProps = map C.bindIdx props
+  , groupDefRepeats = repeats
+  , groupDefStatements = map (map parseStatement) $ A.elems stmts
+  }
+
+parseMainStatements :: C.Program an -> SessionRes [Statement]
+parseMainStatements = pure . map parseStatement . C.programMainStatements
+
+parseGroups :: C.Program an -> SessionRes [GroupDef]
+parseGroups = pure . map parseGroupDef . C.programGroups
 
 -- | Converts a @Core@ AST into a @Translate@ AST.
 parse :: C.Program an -> SessionRes Program
@@ -89,4 +93,5 @@ parse prog
     = Program
   <$> parseNumPropsByHead prog
   <*> parseLibraries prog
-  <*> parseMainGroup prog
+  <*> parseMainStatements prog
+  <*> parseGroups prog

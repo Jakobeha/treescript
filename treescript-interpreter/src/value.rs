@@ -69,14 +69,6 @@ impl Value {
     };
   }
 
-  pub fn is_splice(&self) -> bool {
-    if let Value::Splice(_) = self {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
   pub fn is_hole(&self) -> bool {
     if let Value::Record { head, .. } = self {
       return head == "Hole";
@@ -178,12 +170,12 @@ impl Value {
     });
   }
 
-  pub fn has_splice(&self) -> bool {
-    if self.is_splice() {
+  pub fn any_sub<F: Fn(&Value) -> bool>(&self, pred: F) -> bool {
+    if pred(self) {
       return true;
     }
     for child in self.breadth_first() {
-      if child.is_splice() {
+      if pred(child) {
         return true;
       }
     }

@@ -18,6 +18,7 @@ module TreeScript.Ast.Core.Analyze
   , traverseValuesInReducer
   , traverseValuesInStatement
   , groupDefStatementList
+  , allProgramStatements
   , maxNumBindsInProgram
   , bindsInClause
   , langSpecDecls
@@ -132,6 +133,12 @@ traverseValuesInStatement f (StatementReducer red) = StatementReducer <$> traver
 groupDefStatementList :: GroupDef an -> [Statement an]
 groupDefStatementList = concat . A.elems . groupDefStatements
 
+-- | The main statements and statements in all groups.
+allProgramStatements :: Program an -> [Statement an]
+allProgramStatements prog
+   = programMainStatements prog
+  ++ concatMap groupDefStatementList (programGroups prog)
+
 substMany1 :: [(Value an, Value an)] -> Value an -> Value an
 substMany1 substs x
   = case find (\(old, _) -> x =@= old) substs of
@@ -146,35 +153,23 @@ numBindsInValue1 (ValueBind (Bind _ idx)) = idx
 maxNumBindsInValue :: Value an -> Int
 maxNumBindsInValue = getMax0 . foldValue (Max0 . numBindsInValue1) True
 
-maxNumBindsInClause :: V.Vector (GroupDef an) -> ReducerClause an -> Int
-maxNumBindsInClause groupDefs (ReducerClause _ value groupRefs)
-  = maximum $ maxNumBindsInValue value : map (maxNumBindsInGroupRef groupDefs) groupRefs
+maxNumBindsInClause :: ReducerClause an -> Int
+maxNumBindsInClause = maxNumBindsInValue . reducerClauseValue
 
-maxNumBindsInGroupRef :: V.Vector (GroupDef an) -> GroupRef an -> Int
-maxNumBindsInGroupRef groupDefs
-  = maxNumBindsInStatements groupDefs
-  . concat
-  . A.elems
-  . snd
-  . allGroupRefStatements groupDefs
+maxNumBindsInReducer :: Reducer an -> Int
+maxNumBindsInReducer (Reducer _ input output)
+  = max (maxNumBindsInClause input) (maxNumBindsInClause output)
 
-maxNumBindsInReducer :: V.Vector (GroupDef an) -> Reducer an -> Int
-maxNumBindsInReducer groups (Reducer _ input output)
-  = max (maxNumBindsInClause groups input) (maxNumBindsInClause groups output)
+maxNumBindsInStatement :: Statement an -> Int
+maxNumBindsInStatement (StatementGroup groupRef) = 0 -- Already counted in group def
+maxNumBindsInStatement (StatementReducer red) = maxNumBindsInReducer red
 
-maxNumBindsInStatement :: V.Vector (GroupDef an) -> Statement an -> Int
-maxNumBindsInStatement groupDefs (StatementGroup groupRef) = maxNumBindsInGroupRef groupDefs groupRef
-maxNumBindsInStatement groups (StatementReducer red) = maxNumBindsInReducer groups red
-
-maxNumBindsInStatements :: V.Vector (GroupDef an) -> [Statement an] -> Int
-maxNumBindsInStatements groups stmts = maximum $ 0 : map (maxNumBindsInStatement groups) stmts
+maxNumBindsInStatements :: [Statement an] -> Int
+maxNumBindsInStatements stmts = maximum $ 0 : map maxNumBindsInStatement stmts
 
 -- | The maximum number of binds used by the main reducers in the program - the maximum index in any used bind.
 maxNumBindsInProgram :: Program an -> Int
-maxNumBindsInProgram prog
-  = maxNumBindsInStatements groups stmts
-  where stmts = programMainStatements prog
-        groups = V.fromList $ programGroups prog
+maxNumBindsInProgram = maxNumBindsInStatements . allProgramStatements
 
 bindsInValue1 :: Value an -> S.Set Int
 bindsInValue1 (ValuePrimitive _) = S.empty
@@ -234,10 +229,8 @@ valueRecordHeads1 (ValueBind _) = []
 
 -- | Heads of all records in the program.
 allProgramRecordHeads :: Program an -> [RecordHead]
-allProgramRecordHeads prog
-   = foldMap (foldValuesInStatement valueRecordHeads1 True)
-   $ programMainStatements prog
-  ++ concatMap groupDefStatementList (programGroups prog)
+allProgramRecordHeads
+  = foldMap (foldValuesInStatement valueRecordHeads1 True) . allProgramStatements
 
 recordHeadUsedLibName1 :: RecordHead -> Maybe T.Text
 recordHeadUsedLibName1 (RecordHead isFunc name)

@@ -406,8 +406,7 @@ unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
 
 unboundOutputErrsGroup :: S.Set Int -> Bool -> S.Set Int -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
 unboundOutputErrsGroup extraBinds isCovariant stk (GroupRef rng idx props)
-  | S.member idx stk
-  = pure [parseError rng "recursive group reference - contained in its own definition"]
+  | S.member idx stk = pure []
   | otherwise = do
     groups' <- get
     let stk' = S.insert idx stk

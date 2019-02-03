@@ -1,15 +1,14 @@
 extern crate enum_map;
 extern crate serde;
 extern crate treescript_interpreter;
-use enum_map::enum_map;
 use std::fs;
 use std::fs::DirEntry;
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::PathBuf;
-use treescript_interpreter::program::Program;
+use treescript_interpreter::program::{Program, ProgramSerial};
 use treescript_interpreter::reduce::{
-  Consume, Group, ReduceType, Reducer, ReducerClause, Statement,
+  Consume, GroupDefSerial, GroupRef, Reducer, ReducerClause, Statement,
 };
 use treescript_interpreter::value::{Prim, Value};
 
@@ -92,49 +91,48 @@ fn examples() -> Vec<ExampleExec> {
     .collect();
 }
 
-/*#[test]
+#[test]
+#[ignore]
 fn test_serialize_prog() {
-  let prog = Program {
+  let prog = ProgramSerial {
     num_props_by_head: Default::default(),
     libraries: Default::default(),
-    main_group: Group {
-      loops: false,
-      statements: enum_map![
-        ReduceType::Regular => vec![Statement::Group(Group {
-          loops: true,
-          statements: enum_map![
-            ReduceType::Regular => vec![Statement::Reducer(Reducer {
-              input: ReducerClause {
-                consumes: vec![Consume::Prim(Prim::String(String::from("Scheme_Cons")))],
-                produce: Value::Prim(Prim::String(String::from("Scheme_Cons"))),
-                groups: Default::default(),
-              },
-              output: ReducerClause {
-                consumes: vec![Consume::Record(String::from("Foo")), Consume::Bind(1)],
-                produce: Value::Record {
-                  head: String::from("Foo"),
-                  props: vec![Value::Splice(1)],
-                },
-                groups: Default::default(),
-              },
-            })],
-            ReduceType::EvalCtx => Default::default(),
-            ReduceType::AltConsume => Default::default()
-          ],
+    main_statements: vec![Statement::Group(GroupRef {
+      idx: 1,
+      props: vec![Value::Prim(Prim::String(String::from("foo")))],
+    })],
+    sub_groups: vec![GroupDefSerial {
+      props: vec![1],
+      loops: true,
+      statements: vec![
+        vec![Statement::Reducer(Reducer {
+          input: ReducerClause {
+            consumes: vec![Consume::Prim(Prim::String(String::from("Scheme_Cons")))],
+            produce: Value::Prim(Prim::String(String::from("Scheme_Cons"))),
+            groups: Default::default(),
+          },
+          output: ReducerClause {
+            consumes: vec![Consume::Record(String::from("Foo")), Consume::Bind(1)],
+            produce: Value::Record {
+              head: String::from("Foo"),
+              props: vec![Value::Splice(1)],
+            },
+            groups: Default::default(),
+          },
         })],
-        ReduceType::EvalCtx => Default::default(),
-        ReduceType::AltConsume => Default::default()
+        Default::default(),
+        Default::default(),
       ],
-    },
+    }],
   };
 
   let vec = rmp_serde::to_vec(&prog).unwrap();
   let mut write_path = test_resources_path();
   write_path.push("A-Simple");
-  write_path.push("A-Simple.messagepack");
+  write_path.push("A-Simple.msgpack");
   let mut file = File::create(write_path).unwrap();
   file.write_all(vec.as_slice()).unwrap();
-}*/
+}
 
 #[test]
 fn test_all_raw_ast() {

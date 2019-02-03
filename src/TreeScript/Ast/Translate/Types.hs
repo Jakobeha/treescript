@@ -42,12 +42,19 @@ data Consume
   | ConsumeRecord T.Text
   deriving (Eq, Ord, Read, Show, Generic)
 
+-- | References a group.
+data GroupRef
+  = GroupRef
+  { groupRefIdx :: Int
+  , groupRefProps :: [Value]
+  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+
 -- | The input or output of a reducer.
 data ReducerClause
   = ReducerClause
   { reducerClauseConsumes :: [Consume]
   , reducerClauseProduce :: Value
-  , reducerClauseGroups :: [Group]
+  , reducerClauseGroups :: [GroupRef]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 
 -- | Transforms a value into a different value. Like a "function".
@@ -60,14 +67,15 @@ data Reducer
 -- | Performs some transformations on values.
 data Statement
   = StatementReducer Reducer
-  | StatementGroup Group
+  | StatementGroup GroupRef
   deriving (Eq, Ord, Read, Show, Generic)
 
 -- | Defines a group of statements, which can be referenced by other statements.
-data Group
-  = Group
-  { groupRepeats :: Bool
-  , groupStatements :: [[Statement]]
+data GroupDef
+  = GroupDef
+  { groupDefProps :: [Int]
+  , groupDefRepeats :: Bool
+  , groupDefStatements :: [[Statement]]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 
 -- | A full TreeScript program.
@@ -75,8 +83,9 @@ data Program
   = Program
   { programNumPropsByHead :: M.Map T.Text Int
   , programLibraries :: [T.Text]
-  , programMainGroup :: Group
-  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+  , programMainStatements :: [Statement]
+  , programGroups :: [GroupDef]
+  } deriving (Eq, Ord, Read, Show, Generic)
 
 -- Variants need custom @MessagePack@ implementations because the Rust interpreter uses a different format for them.
 
@@ -113,6 +122,17 @@ instance MessagePack Statement where
   fromObject (ObjectArray [ObjectInt 0, ObjectArray [xEncoded]]) = StatementReducer <$> fromObject xEncoded
   fromObject (ObjectArray [ObjectInt 1, ObjectArray [xEncoded]]) = StatementGroup <$> fromObject xEncoded
   fromObject _ = fail "invalid encoding for Statement"
+
+instance MessagePack Program where
+  toObject (Program numProps libs mainStmts groups)
+    = ObjectArray [toObject numProps, toObject libs, toObject mainStmts, toObject groups]
+  fromObject (ObjectArray [numProps, libs, mainStmts, groups])
+      = Program
+    <$> fromObject numProps
+    <*> fromObject libs
+    <*> fromObject mainStmts
+    <*> fromObject groups
+  fromObject _ = fail "invalid encoding for Program"
 
 instance Printable Program where
   pprint = T.pack . show
