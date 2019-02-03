@@ -53,7 +53,6 @@ data SessionEnv
   { sessionEnvSettings :: Settings
   , sessionEnvLanguages :: [Language]
   , sessionEnvLibraries :: [Library]
-  , sessionEnvTemplateDir :: FilePath
   }
 
 type PreSessionRes a = forall r. ResultT (ReaderT r (LoggingT IO)) a
@@ -94,7 +93,6 @@ emptySessionEnv
   { sessionEnvSettings = defaultSettings
   , sessionEnvLanguages = []
   , sessionEnvLibraries = []
-  , sessionEnvTemplateDir = ""
   }
 
 mkPluginLoadError :: T.Text -> Error
@@ -119,7 +117,7 @@ liftLoadIO = liftIOAndCatch StagePluginLoad
 setupInitialPlugins :: FilePath -> PreSessionRes ()
 setupInitialPlugins pluginPath = do
   logDebugN "Setting up initial plugins."
-  liftLoadIO $ S.shelly $ S.cp_r "resources" (P.decodeString pluginPath)
+  liftLoadIO $ S.shelly $ S.cp_r "resources/env" $ P.decodeString pluginPath
 
 getRealPluginPath :: PreSessionRes FilePath
 getRealPluginPath = do
@@ -198,7 +196,6 @@ getEnvAtPath pluginPath = do
   let settingsPath = pluginPath </> "settings.yaml"
       languagesPath = pluginPath </> "languages"
       librariesPath = pluginPath </> "libraries"
-      templateDirPath = pluginPath </> "template"
   settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
   settings <-
     case settingsDecoded of
@@ -212,12 +209,11 @@ getEnvAtPath pluginPath = do
     { sessionEnvSettings = settings
     , sessionEnvLanguages = languages
     , sessionEnvLibraries = libraries
-    , sessionEnvTemplateDir = templateDirPath
     }
 
 -- | Loads the environment which is shipped with this package.
 getInitialEnv :: PreSessionRes SessionEnv
-getInitialEnv = getEnvAtPath "resources"
+getInitialEnv = getEnvAtPath "resources/env"
 
 -- | Loads the environment for the current user.
 getRealEnv :: PreSessionRes SessionEnv

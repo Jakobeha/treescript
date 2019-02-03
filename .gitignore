@@ -3,6 +3,9 @@
 treescript.cabal
 *~
 
+# Rust
+target
+
 # TypeScript / node.js
 node_modules
 

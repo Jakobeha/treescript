@@ -17,6 +17,7 @@ module TreeScript.Ast.Core.Analyze
   , traverseValuesInClause
   , traverseValuesInReducer
   , traverseValuesInStatement
+  , groupDefStatementList
   , maxNumBindsInProgram
   , bindsInClause
   , langSpecDecls
@@ -34,6 +35,7 @@ import TreeScript.Plugin
 
 import Data.List hiding (group)
 import Data.Maybe
+import qualified Data.Array as A
 import qualified Data.List.NonEmpty as N
 import Data.Semigroup.Foldable
 import qualified Data.Set as S
@@ -126,6 +128,10 @@ traverseValuesInStatement :: (Monad w) => (Value an -> w (Value an)) -> Statemen
 traverseValuesInStatement f (StatementGroup group) = StatementGroup <$> traverseValuesInGroupRef f group
 traverseValuesInStatement f (StatementReducer red) = StatementReducer <$> traverseValuesInReducer f red
 
+-- | All the @GroupDef@'s statements for every reduce type.
+groupDefStatementList :: GroupDef an -> [Statement an]
+groupDefStatementList = concat . A.elems . groupDefStatements
+
 substMany1 :: [(Value an, Value an)] -> Value an -> Value an
 substMany1 substs x
   = case find (\(old, _) -> x =@= old) substs of
@@ -145,8 +151,12 @@ maxNumBindsInClause groupDefs (ReducerClause _ value groupRefs)
   = maximum $ maxNumBindsInValue value : map (maxNumBindsInGroupRef groupDefs) groupRefs
 
 maxNumBindsInGroupRef :: V.Vector (GroupDef an) -> GroupRef an -> Int
-maxNumBindsInGroupRef groupDefs groupRef
-  = maxNumBindsInStatements groupDefs $ snd $ allGroupRefStatements groupDefs groupRef
+maxNumBindsInGroupRef groupDefs
+  = maxNumBindsInStatements groupDefs
+  . concat
+  . A.elems
+  . snd
+  . allGroupRefStatements groupDefs
 
 maxNumBindsInReducer :: V.Vector (GroupDef an) -> Reducer an -> Int
 maxNumBindsInReducer groups (Reducer _ input output)
@@ -169,7 +179,7 @@ maxNumBindsInProgram prog
 bindsInValue1 :: Value an -> S.Set Int
 bindsInValue1 (ValuePrimitive _) = S.empty
 bindsInValue1 (ValueRecord _) = S.empty
-bindsInValue1 (ValueBind bind) = S.singleton $ bindContent bind
+bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 
 bindsInClause :: Bool -> ReducerClause an -> S.Set Int
 bindsInClause = foldValuesInClause bindsInValue1
@@ -227,7 +237,7 @@ allProgramRecordHeads :: Program an -> [RecordHead]
 allProgramRecordHeads prog
    = foldMap (foldValuesInStatement valueRecordHeads1 True)
    $ programMainStatements prog
-  ++ concatMap groupDefStatements (programGroups prog)
+  ++ concatMap groupDefStatementList (programGroups prog)
 
 recordHeadUsedLibName1 :: RecordHead -> Maybe T.Text
 recordHeadUsedLibName1 (RecordHead isFunc name)
@@ -247,12 +257,12 @@ getAllProgramUsedLibraries
   = traverse (libraryWithName StageExtracting) . allProgramUsedLibNames
 
 -- | The statements in the group and super-groups, substituting exported binds, and whether they repeat.
-allGroupDefStatements :: [Value an] -> GroupDef an -> (Bool, [Statement an])
+allGroupDefStatements :: [Value an] -> GroupDef an -> (Bool, A.Array ReduceType [Statement an])
 allGroupDefStatements props (GroupDef _ propIdxs repeats stmts)
-  = (repeats, map (mapValuesInStatement $ substMany1 propSubsts) stmts)
+  = (repeats, map (mapValuesInStatement $ substMany1 propSubsts) <$> stmts)
   where propSubsts = zip (map ValueBind propIdxs) props
 
 -- | The statements in the referenced group, substituting exported binds, and whether they repeat.
-allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> (Bool, [Statement an])
+allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> (Bool, A.Array ReduceType [Statement an])
 allGroupRefStatements groups (GroupRef _ idx props)
   = allGroupDefStatements props $ groups V.! idx

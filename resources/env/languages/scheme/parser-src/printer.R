@@ -41,7 +41,7 @@ for (line in readLines(stdin)) {
         inp <- lit_and_inp[3]
         cat(lit)
       } else {
-        stop(paste("expected \"string\", got: ", word))
+        cat("<expected \"string\", got:", word, ">")
       }
     } else if (word == "Scheme_Atom") {
       word_and_inp <- get_next_word(inp)
@@ -62,7 +62,7 @@ for (line in readLines(stdin)) {
         inp <- str_and_inp[3]
         cat(str)
       } else {
-        stop(paste("expected a primitive word, got: ", word))
+        cat("<expected a primitive word, got:", word, ">")
       }
     } else if (word == "Scheme_Nil") {
       if (!in_cdr) {
@@ -76,7 +76,7 @@ for (line in readLines(stdin)) {
         cat("(")
       }
     } else {
-      stop(paste("unknown word: ", word))
+      cat("<unknown word:", word, ">")
     }
 
     if (word != "Scheme_Cons") {

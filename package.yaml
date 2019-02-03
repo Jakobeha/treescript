@@ -21,7 +21,8 @@ description:         Please see the README on GitHub at <https://github.org/jako
 extra-source-files:
 - README.md
 - ChangeLog.md
-- resources/**
+- resources/bin/**
+- resources/env/**
 - src/TreeScript/Ast/Lex/Parse.x
 - src/TreeScript/Ast/Sugar/Parse.y
 - test-resources/examples/**
@@ -40,21 +41,23 @@ dependencies:
 - autoexporter
 - base >= 4.7 && < 5
 - bifunctors
+- binary
 - bytestring
 - containers
+- data-msgpack
 - directory
 - exceptions
 - filepath
 - megaparsec >= 7.0.4
 - monad-logger
 - mtl
-- neat-interpolation
 - process
 - semigroupoids
 - shelly
 - system-filepath
 - text
 - transformers
+- unix
 - vector
 - yaml
 

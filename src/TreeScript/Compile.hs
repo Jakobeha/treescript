@@ -18,8 +18,8 @@ compile :: FilePath -> FilePath -> SessionRes ()
 compile input output
   | input == output = mkFail $ mkOverlapInOutError StageReadArgs
   | otherwise
-  = ( (`T.compile` output)
-  <=< T.translate
+  = ( T.exportFile output
+  <=< T.parse
   <=< C.parse
   <=< ResultT . pure . S.parse
   <=< ResultT . pure . L.parse

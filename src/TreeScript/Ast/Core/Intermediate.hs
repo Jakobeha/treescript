@@ -61,6 +61,14 @@ data GroupRef an
   , groupRefProps :: [GroupProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | A group as a statement.
+data Group an
+  = Group
+  { groupAnn :: an
+  , groupReduceType :: C.ReduceType
+  , groupRef :: GroupRef an
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | The input or output of a reducer.
 data ReducerClause an
   = ReducerClause
@@ -79,7 +87,7 @@ data Reducer an
 
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (GroupRef an)
+  = StatementGroup (Group an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 

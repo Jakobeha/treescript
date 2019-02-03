@@ -6,8 +6,20 @@
 #include <stdlib.h>
 #include <strings.h>
 #include "helpers.h"
-#include "libraries.h"
 #include "misc.h"
+
+// \lib_imports
+
+const max_num_binds = 1u32
+
+    type Match = Value;
+type MatchArray = [Match; max_num_binds];
+
+typedef enum { REDUCE_STANDARD, REDUCE_EVALCTX } reduce_type;
+
+typedef bool (*surface_reducer)(reduce_type type,
+                                const match_arr in_matches,
+                                value* x);
 
 bool reduce_nested(surface_reducer reduce_surface,
                    const match_arr in_matches,

@@ -12,6 +12,7 @@ module TreeScript.Ast.Core.Types
 
 import TreeScript.Misc
 
+import qualified Data.Array as A
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -56,10 +57,10 @@ data Record an
 data Bind an
   = Bind
   { bindAnn :: an
-  , bindContent :: Int
+  , bindIdx :: Int
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Type of data in TreeScript. @abs@ is the abstraction which the value can encode, if any.
+-- | Type of data in TreeScript.
 data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
@@ -96,13 +97,20 @@ data Statement an
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | How and where a reducer or group is applied.
+data ReduceType
+  = ReduceTypeRegular
+  | ReduceTypeEvalCtx
+  | ReduceTypeAltConsume
+  deriving (Eq, Ord, Read, Show, Bounded, A.Ix)
+
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefProps :: [Bind an]
   , groupDefRepeats :: Bool
-  , groupDefStatements :: [Statement an]
+  , groupDefStatements :: A.Array ReduceType [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -182,7 +190,7 @@ instance Printable (Program an) where
 
 printGroupDef :: Int -> GroupDef an -> T.Text
 printGroupDef head' (GroupDef _ props repeats reds)
-  = T.unlines $ printDecl : map pprint reds
+  = T.unlines $ printDecl : map pprint (concat $ A.elems reds)
   where printDecl
            = "&"
           <> pprint head'

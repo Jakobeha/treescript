@@ -55,7 +55,7 @@ TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Statement : Group ';' { StatementGroup $1 }
+Statement : Value ';' { StatementGroup $1 }
           | Reducer ';' { StatementReducer $1 }
           ;
 GroupDecl : Group '.' '---' { GroupDecl (getAnn $1 <> $2 <> $3) $1 False }
@@ -75,6 +75,7 @@ Value : Primitive { ValuePrimitive $1 }
       | Record { ValueRecord $1 }
       | Bind { ValueBind $1 }
       | SpliceCode { ValueSpliceCode $1 }
+      | Group { ValueGroup $1 }
       ;
 Primitive : int { PrimInteger (getAnn $1) (annd $1) }
           | float { PrimFloat (getAnn $1) (annd $1) }

@@ -46,7 +46,7 @@ data Stage
   | StageLexing
   | StageParsing
   | StageExtracting
-  | StageCompiling
+  | StageWriteCompiled
   | StageRunning
   | StageWriteOutput
   deriving (Eq, Ord, Read, Show)
@@ -90,7 +90,7 @@ instance Printable Stage where
   pprint StageLexing = "lexing"
   pprint StageParsing = "parsing"
   pprint StageExtracting = "extracting"
-  pprint StageCompiling = "compiling"
+  pprint StageWriteCompiled = "writing compiled"
   pprint StageRunning = "running"
   pprint StageWriteOutput = "writing output"
 

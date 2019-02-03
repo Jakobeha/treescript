@@ -67,7 +67,7 @@ spec = do
       forExampleSugar = forExampleIntermediateIn exampleSugarVars
       forExampleCore :: (TestFile -> C.Program Range -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars
-      forExampleTranslate :: (TestFile -> T.Translated -> IO ()) -> IO ()
+      forExampleTranslate :: (TestFile -> T.Program -> IO ()) -> IO ()
       forExampleTranslate = forExampleIntermediateIn exampleTranslateVars
       forExampleExec :: (TestFile -> FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars
@@ -148,9 +148,9 @@ spec = do
                 assertNoErrors coreErrs
           else
             assertProperFailure testInfo coreRes
-      it "Translates into C" $ \_ ->
+      it "Translates" $ \_ ->
         forExampleCore $ \file@(TestFile srcFile testInfo _) coreSrc -> do
-          translateRes <- runSessionResVirtual exampleEnv $ T.translate coreSrc
+          translateRes <- runSessionResVirtual exampleEnv $ T.parse coreSrc
           when (testInfoPrintTranslate testInfo) $ do
             T.putStrLn $ fileName srcFile <> ":"
             T.putStrLn $ pprint translateRes
@@ -163,10 +163,10 @@ spec = do
                 assertNoErrors translateErrs
           else
             assertProperFailure testInfo translateRes
-      it "Compiles C" $ \tmpDir ->
+      it "Compiles" $ \tmpDir ->
         forExampleTranslate $ \file@(TestFile srcFile testInfo _) translateSrc -> do
           let execPath = tmpDir </> T.unpack (fileName srcFile)
-          execRes <- runSessionResVirtual exampleEnv $ T.compile translateSrc execPath
+          execRes <- runSessionResVirtual exampleEnv $ T.exportFile execPath translateSrc
           if testInfoIsCompilable testInfo then
             case execRes of
               ResultFail execErr ->

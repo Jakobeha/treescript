@@ -81,7 +81,6 @@ data GroupDecl an
   , groupDeclRepeat :: Bool
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
-
 -- | Contains a head and properties. A parent in the AST.
 data Record an
   = Record
@@ -98,12 +97,13 @@ data Bind an
   , bindSymbol :: Maybe (Symbol an) -- ^ The bound symbol, or "nil" for no binding.
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Type of data in TreeScript.
+-- | Type of data in TreeScript, or a group.
 data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
   | ValueBind (Bind an)
   | ValueSpliceCode (SpliceCode an)
+  | ValueGroup (Group an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | An input or output of a reducer
@@ -124,7 +124,7 @@ data Reducer an
 
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (Group an)
+  = StatementGroup (Value an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -200,6 +200,7 @@ instance TreePrintable Value where
   treePrint par _ (ValueRecord record) = par record
   treePrint par _ (ValueBind bind) = par bind
   treePrint par _ (ValueSpliceCode code) = par code
+  treePrint par _ (ValueGroup group) = par group
 
 instance TreePrintable ReducerClause where
   treePrint par _ (ReducerClause _ val groups)

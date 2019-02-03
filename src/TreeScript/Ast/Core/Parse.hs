@@ -17,6 +17,7 @@ import TreeScript.Plugin
 
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import qualified Data.Array as A
 import Data.Bifunctor
 import Data.List hiding (group)
 import qualified Data.List.NonEmpty as N
@@ -171,6 +172,8 @@ parseValue (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
 parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
 parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code) = parseSpliceCode code
+parseValue (S.ValueGroup group)
+  = mkFail $ parseError (getAnn group) "expected value, got group"
 
 parseGroupProperty1 :: S.GenProperty Range -> I.BindSessionRes (I.GroupProperty Range)
 parseGroupProperty1 (S.GenPropertyDecl key)
@@ -184,6 +187,19 @@ parseGroupRef1 :: S.Group Range -> I.BindSessionRes (I.GroupRef Range)
 parseGroupRef1 (S.Group rng head' props)
   = I.GroupRef rng head' <$> traverseDropFatals parseGroupProperty1 props
 
+parseGroup1 :: S.Value Range -> I.BindSessionRes (I.Group Range)
+parseGroup1 (S.ValueRecord (S.Record _ False (S.Symbol headAnn headSpec) [S.GenPropertyRecord (S.ValueGroup group)]))
+  | headSpec == "E"
+  = I.Group (getAnn group) ReduceTypeEvalCtx <$> parseGroupRef1 group
+  | headSpec == "C"
+  = I.Group (getAnn group) ReduceTypeAltConsume <$> parseGroupRef1 group
+  | otherwise
+  = mkFail $ parseError headAnn $ "invalid group reduce type specifier: " <> headSpec
+parseGroup1 (S.ValueGroup group)
+  = I.Group (getAnn group) ReduceTypeRegular <$> parseGroupRef1 group
+parseGroup1 val
+  = mkFail $ parseError (getAnn val) "expected group, got value"
+
 parseReducerClause1 :: S.ReducerClause Range -> I.BindSessionRes (I.ReducerClause Range)
 parseReducerClause1 (S.ReducerClause rng val groups)
   = I.ReducerClause rng <$> parseValue val <*> traverseDropFatals parseGroupRef1 groups
@@ -193,7 +209,7 @@ parseReducer1 (S.Reducer rng input output)
   = I.Reducer rng <$> parseReducerClause1 input <*> parseReducerClause1 output
 
 parseStatement1 :: S.Statement Range -> I.BindSessionRes (I.Statement Range)
-parseStatement1 (S.StatementGroup group) = I.StatementGroup <$> parseGroupRef1 group
+parseStatement1 (S.StatementGroup group) = I.StatementGroup <$> parseGroup1 group
 parseStatement1 (S.StatementReducer red) = I.StatementReducer <$> parseReducer1 red
 
 parseGroupPropDecl1 :: S.GenProperty Range -> I.BindSessionRes (T.Text, Bind Range)
@@ -266,7 +282,7 @@ parseGroupRef2 bindEnv (I.GroupRef rng (S.Symbol headRng head') props) = do
                 Nothing ->
                   case bindIdxs M.!? idx of
                     Nothing -> ValueBind propLocal
-                    Just bindIdx -> ValueBind $ Bind headRng bindIdx
+                    Just bindIdx' -> ValueBind $ Bind headRng bindIdx'
                 Just propIdx -> propVals V.! propIdx
           props' = V.toList $ V.imap propForIdx propLocals
       pure GroupRef
@@ -286,13 +302,30 @@ parseReducer2 bindEnv (I.Reducer rng input output)
   <*> parseReducerClause2 bindEnv output
 
 parseStatement2 :: I.BindEnv -> I.Statement Range -> I.GroupSessionRes (Statement Range)
-parseStatement2 bindEnv (I.StatementGroup group) = StatementGroup <$> parseGroupRef2 bindEnv group
+parseStatement2 bindEnv (I.StatementGroup group) = StatementGroup <$> parseGroupRef2 bindEnv (I.groupRef group)
 parseStatement2 bindEnv (I.StatementReducer red) = StatementReducer <$> parseReducer2 bindEnv red
+
+statementReduceType :: I.Statement Range -> ReduceType
+statementReduceType (I.StatementGroup group) = I.groupReduceType group
+statementReduceType (I.StatementReducer reducer)
+  = case I.reducerClauseValue $ I.reducerInput reducer of
+      ValuePrimitive _ -> ReduceTypeRegular
+      ValueRecord (Record _ (RecordHead isFunc head') _)
+        | not isFunc && head' == "E" -> ReduceTypeEvalCtx
+        | not isFunc && head' == "C" -> ReduceTypeAltConsume
+        | otherwise -> ReduceTypeRegular
+      ValueBind _ -> ReduceTypeRegular
+
+groupStmtsByReduceType :: [I.Statement Range] -> A.Array ReduceType [I.Statement Range]
+groupStmtsByReduceType
+  = fmap reverse
+  . A.accumArray (flip (:)) [] (minBound, maxBound)
+  . map (\stmt -> (statementReduceType stmt, stmt))
 
 parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
 parseGroupDef2 (I.GroupDef rng _ props repeats stmts bindEnv)
     = GroupDef rng (map (\(_, bind) -> bind) props) repeats
-  <$> traverseDropFatals (parseStatement2 bindEnv) stmts
+  <$> traverse (traverseDropFatals $ parseStatement2 bindEnv) (groupStmtsByReduceType stmts)
 
 parseGroupDefEnv :: Int -> I.GroupDef Range -> (T.Text, (Int, V.Vector (Bind Range), M.Map T.Text Int))
 parseGroupDefEnv idx group
@@ -325,7 +358,6 @@ parseRaw (S.Program rng topLevels) = do
     }
 
 -- == Validation
-
 
 duplicateDeclErrs :: [RecordDeclCompact] -> [RecordDecl Range] -> [Error]
 duplicateDeclErrs imported decls
@@ -387,7 +419,7 @@ unboundOutputErrsGroup extraBinds isCovariant stk (GroupRef rng idx props)
       pure []
     else do
       let (_, stmts) = allGroupDefStatements props group'
-          stkStmts = map (stk', ) stmts
+          stkStmts = map (stk', ) $ concat $ A.elems stmts
           newGroups
             | isCovariant = groups' V.// [(idx, (group', True, contraChecked))]
             | otherwise = groups' V.// [(idx, (group', coChecked, True))]
@@ -432,7 +464,7 @@ validationErrs env (Program _ decls stmts groups)
   ++ evalState (unboundOutputErrs S.empty True $ map (S.empty, ) stmts) groupsVec
   where importedDecls = allImportedDecls env
         allDecls = map compactRecordDecl decls ++ importedDecls
-        allStmts = stmts ++ concatMap groupDefStatements groups
+        allStmts = stmts ++ concatMap groupDefStatementList groups
         allReds = mapMaybe (\case StatementReducer x -> Just x; _ -> Nothing) allStmts
         groupsVec = V.fromList $ map (, False, False) groups
 
