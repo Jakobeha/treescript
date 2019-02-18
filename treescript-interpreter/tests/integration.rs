@@ -4,13 +4,12 @@ extern crate treescript_interpreter;
 use std::fs;
 use std::fs::DirEntry;
 use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
 use std::path::PathBuf;
-use treescript_interpreter::program::{Program, ProgramSerial};
-use treescript_interpreter::reduce::{
+use treescript_interpreter::program::Program;
+/*use treescript_interpreter::reduce::{
   Consume, GroupDefSerial, GroupRef, Reducer, ReducerClause, Statement,
-};
-use treescript_interpreter::value::{Prim, Value};
+};*/
 
 struct ExampleIOPair {
   input: PathBuf,
@@ -91,9 +90,7 @@ fn examples() -> Vec<ExampleExec> {
     .collect();
 }
 
-#[test]
-#[ignore]
-fn test_serialize_prog() {
+/*fn test_serialize_prog() {
   let prog = ProgramSerial {
     num_props_by_head: Default::default(),
     libraries: Default::default(),
@@ -132,24 +129,23 @@ fn test_serialize_prog() {
   write_path.push("A-Simple.msgpack");
   let mut file = File::create(write_path).unwrap();
   file.write_all(vec.as_slice()).unwrap();
-}
+}*/
 
 #[test]
 fn test_all_raw_ast() {
   for example in examples() {
+    let mut session = example.exec.new_session();
     for io_pair in example.io_pairs {
-      if io_pair.input.extension().unwrap() == "tast"
-        && io_pair.output.extension().unwrap() == "tast"
-      {
-        let mut input_file = File::open(io_pair.input).unwrap();
-        let mut output_file = File::open(io_pair.output).unwrap();
-        let mut exp_output = String::new();
-        output_file.read_to_string(&mut exp_output).unwrap();
-        let mut act_output_cursor = Cursor::new(Vec::new());
-        example.exec.run(&mut input_file, &mut act_output_cursor);
-        let act_output = String::from_utf8(act_output_cursor.get_ref().clone()).unwrap();
-        assert_eq!(exp_output, act_output);
-      }
+      let mut input = session.read_ast(io_pair.input.as_path());
+      let mut output = session.read_ast(io_pair.output.as_path());
+      let mut exp_output = String::new();
+      output.read_to_string(&mut exp_output).unwrap();
+      let mut act_output_cursor = Cursor::new(Vec::new());
+      example
+        .exec
+        .run(&mut session, &mut input, &mut act_output_cursor);
+      let act_output = String::from_utf8(act_output_cursor.get_ref().clone()).unwrap();
+      assert_eq!(exp_output.trim(), act_output.trim());
     }
   }
 }

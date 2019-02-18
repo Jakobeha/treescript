@@ -1,2 +1,2 @@
-useDefaults: true
-skip?: true
+skipRun:
+- 'complex' # Takes too long

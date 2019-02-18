@@ -2,17 +2,20 @@ extern crate enum_map;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{GroupDef, GroupDefSerial, ReduceType, Statement};
+use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceType, Statement};
+use crate::session::{LibrarySpec, Session};
+use crate::value::Value;
 use enum_map::enum_map;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::iter;
 use std::rc::{Rc, Weak};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
   pub num_props_by_head: HashMap<String, usize>,
-  pub libraries: Vec<String>,
+  pub libraries: Vec<LibrarySpec>,
   pub main_statements: Vec<Statement>,
   pub sub_groups: Vec<GroupDefSerial>,
 }
@@ -20,7 +23,7 @@ pub struct ProgramSerial {
 #[derive(Clone, Debug)]
 pub struct Program {
   pub num_props_by_head: HashMap<String, usize>,
-  pub libraries: Vec<String>,
+  pub libraries: Vec<LibrarySpec>,
   pub main_group: GroupDef,
   pub sub_groups: Rc<Vec<GroupDef>>,
 }
@@ -74,24 +77,44 @@ impl<R: Read> From<R> for Program {
 }
 
 impl Program {
-  pub fn run<R: Read, W: Write>(&self, input: &mut R, output: &mut W) {
+  pub fn new_session(&self) -> Session {
+    return Session::new(self.num_props_by_head.clone(), self.libraries.clone());
+  }
+
+  fn groups(&self) -> impl Iterator<Item = &GroupDef> {
+    return iter::once(&self.main_group).chain(self.sub_groups.iter());
+  }
+
+  pub fn inferred_lang(&self) -> Option<String> {
+    return self
+      .groups()
+      .flat_map(|group| group.statements[ReduceType::Regular].iter())
+      .flat_map(|statement| match statement {
+        Statement::Reducer(reducer) => vec![&reducer.input, &reducer.output],
+        Statement::Group(_) => vec![],
+      })
+      .flat_map(|clause| clause.consumes.iter())
+      .filter_map(|consume| match consume {
+        Consume::Record(head) => Some(head),
+        _ => None,
+      })
+      .filter_map(|head| Value::record_head_to_fun(head))
+      .map(|(lib, _)| lib)
+      .next();
+  }
+
+  pub fn run<R: Read, W: Write>(&self, session: &mut Session, input: &mut R, output: &mut W) {
     let mut parser = Parser {
       input: input,
       num_props_by_head: self.num_props_by_head.clone(),
     };
     let mut printer = Printer { output: output };
 
-    //TODO Setup and teardown libraries
-
-    loop {
-      let next_word = parser.scan_word();
-      if next_word.is_empty() {
-        break;
-      }
-      let mut next = parser.scan_value(next_word);
-      self.main_group.reduce(&mut next);
+    session.start();
+    while let Option::Some(mut next) = parser.scan_value() {
+      self.main_group.reduce(session, &mut next);
       printer.print_value(next).unwrap();
-      printer.print_newline().unwrap();
     }
+    session.stop();
   }
 }

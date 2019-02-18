@@ -2,15 +2,21 @@ Find[x; xs].
 Found[x].
 NotFound[].
 
+&Setup[];
 &OptimizeFor[];
 
-&OptimizeFor[].
+&Setup[].
 ---
-r'
+\x: A["OptimizeFor"; \x];
+E[&RecurseR[]];
+
+&OptimizeFor[].
+===
+A["OptimizeFor"; r'
 for (\i in \iter) {
   ...\in
 }
-' &Env[] &Contains[x: r'\x[[\i]] <- \_']: r'
+'] &Env[] &Contains[x: r'\x[[\i]] <- \_']: r'
 if (is.data.frame(\x)) {
   \y <- as.list(\x)
 

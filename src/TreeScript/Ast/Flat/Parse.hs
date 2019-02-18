@@ -68,9 +68,9 @@ lexLangSrc (LexemeSplice _) = pure Nothing
 lexLangSrc (LexemePrimitive _) = pure Nothing
 lexLangSrc (LexemeRecordHead head')
   = case T.splitOn "_" head' of
+      [] -> mkFail $ mkError $ "output record not in language: ''"
       [_] -> mkFail $ mkError $ "output record not in language: " <> head'
-      [lang, _] -> pure $ Just lang
-      _ -> mkFail $ mkError $ "malformed output record head: " <> head'
+      (lang : _ : _) -> pure $ Just lang
 
 -- | Infers the language of the AST data.
 langFromAstData :: T.Text -> SessionRes Language

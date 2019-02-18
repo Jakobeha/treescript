@@ -1,23 +1,50 @@
 extern crate serde;
-use crate::util::{Float, GeneratorIterator};
+use crate::util::GeneratorIterator;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::Generator;
 use std::slice::{Iter, IterMut};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Float(pub f32);
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Prim {
   Integer(i32),
   Float(Float),
   String(String),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Value {
   Splice(usize),
   Prim(Prim),
   Record { head: String, props: Vec<Value> },
 }
 
+impl PartialEq for Float {
+  fn eq(&self, other: &Float) -> bool {
+    return self.0.to_bits() == other.0.to_bits();
+  }
+}
+
+impl Eq for Float {}
+
+impl Hash for Float {
+  fn hash<H: Hasher>(&self, hasher: &mut H) {
+    self.0.to_bits().hash(hasher);
+  }
+}
+
+impl Display for Float {
+  fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    return self.0.fmt(f);
+  }
+}
+
+#[allow(dead_code)]
 impl Value {
   pub fn unit() -> Value {
     return Value::Record {
@@ -67,6 +94,16 @@ impl Value {
       head: String::from("Hole"),
       props: vec![Value::Prim(Prim::Integer(idx))],
     };
+  }
+
+  pub fn record_head_to_fun(head: &String) -> Option<(String, String)> {
+    if let Some(sep_pos) = head.chars().position(|c| c == '_') {
+      let (lib, name) = head.split_at(sep_pos);
+      let name = &name[1..];
+      return Some((String::from(lib), String::from(name)));
+    } else {
+      return None;
+    }
   }
 
   pub fn is_hole(&self) -> bool {

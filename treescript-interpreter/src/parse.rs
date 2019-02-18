@@ -1,16 +1,23 @@
 extern crate unicode_reader;
-use crate::util::Float;
-use crate::value::{Prim, Value};
+use crate::value::{Float, Prim, Value};
 use std::collections::HashMap;
 use std::io::Read;
 use unicode_reader::CodePoints;
 
-pub struct Parser<R: Read> {
-  pub input: R,
+pub struct Parser<'a, R: Read> {
+  pub input: &'a mut R,
   pub num_props_by_head: HashMap<String, usize>,
 }
 
-impl<R: Read> Parser<R> {
+impl<'a, R: Read> Iterator for Parser<'a, R> {
+  type Item = Value;
+
+  fn next(&mut self) -> Option<Value> {
+    return self.scan_value();
+  }
+}
+
+impl<'a, R: Read> Parser<'a, R> {
   pub fn scan_word(&mut self) -> String {
     let mut word = String::new();
     let mut is_empty = true;
@@ -29,17 +36,17 @@ impl<R: Read> Parser<R> {
     return word;
   }
 
-  pub fn scan_integer(&mut self) -> i32 {
+  fn scan_integer(&mut self) -> i32 {
     let word = self.scan_word();
     return word.parse().unwrap();
   }
 
-  pub fn scan_float(&mut self) -> Float {
+  fn scan_float(&mut self) -> Float {
     let word = self.scan_word();
     return Float(word.parse().unwrap());
   }
 
-  pub fn scan_string(&mut self) -> String {
+  fn scan_string(&mut self) -> String {
     let mut word = String::new();
     let mut iter = CodePoints::from(self.input.by_ref()).map(|res| res.unwrap());
     assert!(iter.next() == Option::Some('"'));
@@ -72,25 +79,30 @@ impl<R: Read> Parser<R> {
     return word;
   }
 
-  pub fn scan_value(&mut self, word: String) -> Value {
+  pub fn scan_value(&mut self) -> Option<Value> {
+    let word = self.scan_word();
+    if word.is_empty() {
+      return Option::None;
+    }
     match word.as_str() {
-      "splice" => return Value::Splice(self.scan_integer() as usize),
-      "integer" => return Value::Prim(Prim::Integer(self.scan_integer())),
-      "float" => return Value::Prim(Prim::Float(self.scan_float())),
-      "string" => return Value::Prim(Prim::String(self.scan_string())),
+      "splice" => return Option::Some(Value::Splice(self.scan_integer() as usize)),
+      "integer" => return Option::Some(Value::Prim(Prim::Integer(self.scan_integer()))),
+      "float" => return Option::Some(Value::Prim(Prim::Float(self.scan_float()))),
+      "string" => return Option::Some(Value::Prim(Prim::String(self.scan_string()))),
       _ => {
         if word.chars().next().map_or(false, |fst| fst.is_uppercase()) {
-          let num_props = *self.num_props_by_head.get(&word).unwrap();
+          let num_props = *self
+            .num_props_by_head
+            .get(&word)
+            .expect(format!("unknown record: {}", word).as_str());
           let mut props = Vec::with_capacity(num_props);
           for _ in 0..num_props {
-            let word = self.scan_word();
-            assert!(!word.is_empty());
-            props.push(self.scan_value(word));
+            props.push(self.scan_value().unwrap());
           }
-          return Value::Record {
+          return Option::Some(Value::Record {
             head: word,
             props: props,
-          };
+          });
         } else {
           panic!("word has unknown type: {}", word);
         }

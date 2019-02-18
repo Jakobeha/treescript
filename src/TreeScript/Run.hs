@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module TreeScript.Run
   ( run
   ) where
@@ -23,7 +25,7 @@ runCode execPath (Code inExt inText) = do
         { cmdProgramStage = StageRunning
         , cmdProgramPath = execPath
         }
-  outAstData <- runCmdProgram execProg inAstData
+  outAstData <- runCmdProgramArgs execProg ["--stdin", "--stdout"] inAstData
   outLang <- F.langFromAstData outAstData
   let outExt = langSpecExtension $ languageSpec outLang
       outPrinter = languagePrinter outLang
@@ -33,20 +35,10 @@ runCode execPath (Code inExt inText) = do
     , codeContent = outText
     }
 
--- | Parse the input (second arg), run the TreeScript executable (first arg), and print its output (third path, defaults to input path with output extension).
-run :: FilePath -> FilePath -> Maybe FilePath -> SessionRes ()
-run exec input optOutput
-  | Just input == optOutput = mkFail $ mkOverlapInOutError StageReadArgs
-  | otherwise = do
-    let (inBase, inExtFull) = splitExtension input
-        inExt
-          = case inExtFull of
-              '.' : inExt' -> T.pack inExt'
-              _ -> T.empty -- Will raise error later
-    inText <- liftIOAndCatch StageReadInput $ T.readFile input
-    Code outExt outText <- runCode exec $ Code inExt inText
-    let outExt' = T.unpack outExt
-        output = inBase <.> outExt' `fromMaybe` optOutput
-    when (input == output) $
-      mkFail $ mkOverlapInOutError StageRunning
-    liftIOAndCatch StageWriteOutput $ T.writeFile output outText
+-- | Run the treescript executable with the given arguments.
+run :: FilePath -> [T.Text] -> SessionRes ()
+run execPath args = () <$ runCmdProgramArgs execProg args T.empty
+  where execProg = CmdProgram
+          { cmdProgramStage = StageRunning
+          , cmdProgramPath = execPath
+          }

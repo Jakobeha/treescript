@@ -55,27 +55,15 @@ compileP_ = mkCompile <$> srcP <*> outP <*> watchP
 
 
 runP_ :: Parser Run
-runP_ = Run <$> execP <*> srcP <*> outP <*> watchP
+runP_ = Run <$> execP <*> many argP
   where execP
            = strArgument
            $ metavar "EXEC"
-          <> help "path to the compiled TreeScript executable"
-        srcP
+          <> help "path to the source code"
+        argP
            = strArgument
-           $ metavar "SRC"
-          <> help "path to the input source code"
-        outP
-           = optional
-           $ strOption
-           $ metavar "OUT"
-          <> long "output"
-          <> short 'o'
-          <> help "path for the output source code, defaults to (SRC).(EXT) (where (EXT) is determined by output, and must not be the same as input)"
-        watchP
-           = switch
-           $ long "watch"
-          <> short 'w'
-          <> help "run every time the input source changes"
+           $ metavar "ARG"
+          <> help "argument to be passed to the executable"
 
 actionInfo :: InfoMod a
 actionInfo
@@ -106,6 +94,6 @@ compileInfo
 runInfo :: InfoMod a
 runInfo
    = fullDesc
-  <> progDesc "run a TreeScript executable"
-  <> header "treescript run - run a TreeScript executable"
-  <> footer "The executable will transform the source code in the input file"
+  <> progDesc "run a TreeScript source file"
+  <> header "treescript run - run a TreeScript source file"
+  <> footer "TODO"

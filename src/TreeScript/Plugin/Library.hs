@@ -28,7 +28,7 @@ data LibrarySpec
 data Library
   = Library
   { librarySpec :: LibrarySpec
-  , libraryCodeDir :: FilePath
+  , libraryDirName :: T.Text
   } deriving (Read, Show)
 
 instance FromJSON FunctionSpec where

@@ -30,4 +30,4 @@ Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old;
 Subst[scm'(if \cond \true \false)'; \old; \new]: scm'(if \(Subst[\cond; \old; \new]) \(Subst[\true; \old; \new]) \(Subst[\false; \old; \new]))';
 Subst[scm'(list \x \y \z)'; \old; \new]: scm'(list \(Subst[\x; \old; \new]) \(Subst[\y; \old; \new]) \(Subst[\z; \old; \new]))';
 Subst[\body; \; \]: \body;
-E[scm'(\x . \xs)']: scm'(\(E[\x]) . \(E[\xs]))';
+E[scm'(\x . \y)']: scm'(\(E[\x]) . \(E[\y]))';

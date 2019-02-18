@@ -116,4 +116,11 @@ Libraries
 
 Working on VSCode extension / language server on a separate branch
 
+## 2/15/19
+
+Wrote interpreter in Rust, instead of directly compiling into C
+
+- Currently slower than C version
+- But should be faster to debug and improve
+
 ## Unreleased changes

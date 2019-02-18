@@ -161,7 +161,7 @@ maxNumBindsInReducer (Reducer _ input output)
   = max (maxNumBindsInClause input) (maxNumBindsInClause output)
 
 maxNumBindsInStatement :: Statement an -> Int
-maxNumBindsInStatement (StatementGroup groupRef) = 0 -- Already counted in group def
+maxNumBindsInStatement (StatementGroup _) = 0 -- Already counted in group def
 maxNumBindsInStatement (StatementReducer red) = maxNumBindsInReducer red
 
 maxNumBindsInStatements :: [Statement an] -> Int
@@ -236,7 +236,7 @@ recordHeadUsedLibName1 :: RecordHead -> Maybe T.Text
 recordHeadUsedLibName1 (RecordHead isFunc name)
   | isFunc
   = case T.splitOn "_" name of
-      [libName, _] -> Just libName
+      (libName : _ : _) -> Just libName
       _ -> Nothing
   | otherwise = Nothing
 

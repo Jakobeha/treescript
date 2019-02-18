@@ -38,6 +38,7 @@ data TestFile
 data TestInfo
   = TestInfo
   { testInfoSkip :: Bool
+  , testInfoSkipRun :: [T.Text]
   , testInfoPrintLex :: Bool
   , testInfoPrintSugar :: Bool
   , testInfoPrintCore :: Bool
@@ -55,6 +56,7 @@ data TestInfo
 instance FromJSON TestInfo where
   parseJSON = withObject "TestInfo" $ \x -> TestInfo
     <$> x .:? "skip?" .!= False
+    <*> x .:? "skipRun" .!= []
     <*> x .:? "printLex?" .!= False
     <*> x .:? "printSugar?" .!= False
     <*> x .:? "printCore?" .!= False

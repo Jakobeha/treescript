@@ -405,7 +405,7 @@ unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
   | otherwise = [parseError rng "bind in non-matching position has unassigned label"]
 
 unboundOutputErrsGroup :: S.Set Int -> Bool -> S.Set Int -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool, Bool)) [Error]
-unboundOutputErrsGroup extraBinds isCovariant stk (GroupRef rng idx props)
+unboundOutputErrsGroup extraBinds isCovariant stk (GroupRef _ idx props)
   | S.member idx stk = pure []
   | otherwise = do
     groups' <- get

@@ -34,9 +34,7 @@ runCompile (Compile input output True)
 runCompile (Compile input output False) = runSessionRes $ compile input output
 
 runRun :: Run -> IO ()
-runRun (Run exec input output True)
-  = runWatching input $ runRun $ Run exec input output False
-runRun (Run exec input output False) = runSessionRes $ run exec input output
+runRun (Run exec args) = runSessionRes $ run exec args
 
 runWatching :: FilePath -> IO () -> IO ()
 runWatching input action = withManager $ \mgr -> do

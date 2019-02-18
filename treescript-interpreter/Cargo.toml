@@ -5,8 +5,12 @@ authors = ["jakob <jakobeha@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+app_dirs = "1.2.1"
 clap = "2.32.0"
 enum-map = "0.5.0"
 rmp-serde = "0.13.7"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.8"
+tempfile = "3.0.6"
 unicode_reader = "0.1.1"

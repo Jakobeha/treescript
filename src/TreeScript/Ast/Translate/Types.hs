@@ -14,6 +14,13 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import GHC.Generics
 
+-- | Describes a library and provides its code.
+data Lib
+  = Lib
+  { libName :: T.Text
+  , libDirName :: T.Text
+  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
 data Primitive
   = PrimInteger Int
@@ -40,6 +47,7 @@ data Consume
   = ConsumeSplice Int
   | ConsumePrimitive Primitive
   | ConsumeRecord T.Text
+  | ConsumeFunction T.Text [Value]
   deriving (Eq, Ord, Read, Show, Generic)
 
 -- | References a group.
@@ -82,7 +90,7 @@ data GroupDef
 data Program
   = Program
   { programNumPropsByHead :: M.Map T.Text Int
-  , programLibraries :: [T.Text]
+  , programLibraries :: [Lib]
   , programMainStatements :: [Statement]
   , programGroups :: [GroupDef]
   } deriving (Eq, Ord, Read, Show, Generic)
@@ -111,9 +119,12 @@ instance MessagePack Consume where
   toObject (ConsumeSplice idx) = ObjectArray [ObjectInt 0, ObjectArray [toObject idx]]
   toObject (ConsumePrimitive prim) = ObjectArray [ObjectInt 1, ObjectArray [toObject prim]]
   toObject (ConsumeRecord head') = ObjectArray [ObjectInt 2, ObjectArray [toObject head']]
+  toObject (ConsumeFunction name args) = ObjectArray [ObjectInt 3, ObjectArray [toObject name, toObject args]]
   fromObject (ObjectArray [ObjectInt 0, ObjectArray [xEncoded]]) = ConsumeSplice <$> fromObject xEncoded
   fromObject (ObjectArray [ObjectInt 1, ObjectArray [xEncoded]]) = ConsumePrimitive <$> fromObject xEncoded
   fromObject (ObjectArray [ObjectInt 2, ObjectArray [xEncoded]]) = ConsumeRecord <$> fromObject xEncoded
+  fromObject (ObjectArray [ObjectInt 3, ObjectArray [xEncoded, yEncoded]])
+    = ConsumeFunction <$> fromObject xEncoded <*> fromObject yEncoded
   fromObject _ = fail "invalid encoding for Consume"
 
 instance MessagePack Statement where

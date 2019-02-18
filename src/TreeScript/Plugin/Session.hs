@@ -121,7 +121,7 @@ setupInitialPlugins pluginPath = do
 
 getRealPluginPath :: PreSessionRes FilePath
 getRealPluginPath = do
-  path <- liftLoadIO $ getAppUserDataDirectory "treescript"
+  path <- liftLoadIO $ getRealAppDataDirectory "treescript"
   pluginsWereSetup <- liftLoadIO $ doesPathExist path
   unless pluginsWereSetup $ do
     logDebugN "Local plugins not created yet."
@@ -174,7 +174,6 @@ mkLibrary :: FilePath -> String -> PreSessionRes Library
 mkLibrary pluginPath name = do
   let path = pluginPath </> name
       specPath = path </> "spec.yaml"
-      codeDir = path </> "code"
   specDecoded <- liftLoadIO $ decodeFileEither specPath
   spec <-
     case specDecoded of
@@ -184,7 +183,7 @@ mkLibrary pluginPath name = do
   validatePluginName name $ librarySpecName spec
   pure Library
     { librarySpec = spec
-    , libraryCodeDir = codeDir
+    , libraryDirName = T.pack name
     }
 
 listDirPlugins :: FilePath -> PreSessionRes [String]

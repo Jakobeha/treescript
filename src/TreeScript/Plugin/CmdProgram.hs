@@ -3,6 +3,7 @@
 -- | Allows the TreeScript compiler to use external command-line programs.
 module TreeScript.Plugin.CmdProgram
   ( CmdProgram (..)
+  , runCmdProgramArgs
   , runCmdProgram
   ) where
 
@@ -32,11 +33,11 @@ convertErr stage err
     }
 
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
-runCmdProgram :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
-runCmdProgram (CmdProgram stage ppath) inp = do
+runCmdProgramArgs :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
+runCmdProgramArgs (CmdProgram stage ppath) args inp = do
   let liftCmdIO = liftIOAndCatch stage
       pproc
-        = (proc ppath [])
+        = (proc ppath $ map T.unpack args)
         { std_in = CreatePipe
         , std_out = CreatePipe
         , std_err = CreatePipe
@@ -60,3 +61,7 @@ runCmdProgram (CmdProgram stage ppath) inp = do
         mkFail $ convertErr stage $ "unknown error (code " <> pprint code <> ")"
       | otherwise -> do
         mkFail $ convertErr stage $ T.strip err
+
+-- | Runs the command-line program without arguments.
+runCmdProgram :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
+runCmdProgram prog = runCmdProgramArgs prog []

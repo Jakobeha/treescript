@@ -20,5 +20,3 @@ functions:
   args: 2
 - name: Append
   args: 2
-- name: FreeString
-  args: 2

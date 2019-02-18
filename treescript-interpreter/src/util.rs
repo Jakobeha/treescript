@@ -1,12 +1,46 @@
-extern crate serde;
-use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter, Result};
+extern crate tempfile;
+use std::fs;
+use std::fs::File;
+use std::io;
 use std::ops::{Generator, GeneratorState};
+use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Float(pub f32);
+#[allow(dead_code)]
+pub struct AtomicFileCommit {
+  dst_path: PathBuf,
+  temp_path: PathBuf,
+}
+
+#[allow(dead_code)]
+pub struct AtomicFile {
+  pub commit: AtomicFileCommit,
+  pub temp_file: File,
+}
 
 pub struct GeneratorIterator<G: Generator>(pub G);
+
+#[allow(dead_code)]
+impl AtomicFileCommit {
+  /// Temporary file can't be used anymore afterward
+  pub fn run(&self) -> io::Result<()> {
+    return fs::rename(&self.temp_path, &self.dst_path);
+  }
+}
+
+#[allow(dead_code)]
+impl AtomicFile {
+  pub fn create(path: PathBuf) -> io::Result<AtomicFile> {
+    let temp = NamedTempFile::new()?;
+    return Ok(AtomicFile {
+      commit: AtomicFileCommit {
+        dst_path: path,
+        temp_path: PathBuf::from(temp.path()),
+      },
+      temp_file: temp.into_file(),
+    });
+  }
+}
 
 impl<G> Iterator for GeneratorIterator<G>
 where
@@ -19,19 +53,5 @@ where
       GeneratorState::Yielded(x) => Some(x),
       GeneratorState::Complete(()) => None,
     }
-  }
-}
-
-impl PartialEq for Float {
-  fn eq(&self, other: &Float) -> bool {
-    return self.0.to_bits() == other.0.to_bits();
-  }
-}
-
-impl Eq for Float {}
-
-impl Display for Float {
-  fn fmt(&self, f: &mut Formatter) -> Result {
-    return self.0.fmt(f);
   }
 }

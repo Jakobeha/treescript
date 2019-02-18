@@ -6,6 +6,7 @@ module Action
   ) where
 
 import Data.Maybe
+import qualified Data.Text as T
 import System.FilePath
 
 data Action
@@ -23,9 +24,7 @@ data Compile
 data Run
   = Run
   { runExec :: FilePath
-  , runInput :: FilePath
-  , runOutput :: Maybe FilePath
-  , runWatch :: Bool
+  , runArgs :: [T.Text]
   }
 
 mkCompile :: FilePath -> Maybe FilePath -> Bool -> Compile

@@ -14,7 +14,6 @@ import qualified Data.Array as A
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Text as T
-import qualified Data.Vector as V
 
 parseNumPropsByHead :: C.Program an -> SessionRes (M.Map T.Text Int)
 parseNumPropsByHead = fmap (M.fromList . mapMaybe parseDecl) . C.getAllProgramDecls
@@ -22,8 +21,13 @@ parseNumPropsByHead = fmap (M.fromList . mapMaybe parseDecl) . C.getAllProgramDe
           | isFunc = Nothing
           | otherwise = Just (name, numProps)
 
-parseLibraries :: C.Program an -> SessionRes [T.Text]
-parseLibraries = fmap (map $ T.pack . libraryCodeDir) . C.getAllProgramUsedLibraries
+parseLibraries :: C.Program an -> SessionRes [Lib]
+parseLibraries = fmap (map parseLibrary) . C.getAllProgramUsedLibraries
+  where parseLibrary (Library spec dirName)
+          = Lib
+          { libName = librarySpecName spec
+          , libDirName = dirName
+          }
 
 parsePrim :: C.Primitive an -> Primitive
 parsePrim (C.PrimInteger _ x) = PrimInteger x
@@ -41,20 +45,21 @@ parseValue (C.ValuePrimitive prim) = ValuePrimitive $ parsePrim prim
 parseValue (C.ValueRecord record) = ValueRecord $ parseRecord record
 parseValue (C.ValueBind bind) = ValueSplice $ C.bindIdx bind
 
-parseConsumes :: Value -> [Consume]
-parseConsumes (ValueSplice idx) = [ConsumeSplice idx]
-parseConsumes (ValuePrimitive prim) = [ConsumePrimitive prim]
-parseConsumes (ValueRecord (Record head' props))
+parseConsumes :: C.Value an -> [Consume]
+parseConsumes (C.ValuePrimitive prim) = [ConsumePrimitive $ parsePrim prim]
+parseConsumes (C.ValueRecord (C.Record _ (C.RecordHead False head') props))
   = ConsumeRecord head' : concatMap parseConsumes props
+parseConsumes (C.ValueRecord (C.Record _ (C.RecordHead True head') props))
+  = [ConsumeFunction head' $ map parseValue props]
+parseConsumes (C.ValueBind bind) = [ConsumeSplice $ C.bindIdx bind]
 
 parseReducerClause :: C.ReducerClause an -> ReducerClause
 parseReducerClause (C.ReducerClause _ val groups)
   = ReducerClause
-  { reducerClauseConsumes = parseConsumes val'
-  , reducerClauseProduce = val'
+  { reducerClauseConsumes = parseConsumes val
+  , reducerClauseProduce = parseValue val
   , reducerClauseGroups = map parseGroupRef groups
   }
-  where val' = parseValue val
 
 parseGroupRef :: C.GroupRef an -> GroupRef
 parseGroupRef (C.GroupRef _ idx props) = GroupRef

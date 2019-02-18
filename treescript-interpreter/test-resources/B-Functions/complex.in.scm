@@ -1,4 +1,4 @@
-((lambda (f) (list (f 1) (f 4) (f 7)))
+((lambda (f) (f 2))
  ((lambda (f)
     ((lambda (x) (f (x x)))
      (lambda (x) (f (lambda (y) ((x x) y))))))
