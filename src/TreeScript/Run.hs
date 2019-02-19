@@ -1,18 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module TreeScript.Run
-  ( run
+  ( runCode
+  , run
   ) where
 
 import qualified TreeScript.Ast.Flat as F
 import TreeScript.Misc
 import TreeScript.Plugin
 
-import Control.Monad
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import Data.Maybe
-import System.FilePath
 
 -- | Parse the input code, run the TreeScript executable at the given path, print its output, and return the result.
 runCode :: FilePath -> Code -> SessionRes Code

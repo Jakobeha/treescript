@@ -10,6 +10,20 @@ get_next_word <- function(inp) {
   str_match(inp, "^([^ ]+) (.*)$")
 }
 
+read_expect_integer <- function(inp, n) {
+  word_and_inp <- get_next_word(inp)
+  word <- word_and_inp[2]
+  if (is.na(word_and_inp[3])) {
+      cat("<expected num props (specifically ", n, "), got nothing>", sep="")
+  } else {
+    inp <- word_and_inp[3]
+    if (as.integer(word) != n) {
+      cat("<for num props - expected", n, "got", word, ">")
+    }
+  }
+  inp
+}
+
 for (line in readLines(stdin)) {
   in_cdr <- FALSE
   inp <- paste0(line, " ")
@@ -32,6 +46,7 @@ for (line in readLines(stdin)) {
       inp <- idx_and_inp[3]
       cat("\\", idx)
     } else if (word == "Scheme_Symbol") {
+      inp <- read_expect_integer(inp, 1)
       word_and_inp <- get_next_word(inp)
       word <- word_and_inp[2]
       inp <- word_and_inp[3]
@@ -44,12 +59,15 @@ for (line in readLines(stdin)) {
         cat("<expected \"string\", got:", word, ">")
       }
     } else if (word == "Scheme_Atom") {
+      inp <- read_expect_integer(inp, 1)
       word_and_inp <- get_next_word(inp)
       word <- word_and_inp[2]
       inp <- word_and_inp[3]
       if (word == "True") {
+        inp <- read_expect_integer(inp, 0)
         cat("#true")
       } else if (word == "False") {
+        inp <- read_expect_integer(inp, 0)
         cat("#false")
       } else if (word == "integer" || word == "float") {
         num_and_inp <- get_next_word(inp)
@@ -65,10 +83,12 @@ for (line in readLines(stdin)) {
         cat("<expected a primitive word, got:", word, ">")
       }
     } else if (word == "Scheme_Nil") {
+      inp <- read_expect_integer(inp, 0)
       if (!in_cdr) {
         cat("()")
       }
     } else if (word == "Scheme_Cons") {
+      inp <- read_expect_integer(inp, 2)
       if (in_cdr) {
         cat(" ")
         in_cdr <- FALSE

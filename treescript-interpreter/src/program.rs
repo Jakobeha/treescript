@@ -7,14 +7,12 @@ use crate::session::{LibrarySpec, Session};
 use crate::value::Value;
 use enum_map::enum_map;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::iter;
 use std::rc::{Rc, Weak};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
-  pub num_props_by_head: HashMap<String, usize>,
   pub libraries: Vec<LibrarySpec>,
   pub main_statements: Vec<Statement>,
   pub sub_groups: Vec<GroupDefSerial>,
@@ -22,7 +20,6 @@ pub struct ProgramSerial {
 
 #[derive(Clone, Debug)]
 pub struct Program {
-  pub num_props_by_head: HashMap<String, usize>,
   pub libraries: Vec<LibrarySpec>,
   pub main_group: GroupDef,
   pub sub_groups: Rc<Vec<GroupDef>>,
@@ -32,7 +29,6 @@ impl From<ProgramSerial> for Program {
   fn from(serial: ProgramSerial) -> Program {
     let main_statements = serial.main_statements;
     let mut program = Program {
-      num_props_by_head: serial.num_props_by_head,
       libraries: serial.libraries,
       main_group: GroupDef {
         props: vec![],
@@ -78,7 +74,7 @@ impl<R: Read> From<R> for Program {
 
 impl Program {
   pub fn new_session(&self) -> Session {
-    return Session::new(self.num_props_by_head.clone(), self.libraries.clone());
+    return Session::new(self.libraries.clone());
   }
 
   fn groups(&self) -> impl Iterator<Item = &GroupDef> {
@@ -104,10 +100,7 @@ impl Program {
   }
 
   pub fn run<R: Read, W: Write>(&self, session: &mut Session, input: &mut R, output: &mut W) {
-    let mut parser = Parser {
-      input: input,
-      num_props_by_head: self.num_props_by_head.clone(),
-    };
+    let mut parser = Parser { input: input };
     let mut printer = Printer { output: output };
 
     session.start();

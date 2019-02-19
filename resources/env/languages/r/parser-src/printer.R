@@ -67,6 +67,14 @@ for (line in readLines(stdin)) {
     inp <<- wordAndInp[3]
     wordAndInp[2]
   }
+  readExpectInteger <- function(n) {
+    word <- readWord()
+    if (is.na(word)) {
+      raiseSyntax(paste0("expected num props (specifically ", toString(n), "), got nothing"))
+    } else if (is.na(suppressWarnings(as.integer(word))) || as.integer(word) != n) {
+      raiseSyntax(paste("for num props, expected", toString(n), "got", word))
+    }
+  }
   readString <- function() {
     strAndInp <- str_match(inp, "^\"((?:\\\\\"|[^\"])*)\" (.*)$")
     checkRead("string", strAndInp)
@@ -84,10 +92,12 @@ for (line in readLines(stdin)) {
     word <- readWord()
     switch (word,
       "Cons" = {
+        readExpectInteger(2)
         name <- {
           nextAndInp <- peekWord()
           if (nextAndInp[1] == "R_Named") {
             inp <<- nextAndInp[2]
+            readExpectInteger(2)
             c(readPrimString())
           } else {
             NULL
@@ -106,7 +116,10 @@ for (line in readLines(stdin)) {
         rest <- readList(readElem)
         c(head, rest)
       },
-      "Nil" = list(),
+      "Nil" = {
+        readExpectInteger(0)
+        list()
+      },
       c(raiseSyntax(paste("expected a list, got:", word)))
     )
   }
@@ -114,11 +127,21 @@ for (line in readLines(stdin)) {
     word <- readWord()
     switch (word,
       "R_Literal" = {
+        readExpectInteger(1)
         lit <- readWord()
         switch (lit,
-          "Unit" = NULL,
-          "True" = TRUE,
-          "False" = FALSE,
+          "Unit" = {
+            readExpectInteger(0)
+            NULL
+          },
+          "True" = {
+            readExpectInteger(0)
+            TRUE
+          },
+          "False" = {
+            readExpectInteger(0)
+            FALSE
+          },
           "integer" = as.integer(readWord()),
           "float" = as.double(readWord()),
           "string" = readString(),
@@ -129,14 +152,24 @@ for (line in readLines(stdin)) {
         idx <- readWord()
         as.symbol(paste0("splice_", idx))
       },
-      "R_Symbol" = as.symbol(readPrimString()),
+      "R_Symbol" = {
+        readExpectInteger(1)
+        as.symbol(readPrimString())
+      },
       "R_Call" = {
+        readExpectInteger(2)
         head <- readExpr()
         args <- readList(readExpr)
         call2(head, splice(args))
       },
-      "R_PairList" = as.pairlist(readList(readExpr)),
-      "R_Missing" = missing_arg(),
+      "R_PairList" = {
+        readExpectInteger(1)
+        as.pairlist(readList(readExpr))
+      },
+      "R_Missing" = {
+        readExpectInteger(0)
+        missing_arg()
+      },
       raiseSyntax(paste("value of unknown type:", word))
     )
   }

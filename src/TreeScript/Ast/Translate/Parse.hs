@@ -11,15 +11,6 @@ import TreeScript.Misc
 import TreeScript.Plugin
 
 import qualified Data.Array as A
-import qualified Data.Map.Strict as M
-import Data.Maybe
-import qualified Data.Text as T
-
-parseNumPropsByHead :: C.Program an -> SessionRes (M.Map T.Text Int)
-parseNumPropsByHead = fmap (M.fromList . mapMaybe parseDecl) . C.getAllProgramDecls
-  where parseDecl (C.RecordDeclCompact (C.RecordHead isFunc name) numProps)
-          | isFunc = Nothing
-          | otherwise = Just (name, numProps)
 
 parseLibraries :: C.Program an -> SessionRes [Lib]
 parseLibraries = fmap (map parseLibrary) . C.getAllProgramUsedLibraries
@@ -96,7 +87,6 @@ parseGroups = pure . map parseGroupDef . C.programGroups
 parse :: C.Program an -> SessionRes Program
 parse prog
     = Program
-  <$> parseNumPropsByHead prog
-  <*> parseLibraries prog
+  <$> parseLibraries prog
   <*> parseMainStatements prog
   <*> parseGroups prog

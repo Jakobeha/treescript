@@ -11,8 +11,9 @@ raiseSyntax <- function(msg) {
 writeWord <- function(word) {
   cat(word, " ", sep="")
 }
-writeNode <- function(node) {
-  cat("R_", node, " ", sep="")
+writeRecord <- function(head, numProps) {
+  writeWord(head)
+  writeWord(toString(numProps))
 }
 writeString <- function(expr) {
   writeWord("string")
@@ -37,30 +38,30 @@ writeList <- function(writeElem, lst) {
       for (idx in 1:lstLength) {
         elem <- lst[[idx]]
         name <- lstNames[[idx]]
-        writeWord("Cons")
+        writeRecord("Cons", 2)
         if (!is.null(name) && name != "") {
-          writeNode("Named")
+          writeRecord("R_Named", 2)
           writeString(name)
         }
         if (is_missing(elem)) {
-          writeNode("Missing")
+          writeRecord("R_Missing", 0)
         } else {
           writeElem(elem)
         }
       }
     }
-    writeWord("Nil")
+    writeRecord("Nil", 0)
   }
 }
 writeExpr <- function(expr) {
   if (is_syntactic_literal(expr)) { # Constants
-    writeNode("Literal")
+    writeRecord("R_Literal", 1)
     if (is.null(expr)) {
-      writeWord("Unit")
+      writeRecord("Unit", 0)
     } else if (identical(expr, TRUE)) {
-      writeWord("True")
+      writeRecord("True", 0)
     } else if (identical(expr, FALSE)) {
-      writeWord("False")
+      writeRecord("False", 0)
     } else if (is.numeric(expr)) {
       if (expr%%1 == 0) {
         writeWord("integer")
@@ -80,15 +81,15 @@ writeExpr <- function(expr) {
       writeWord("splice")
       writeWord(spliceIdx)
     } else { # Symbol
-      writeNode("Symbol")
+      writeRecord("R_Symbol", 1)
       writeString(as_string(expr))
     }
   } else if (is_call(expr)) { # Function calls
-    writeNode("Call")
+    writeRecord("R_Call", 2)
     writeExpr(expr[[1]])
     writeList(writeExpr, as.list(expr[-1]))
   } else if (is_pairlist(expr)) { # Pair lists
-    writeNode("PairList")
+    writeRecord("R_PairList", 1)
     writeList(writeExpr, expr)
   } else {
     raiseSyntax(paste("expression of unknown type -", str(expr)))

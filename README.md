@@ -13,6 +13,8 @@ Modifies[\expr; \i]: False[];
 Modifies[\expr; \n]: False[];
 ```
 
+TODO Outdated - need to update some things.
+
 <!--ts-->
 <!--te-->
 
@@ -181,13 +183,13 @@ TODO Describe groups
 
 ### Running Source Code
 
-- Write TreeScript source code, save it in a `.tscr` file.
-- Run `treescript compile <SRC>.tscr` to compile this into a `.tprg` executable.
-- Run `treescript run <EXEC>.tprg <INPUT> -o <OUTPUT>` to take the source code from `<INPUT>`, transform it, and write the result to `<OUTPUT>`.
+Run `treescript run <EXEC>.tscr <INPUT> -o <OUTPUT>` to take the source code from `<INPUT>`, transform it using `<EXEC>.tscr`, and write the result to `<OUTPUT>`.
 
-A typical TreeScript program will be written in TreeScript. Then, via `treescript compile`, it gets compiled into a C executable. The executable takes raw AST data as input, transforms it, and outputs the transformed data. The program can be run with source code input and output via `treescript run`.
+### Compiling Source Code
 
-In the future, the compiler will support creating standalone executables. Then you could just run `treescript compile <SRC>.tscr --standalone`, and run `<EXEC> <INPUT> -o <OUTPUT>` by itself. Maybe in the distant future TreeScript will even create GUI applications.
+TreeScript programs can also be compiled into executables.
+
+Run `treescript compile <SRC>.tscr` to compile `<SRC>.tscr` into `<SRC>.tprg`. Then run `./<SRC>.tprg <INPUT> -o <OUTPUT>`.
 
 ## Plugins
 
@@ -254,7 +256,7 @@ A language parser is a command-line program which reads a language's source text
 Each language parser must (or at least strongly should) handle indexed splices (`\#`, e.g. in `while (\0 < \1) \2++;)`), and convert `\\` occurrences to actual backslashes. When an indexed splice is encountered, in the AST data it gets converted into a `splice` node, which is followed by the splice's index. e.g. for `while (\0 < \1) \2++;)`, `\0` is encoded with `splice 0`, `1` is encoded with `splice 1`, and `2` is encoded with
 `splice 2` (these nodes have no children).
 
-Language parsers are specifically designed to be used by the TreeScript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled TreeScript program. However, they're convenient when also paired with a TreeScript program - the command `cat <input> | <language-parser> | <treescript-program> | <language-printer> | <output>` will read source text from `<input>`, apply `<treescript-program>`, and print the write the transformed source text to `<output>`.
+Language parsers are specifically designed to be used by the TreeScript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled TreeScript program. However, they're convenient when also paired with a TreeScript program - the command `cat <input> | <language-parser> | <treescript-program> --stdin --stdout | <language-printer> | <output>` will read source text from `<input>`, apply `<treescript-program>`, and print the write the transformed source text to `<output>`.
 
 ### Language Printer
 
@@ -306,7 +308,7 @@ The library specification declares all the functions the library provides. (Like
 
 AST data is a text-based format which encodes TreeScript values and abstract syntax trees for any language. It consists of a sequence of "words" separated by spaces and newlines.
 
-AST data encodes a sequence of values, and each value is separated by a newline. A primitive integer, float, or string is represented by the literal "integer", "float", or "string", followed by the (32-bit signed) integer, float, or escaped quoted string which is the content. A record is represented by the literal record's head, followed by it's children - e.g. `Foo[Bar[], 5]` is represented by `Foo Bar integer 5`. Thus AST data is prefix notation.
+AST data encodes a sequence of values, and each value is separated by a newline. A primitive integer, float, or string is represented by the literal "integer", "float", or "string", followed by the (32-bit signed) integer, float, or escaped quoted string which is the content. A record is represented by the literal record's head, followed by the # of properties, followed by each property - e.g. `Foo[Bar[], 5]` is represented by `Foo 2 Bar 0 integer 5`. Thus AST data is prefix notation.
 
 Each AST node corresponds to a record. The head is the created by combining the node's target language, an underscore, and its name - e.g. `Java_While`.
 
@@ -315,7 +317,7 @@ Each AST node corresponds to a record. The head is the created by combining the 
 **Example:**
 
 ```s
-App App Lambda string "f" App App Var string "f" Number integer 4 Number integer 5 Lambda string "x" Lambda string "y" Lambda string "z" App App Var string "+" Var string "x" App App Var string "-" Var string "z" Var string "y" Number integer 3
+App 2 App 2 Lambda 2 string "f" App 2 App 2 Var 1 string "f" Number 1 integer 4 Number 1 integer 5 Lambda 2 string "x" Lambda 2 string "y" Lambda 2 string "z" App 2 App 2 Var 1 string "+" Var 1 string "x" App 2 App 2 Var 1 string "-" Var 1 string "z" Var 1 string "y" Number 1 integer 3
 ```
 
 ## Compilation

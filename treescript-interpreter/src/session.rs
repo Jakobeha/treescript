@@ -1,6 +1,5 @@
 extern crate app_dirs;
 extern crate serde;
-extern crate serde_json;
 use crate::parse::Parser;
 use crate::print::Printer;
 use crate::util::{AtomicFile, AtomicFileCommit};
@@ -35,7 +34,6 @@ pub struct LibrarySpec {
 struct Library {
   name: String,
   process: Option<Child>,
-  num_props_by_head: HashMap<String, usize>,
 }
 
 pub struct Session {
@@ -95,11 +93,10 @@ impl Language {
 }
 
 impl Library {
-  fn new(num_props_by_head: HashMap<String, usize>, name: String) -> Library {
+  fn new(name: String) -> Library {
     return Library {
       name: name,
       process: Option::None,
-      num_props_by_head: num_props_by_head,
     };
   }
 
@@ -113,7 +110,6 @@ impl Library {
     lib_path.push("exec");
     self.process = Option::Some(
       Command::new(lib_path.as_os_str())
-        .arg(serde_json::to_string(&self.num_props_by_head).unwrap())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -131,7 +127,6 @@ impl Library {
         .stdout
         .as_mut()
         .expect("can't call function - process output not available"),
-      num_props_by_head: self.num_props_by_head.clone(),
     };
     let mut printer = Printer {
       output: process
@@ -173,7 +168,7 @@ impl Session {
     .expect("failed to get user session directory");
   }
 
-  pub fn new(num_props_by_head: HashMap<String, usize>, libs: Vec<LibrarySpec>) -> Session {
+  pub fn new(libs: Vec<LibrarySpec>) -> Session {
     let root_dir = Session::root_dir();
     let mut langs_dir = root_dir.clone();
     langs_dir.push("languages");
@@ -198,12 +193,7 @@ impl Session {
       lang_idxs_by_ext: lang_idxs_by_ext,
       libs: libs
         .into_iter()
-        .map(|lib| {
-          (
-            lib.code_name,
-            Library::new(num_props_by_head.clone(), lib.dir_name),
-          )
-        })
+        .map(|lib| (lib.code_name, Library::new(lib.dir_name)))
         .collect(),
       root_dir: root_dir,
     };

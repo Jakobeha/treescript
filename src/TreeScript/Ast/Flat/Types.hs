@@ -15,4 +15,4 @@ data Primitive
 data Lexeme
   = LexemeSplice Int
   | LexemePrimitive Primitive
-  | LexemeRecordHead T.Text
+  | LexemeRecordHead T.Text Int

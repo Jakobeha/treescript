@@ -24,7 +24,7 @@ impl<'a, W: Write> Printer<'a, W> {
       Value::Prim(Prim::Float(val)) => return write!(self.output, "float {} ", val),
       Value::Prim(Prim::String(val)) => return self.print_string(val),
       Value::Record { head, props } => {
-        if let Err(err) = write!(self.output, "{} ", head) {
+        if let Err(err) = write!(self.output, "{} {} ", head, props.len()) {
           return Err(err);
         }
         for prop in props {

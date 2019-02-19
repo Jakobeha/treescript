@@ -37,10 +37,9 @@ decodeError msg
   , errorMsg = msg
   }
 
-decodeAstData :: LangSpec -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
-decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
+decodeAstData :: T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
+decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
   where
-    decls = builtinDecls ++ langSpecDecls spec
     splicesVec = V.fromList splices
     decodeAstData1 lexs = do
       (res, rest) <- valueParser lexs
@@ -53,16 +52,11 @@ decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.p
           Nothing -> mkFail $ decodeError $ "invalid splice index: " <> pprint idx
           Just splice -> pure (Just <$> splice, rest)
     valueParser (F.LexemePrimitive prim : rest) = pure (ValuePrimitive $ primParser prim, rest)
-    valueParser (F.LexemeRecordHead head' : rest) = first ValueRecord <$> recordParser head' rest
+    valueParser (F.LexemeRecordHead head' numProps : rest) = first ValueRecord <$> recordParser head' numProps rest
     primParser (F.PrimInteger value) = PrimInteger Nothing value
     primParser (F.PrimFloat value) = PrimFloat Nothing value
     primParser (F.PrimString value) = PrimString Nothing value
-    recordParser head' rest = do
-      nodeDecl <-
-        case find (\decl -> recordDeclCompactHead decl == RecordHead False head') decls of
-          Nothing -> mkFail $ decodeError $ "unknown record head: " <> head'
-          Just res -> pure res
-      let numProps = recordDeclCompactNumProps nodeDecl
+    recordParser head' numProps rest = do
       (props, rest') <- propsParser numProps rest
       pure
         ( Record
@@ -85,10 +79,9 @@ decodeAstData spec txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.p
 
 runLanguageParser :: Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 runLanguageParser lang txt splices = do
-  let spec = languageSpec lang
-      parser = languageParser lang
+  let parser = languageParser lang
   astData <- overErrors (prependMsgToErr $ "couldn't parse code") $ runCmdProgram parser txt
-  overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData spec astData splices
+  overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData astData splices
 
 -- = Parsing from Sugar
 

@@ -54,7 +54,10 @@ parse txt = traverse parse1 $ filter (not . T.null) $ T.lines txt
           value <- stringParser
           separatorParser
           pure $ LexemePrimitive $ PrimString value
-        _ | isUpper $ head word -> pure $ LexemeRecordHead $ T.pack word
+        _ | isUpper $ head word -> do
+              numProps <- P.decimal
+              separatorParser
+              pure $ LexemeRecordHead (T.pack word) numProps
           | otherwise -> fail $ "word has unknown type: " ++ word
     stringParser = T.pack <$> (P.char '"' *> P.manyTill P.charLiteral (P.char '"'))
     wordParser = do
@@ -66,7 +69,7 @@ parse txt = traverse parse1 $ filter (not . T.null) $ T.lines txt
 lexLangSrc :: Lexeme -> SessionRes (Maybe T.Text)
 lexLangSrc (LexemeSplice _) = pure Nothing
 lexLangSrc (LexemePrimitive _) = pure Nothing
-lexLangSrc (LexemeRecordHead head')
+lexLangSrc (LexemeRecordHead head' _)
   = case T.splitOn "_" head' of
       [] -> mkFail $ mkError $ "output record not in language: ''"
       [_] -> mkFail $ mkError $ "output record not in language: " <> head'

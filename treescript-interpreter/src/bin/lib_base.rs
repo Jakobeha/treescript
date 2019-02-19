@@ -155,161 +155,188 @@ impl LibBase {
 impl LibProcess for LibBase {
   type Error = BasicLibProcessError;
 
-  fn call_fun<I: Iterator<Item = Value>>(
-    &mut self,
-    name: String,
-    args: &mut I,
-  ) -> Result<Value, Self::Error> {
+  fn call_fun(&mut self, name: String, args: Vec<Value>) -> Result<Value, Self::Error> {
     match name.as_str() {
       "IsEqual" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("IsEqual"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("IsEqual"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("IsEqual"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return Ok(self.is_equal(arg0, arg1));
       }
       "Matches" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Matches"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Matches"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Matches"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return Ok(self.values_match(arg0, arg1));
       }
       "Map" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Map"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Map"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Map"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.map(arg0, arg1);
       }
       "Add" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Add"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Add"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Add"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_combine(|x, y| x + y, |x, y| x + y, arg0, arg1);
       }
       "Subtract" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Subtract"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Subtract"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Subtract"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_combine(|x, y| x - y, |x, y| x - y, arg0, arg1);
       }
       "Multiply" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Multiply"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Multiply"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Multiply"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_combine(|x, y| x * y, |x, y| x * y, arg0, arg1);
       }
       "Divide" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Divide"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Divide"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Divide"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_combine(|x, y| x / y, |x, y| x / y, arg0, arg1);
       }
       "GreaterThan" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("GreaterThan"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("GreaterThan"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("GreaterThan"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_compare(|x, y| x > y, |x, y| x > y, arg0, arg1);
       }
       "LessThan" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("LessThan"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("LessThan"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("LessThan"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_num_compare(|x, y| x < y, |x, y| x < y, arg0, arg1);
       }
       "Append" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Append"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Append"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Append"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return self.binary_str_combine(|x, y| x + &y, arg0, arg1);
       }
       "Value_Get" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Value_Get"),
-          expected: 1,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Value_Get"),
+            expected: 1,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
         return Ok(self.get_value(arg0));
       }
       "Value_Set" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Value_Set"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Value_Set"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Value_Set"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         self.set_value(arg0, arg1);
         return Ok(Value::unit());
       }
       "Set_Has" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Set_Has"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Set_Has"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Set_Has"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return Ok(self.set_has_value(arg0, arg1));
       }
       "Set_Add" => {
-        let arg0 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Set_Add"),
-          expected: 2,
-        })?;
-        let arg1 = args.next().ok_or(BasicLibProcessError::NotEnoughArgs {
-          fun: String::from("Set_Add"),
-          expected: 2,
-        })?;
+        if args.len() != 2 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Set_Add"),
+            expected: 2,
+            actual: args.len(),
+          });
+        }
+        let mut args_iter = args.into_iter();
+        let arg0 = args_iter.next().unwrap();
+        let arg1 = args_iter.next().unwrap();
         return Ok(self.add_value_to_set(arg0, arg1));
       }
       _ => return Err(BasicLibProcessError::UnknownFunction(name)),

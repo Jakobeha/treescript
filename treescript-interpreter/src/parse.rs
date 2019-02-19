@@ -1,12 +1,10 @@
 extern crate unicode_reader;
 use crate::value::{Float, Prim, Value};
-use std::collections::HashMap;
 use std::io::Read;
 use unicode_reader::CodePoints;
 
 pub struct Parser<'a, R: Read> {
   pub input: &'a mut R,
-  pub num_props_by_head: HashMap<String, usize>,
 }
 
 impl<'a, R: Read> Iterator for Parser<'a, R> {
@@ -34,6 +32,11 @@ impl<'a, R: Read> Parser<'a, R> {
       word.push(next);
     }
     return word;
+  }
+
+  pub fn scan_usize(&mut self) -> usize {
+    let word = self.scan_word();
+    return word.parse().unwrap();
   }
 
   fn scan_integer(&mut self) -> i32 {
@@ -85,16 +88,13 @@ impl<'a, R: Read> Parser<'a, R> {
       return Option::None;
     }
     match word.as_str() {
-      "splice" => return Option::Some(Value::Splice(self.scan_integer() as usize)),
+      "splice" => return Option::Some(Value::Splice(self.scan_usize())),
       "integer" => return Option::Some(Value::Prim(Prim::Integer(self.scan_integer()))),
       "float" => return Option::Some(Value::Prim(Prim::Float(self.scan_float()))),
       "string" => return Option::Some(Value::Prim(Prim::String(self.scan_string()))),
       _ => {
         if word.chars().next().map_or(false, |fst| fst.is_uppercase()) {
-          let num_props = *self
-            .num_props_by_head
-            .get(&word)
-            .expect(format!("unknown record: {}", word).as_str());
+          let num_props = self.scan_usize();
           let mut props = Vec::with_capacity(num_props);
           for _ in 0..num_props {
             props.push(self.scan_value().unwrap());

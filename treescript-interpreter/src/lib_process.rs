@@ -1,8 +1,6 @@
-extern crate serde_json;
 use crate::parse::Parser;
 use crate::print::Printer;
 use crate::value::Value;
-use std::collections::HashMap;
 use std::env;
 use std::fmt::Debug;
 use std::io;
@@ -10,7 +8,7 @@ use std::io::{Read, Write};
 
 pub trait LibProcessError: Debug + From<io::Error> {
   fn unknown_function(name: String) -> Self;
-  fn not_enough_args(fun: String, expected: usize) -> Self;
+  fn invalid_num_args(fun: String, expected: usize, actual: usize) -> Self;
   fn invalid_arg_types(actual: Vec<Value>, expected: String) -> Self;
   fn not_function(value: Value) -> Self;
 }
@@ -18,54 +16,39 @@ pub trait LibProcessError: Debug + From<io::Error> {
 pub trait LibProcess {
   type Error: LibProcessError;
 
-  fn call_fun<I: Iterator<Item = Value>>(
-    &mut self,
-    name: String,
-    args: &mut I,
-  ) -> Result<Value, Self::Error>;
+  fn call_fun(&mut self, fun: String, args: Vec<Value>) -> Result<Value, Self::Error>;
 
-  fn run<R: Read, W: Write>(
-    &mut self,
-    num_props_by_head: HashMap<String, usize>,
-    input: &mut R,
-    output: &mut W,
-  ) -> Result<(), Self::Error> {
-    let mut parser = Parser {
-      input: input,
-      num_props_by_head: num_props_by_head,
-    };
+  fn run<R: Read, W: Write>(&mut self, input: &mut R, output: &mut W) -> Result<(), Self::Error> {
+    let mut parser = Parser { input: input };
     let mut printer = Printer { output: output };
-    loop {
-      let fun = parser.scan_word();
-      if fun.is_empty() {
-        break;
+    while let Some(fun_val) = parser.scan_value() {
+      if let Value::Record {
+        head: fun,
+        props: args,
+      } = fun_val
+      {
+        let res = self.call_fun(fun, args)?;
+        printer
+          .print_value(res)
+          .map_err(|err| Self::Error::from(err))?;
+      } else {
+        return Err(Self::Error::not_function(fun_val));
       }
-
-      match self.call_fun(fun, &mut parser) {
-        Ok(res) => {
-          if let Err(err) = printer.print_value(res) {
-            return Err(Self::Error::from(err));
-          }
-        }
-        Err(err) => return Err(err),
-      };
     }
     return Ok(());
   }
 
   fn run_main(&mut self) {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
+    if args.len() != 1 {
       panic!(
-        "invalid number of arguments - expected 1, got {}",
-        args.len()
+        "invalid number of arguments - expected 0, got {}",
+        args.len() - 1
       );
     }
-    let num_props_by_head = serde_json::from_str(&args[1].as_str())
-      .expect("failed to parse num_props_by_head (first argument)");
 
     self
-      .run(num_props_by_head, &mut io::stdin(), &mut io::stdout())
+      .run(&mut io::stdin(), &mut io::stdout())
       .expect("server error");
   }
 }
@@ -73,9 +56,10 @@ pub trait LibProcess {
 #[derive(Debug)]
 pub enum BasicLibProcessError {
   UnknownFunction(String),
-  NotEnoughArgs {
+  InvalidNumArgs {
     fun: String,
     expected: usize,
+    actual: usize,
   },
   InvalidArgTypes {
     actual: Vec<Value>,
@@ -96,10 +80,11 @@ impl LibProcessError for BasicLibProcessError {
     return BasicLibProcessError::UnknownFunction(name);
   }
 
-  fn not_enough_args(fun: String, expected: usize) -> BasicLibProcessError {
-    return BasicLibProcessError::NotEnoughArgs {
+  fn invalid_num_args(fun: String, expected: usize, actual: usize) -> BasicLibProcessError {
+    return BasicLibProcessError::InvalidNumArgs {
       fun: fun,
       expected: expected,
+      actual: actual,
     };
   }
 

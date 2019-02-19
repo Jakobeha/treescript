@@ -11,8 +11,9 @@ didCons <- FALSE
 writeWord <- function(word) {
   cat(word, " ", sep="")
 }
-writeNode <- function(node) {
-  cat("Scheme_", node, " ", sep="")
+writeRecord <- function(head, numProps) {
+  writeWord(head)
+  writeWord(toString(numProps))
 }
 writeSeparator <- function() {
   cat("\n")
@@ -28,7 +29,7 @@ for (line in readLines(stdin, warn=FALSE)) {
       if (level == 0) {
         writeSeparator()
       } else if (!didCons) {
-        writeNode("Cons")
+        writeRecord("Scheme_Cons", 2)
       }
     }
 
@@ -46,7 +47,7 @@ for (line in readLines(stdin, warn=FALSE)) {
       if (didCons) {
         didCons <- FALSE
       } else {
-        writeNode("Nil")
+        writeRecord("Scheme_Nil", 0)
       }
       level <- level - 1
     } else if (token == ".") {
@@ -58,13 +59,13 @@ for (line in readLines(stdin, warn=FALSE)) {
         didCons <- TRUE
       }
     } else if (token == "#true") {
-      writeNode("Atom")
-      writeWord("True")
+      writeRecord("Scheme_Atom", 1)
+      writeRecord("True", 0)
     } else if (token == "#false") {
-      writeNode("Atom")
-      writeWord("False")
+      writeRecord("Scheme_Atom", 1)
+      writeRecord("False", 0)
     } else if (suppressWarnings(all(!is.na(as.numeric(token))))) {
-      writeNode("Atom")
+      writeRecord("Scheme_Atom", 1)
       if (grepl("\\.", token)) {
         writeWord("float")
       } else {
@@ -72,11 +73,11 @@ for (line in readLines(stdin, warn=FALSE)) {
       }
       writeWord(token)
     } else if (grepl("\"", token)) {
-      writeNode("Atom")
+      writeRecord("Scheme_Atom", 1)
       writeWord("string")
       writeWord(token)
     } else {
-      writeNode("Symbol")
+      writeRecord("Scheme_Symbol", 1)
       writeWord("string")
       writeWord(dQuote(token))
     }

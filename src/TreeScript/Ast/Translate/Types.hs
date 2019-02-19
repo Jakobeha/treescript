@@ -10,7 +10,6 @@ module TreeScript.Ast.Translate.Types
 import TreeScript.Misc
 
 import Data.MessagePack
-import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -89,8 +88,7 @@ data GroupDef
 -- | A full TreeScript program.
 data Program
   = Program
-  { programNumPropsByHead :: M.Map T.Text Int
-  , programLibraries :: [Lib]
+  { programLibraries :: [Lib]
   , programMainStatements :: [Statement]
   , programGroups :: [GroupDef]
   } deriving (Eq, Ord, Read, Show, Generic)
@@ -135,12 +133,11 @@ instance MessagePack Statement where
   fromObject _ = fail "invalid encoding for Statement"
 
 instance MessagePack Program where
-  toObject (Program numProps libs mainStmts groups)
-    = ObjectArray [toObject numProps, toObject libs, toObject mainStmts, toObject groups]
-  fromObject (ObjectArray [numProps, libs, mainStmts, groups])
+  toObject (Program libs mainStmts groups)
+    = ObjectArray [toObject libs, toObject mainStmts, toObject groups]
+  fromObject (ObjectArray [libs, mainStmts, groups])
       = Program
-    <$> fromObject numProps
-    <*> fromObject libs
+    <$> fromObject libs
     <*> fromObject mainStmts
     <*> fromObject groups
   fromObject _ = fail "invalid encoding for Program"
