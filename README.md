@@ -13,14 +13,12 @@ Modifies[\expr; \i]: False[];
 Modifies[\expr; \n]: False[];
 ```
 
-TODO Outdated - need to update some things.
-
 <!--ts-->
 <!--te-->
 
 ## Purpose
 
-TreeScript is a DSL for writing code to transform syntax trees.
+TreeScript is a DSL for writing code to analyze and transform syntax trees.
 
 TreeScript is especially designed to:
 
@@ -39,9 +37,15 @@ TreeScript could also:
 - Print a language - convert it's syntax tree into text
 - Parse a language - convert text into a syntax tree
 
-TreeScript programs can do more when given a library with helpful utility functions. Eventually, though, these functions would be the almost entire program, so the "TreeScript" wouldn't be doing much, and there would be a lot of communication back and forth between the TreeScript program and library, which could be inefficient.
+TreeScript is very minimal, but it can easily be extended. It relies on "libraries" to handle logic and operations like function lookup. You can download libraries, or easily create them yourself in any language.
 
 Eventually TreeScript could even transform its own syntax trees (with a TreeScript language plugin).
+
+## Motivation
+
+Often, if you want to transform a language's syntax, you must learn and use a language-specific API (e.g. SourceKit for Swift, HaRe for Haskell, Scalameta for Scala). Or if the language doesn't have an API, you must create one yourself. Furthermore, these APIs are often implemented in languages which aren't designed for syntax transformation.
+
+TreeScript is one API, explicitly designed to transform syntax, which works for many languages. To support a language, TreeScript only needs a specification, parser, and printer. You can transform the syntax of one language using a library created in a completely different language, or transform the syntax of your own language using a library created by someone else.
 
 ## How to Use
 
@@ -191,11 +195,23 @@ TreeScript programs can also be compiled into executables.
 
 Run `treescript compile <SRC>.tscr` to compile `<SRC>.tscr` into `<SRC>.tprg`. Then run `./<SRC>.tprg <INPUT> -o <OUTPUT>`.
 
-## Plugins
+## How to Extend
 
-The TreeScript language is extensible. The compiler uses external programs and specifications to handle different languages, and TreeScript programs use external programs and specifications to implement extra computations in functions. These external programs and specifications are located in the TreeScript's compilers appdata, probably e.g. `~/Library/Application Support/TreeScript/`.
+TreeScript relies a lot on **plugins**. TreeScript comes with built-in plugins, and you can download or create more.
 
-The TreeScript compiler uses a builtin library of **language plugins**, it takes an input source file and generates a command-line program. This program takes an optional command-line argument path (used for context), and it reads a stream of **AST data**. It applies all reducers to each tree it encounters, and outputs a stream of transformed AST data.
+You can add/modify plugins using `treescript plugin update <plugin-path> --type <lib/lang/template-lib/template-lang>` (TODO). Plugins are stored in `<app-data>/treescript/env` (`<app-data>` is `~/Library/Application Support` on OSX and `~/%APPDATA%/` on Windows).
+
+### Libraries
+
+TreeScript uses **libraries** to handle “typical” programming (e.g. arithmetic, algorithms, data structures), and more complex syntax operations (e.g. function declaration lookups, extra source info). Each library is an external program. When TreeScript evaluates the function call `#<Lib>_<Fun>[<arg>, ...]`, it sends the record `<Fun>[<arg>, ...]`, encoded in **AST data**, to  `stdin` of the `<Lib>` library. The library sends a value back to TreeScript through `stdout`, and that result replaces the call.
+
+Libraries are stored in `<app-data>/treescript/env/libraries`.
+
+### Language Plugins
+
+In order to support a language, TreeScript must have a corresponding **language plugin**. A language plugin consists of an specification, parser, and printer. The specification defines each node in the language's AST, the "parser" converts source code into **AST data**, and the printer converts **AST data** into source code.
+
+Language plugins are stored in `<app-data>/treescript/env/languages`.
 
 ---
 
@@ -207,21 +223,13 @@ The following **examples** are for a minimal lambda-calculus Scheme specificatio
  3)
 ```
 
-(evaluates to 2).
-
-### Language Plugin
-
-A language plugin describes how to parse, print, and analyze a single language. It consists of:
-
-- Language Specification
-- Language Parser
-- Language Printer
-
-### Language Specification
+#### Language Specification
 
 The language specification defines the language's file extension, and every type of node in the AST. Each node has a name and number of children. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
 
 ---
+
+(evaluates to 2).
 
 **Example:**
 
@@ -249,60 +257,26 @@ The language specification defines the language's file extension, and every type
 }
 ```
 
-### Language Parser
+#### Language Parser
 
-A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding AST data. It isn't a TreeScript programs itself (it's a compiled program which could've been written in any language).
+A language parser is a command-line program which reads a language's source text from stdin and outputs the corresponding AST data.
 
 Each language parser must (or at least strongly should) handle indexed splices (`\#`, e.g. in `while (\0 < \1) \2++;)`), and convert `\\` occurrences to actual backslashes. When an indexed splice is encountered, in the AST data it gets converted into a `splice` node, which is followed by the splice's index. e.g. for `while (\0 < \1) \2++;)`, `\0` is encoded with `splice 0`, `1` is encoded with `splice 1`, and `2` is encoded with
 `splice 2` (these nodes have no children).
 
 Language parsers are specifically designed to be used by the TreeScript compiler, to desugar code blocks. As such, they have a strict specification - there are other ways to get source text into AST data, e.g. not using this specific command-line format, and you can use these other methods when getting the AST data to feed into a compiled TreeScript program. However, they're convenient when also paired with a TreeScript program - the command `cat <input> | <language-parser> | <treescript-program> --stdin --stdout | <language-printer> | <output>` will read source text from `<input>`, apply `<treescript-program>`, and print the write the transformed source text to `<output>`.
 
-### Language Printer
+#### Language Printer
 
-A language printer is the opposite of a language parser - it's a command-line program which reads AST data for a language and outputs it's source text.
+A language printer is the opposite of a language parser - it's a command-line program which reads AST data for a language and outputs it's source code.
 
-### Library
+### Templates
 
-A library provides additonal functions for TreeScript programs. Each function may or may not be for a particular langugage - e.g. it could be a function which takes a method identifier and provides its definition, or an additional math function. Each function is prefixed with the library's name - e.g. if the library `Base` wanted to provide the function `Add`, it would be referenced in code by `#Base_Add`.
+You can create a plugin from a template using `treescript plugin new <name> -l <language-of-plugin-source>`. Library templates define datatypes for `Value`s and handle parsing and printing, so you only need to write the core function logic. Language templates also define `Value`s. TreeScript comes with built-in templates for some languages, and you can add more. (TODO)
 
-A library consists of extra C code and a library specification.
+Templates are stored in `<app-data>/treescript/env/templates`.
 
-### Library Code
-
-A library is implemented in C code. Every library has one file, `interface.h` - for each of its functions, this header defines a corresponding C function, `value call_<library name>_<function name>(value* args);` (the type `value` is declared in `../types.h`, which the interface should `#include`). When a TreeScript program encounters a function, it calls the defined C function, inputting each argument as a `value`.
-
-### Library Specification
-
-The library specification declares all the functions the library provides. (Like each AST node in a language specification) each function has a name and number of arguments. The name must consist of only uppercase letters, lowercase letters, and numbers, and it should be CamelCase.
-
----
-
-**Example:**
-
-```json
-{
-  "name": "Base",
-  "functions": [
-    {
-      "name": "Add",
-      "args": 2
-    },
-    {
-      "name": "Subtract",
-      "args": 2
-    },
-    {
-      "name": "Multiply",
-      "args": 2
-    },
-    {
-      "name": "Divide",
-      "args": 2
-    },
-  ]
-}
-```
+## Internals
 
 ### AST Data
 
@@ -320,7 +294,11 @@ Each AST node corresponds to a record. The head is the created by combining the 
 App 2 App 2 Lambda 2 string "f" App 2 App 2 Var 1 string "f" Number 1 integer 4 Number 1 integer 5 Lambda 2 string "x" Lambda 2 string "y" Lambda 2 string "z" App 2 App 2 Var 1 string "+" Var 1 string "x" App 2 App 2 Var 1 string "-" Var 1 string "z" Var 1 string "y" Number 1 integer 3
 ```
 
-## Compilation
+---
+
+TODO Outdated - need to update some things.
+
+### Compilation
 
 A TreeScript source file is compiled into an executable.
 
@@ -336,7 +314,7 @@ More specifically, it goes through the following steps with the following forms:
 - Compile C code
 - Copy program to path (supplied by command-line argument)
 
-### Source Structure
+#### Source Structure
 
 In the sugar and core phases:
 
@@ -364,7 +342,7 @@ Additionally, the sugar phase allows some syntax errors, so it can be parsed con
 
 The translate phase contains blocks of generated C code, which get spliced into a template to create the complete C project.
 
-### Steps
+#### Steps
 
 - Read source from path (supplied by command-line argument)
 - Lex (into `Lex` phase AST)
@@ -387,7 +365,7 @@ The translate phase contains blocks of generated C code, which get spliced into 
   - Run `gcc` on the temporary project, yielding the TreeScript program
 - Copy program to path (supplied by command-line argument)
 
-## C Project Structure
+### C Project Structure
 
 In the plugins folder, there's a C project template. This contains C code which is common for all TreeScript programs, and splice markers. The TreeScript compiler will take a TreeScript source file and generate code to fill these splices. To finish compiling the TreeScript source, it'll copy the template and fill in the splices, then compile the resulting C project.
 
