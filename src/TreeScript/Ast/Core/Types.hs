@@ -221,6 +221,8 @@ builtinDecls =
   , mkBuiltinDecl False "True" 0
   , mkBuiltinDecl False "False" 0
   , mkBuiltinDecl False "Nil" 0
+  , mkBuiltinDecl False "None" 0
+  , mkBuiltinDecl False "Some" 1
   , mkBuiltinDecl False "Cons" 2
   , mkBuiltinDecl False "Hole" 1
   , mkBuiltinDecl True "Flush" 1

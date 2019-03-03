@@ -21,6 +21,7 @@ runCode execPath (Code inExt inText) = do
         = CmdProgram
         { cmdProgramStage = StageRunning
         , cmdProgramPath = execPath
+        , cmdProgramEnv = []
         }
   outAstData <- runCmdProgramArgs execProg ["--stdin", "--stdout"] inAstData
   outLang <- F.langFromAstData outAstData
@@ -38,4 +39,5 @@ run execPath args = () <$ runCmdProgramArgs execProg args T.empty
   where execProg = CmdProgram
           { cmdProgramStage = StageRunning
           , cmdProgramPath = execPath
+          , cmdProgramEnv = []
           }

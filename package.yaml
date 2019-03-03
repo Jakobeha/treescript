@@ -50,6 +50,7 @@ dependencies:
 - filepath
 - megaparsec >= 7.0.4
 - monad-logger
+- monad-loops
 - mtl
 - process
 - semigroupoids

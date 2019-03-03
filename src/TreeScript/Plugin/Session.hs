@@ -162,11 +162,13 @@ mkLanguage pluginPath name = do
         = CmdProgram
         { cmdProgramStage = StagePluginUse
         , cmdProgramPath = parserPath
+        , cmdProgramEnv = []
         }
     , languagePrinter
         = CmdProgram
         { cmdProgramStage = StagePluginUse
         , cmdProgramPath = printerPath
+        , cmdProgramEnv = []
         }
     }
 

@@ -12,6 +12,7 @@ import TreeScript
 
 import Control.Monad
 import Data.List
+import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -22,6 +23,7 @@ import System.FilePath
 data ExecTest
   = ExecTest
   { execTestName :: T.Text
+  , execTestInputPath :: FilePath
   , execTestInput :: T.Text
   , execTestInputExt :: T.Text
   , execTestOutput :: T.Text
@@ -51,6 +53,7 @@ data TestInfo
   , testInfoCantRun :: [T.Text]
   , testInfoFatalErrorMsg :: T.Text
   , testInfoErrorMsgs :: [T.Text]
+  , testInfoRunEnv :: [(String, String)]
   } deriving (Eq, Ord, Read, Show)
 
 instance FromJSON TestInfo where
@@ -69,6 +72,7 @@ instance FromJSON TestInfo where
     <*> x .:? "cantRun" .!= []
     <*> x .:? "error" .!= ""
     <*> x .:? "errors" .!= []
+    <*> (M.toList <$> x .:? "runEnv" .!= M.empty)
 
 stripSuffix :: (Eq a) => [a] -> [a] -> Maybe [a]
 stripSuffix suf = fmap reverse . stripPrefix (reverse suf) . reverse
@@ -95,10 +99,13 @@ mkExecTest :: FilePath -> (String, String) -> (String, String) -> IO ExecTest
 mkExecTest dir (inName, inExt) (outName, outExt)
   | inName /= outName = error $ "executable test input/output pair mismatch: '" ++ inName ++ "' vs '" ++ outName ++ "'"
   | otherwise = do
-    input <- T.readFile $ dir </> inName <.> "in" <.> inExt
-    output <- T.readFile $ dir </> outName <.> "out" <.> outExt
+    let inputPath = dir </> inName <.> "in" <.> inExt
+        outputPath = dir </> outName <.> "out" <.> outExt
+    input <- T.readFile inputPath
+    output <- T.readFile outputPath
     pure ExecTest
       { execTestName = T.pack inName
+      , execTestInputPath = inputPath
       , execTestInput = input
       , execTestInputExt = T.pack inExt
       , execTestOutput = output

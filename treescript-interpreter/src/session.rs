@@ -100,7 +100,7 @@ impl Library {
     };
   }
 
-  fn start(&mut self, libs_dir: &PathBuf) {
+  fn start(&mut self, path: &Option<PathBuf>, libs_dir: &PathBuf) {
     assert!(
       self.process.is_none(),
       "can't start session - already started"
@@ -110,6 +110,7 @@ impl Library {
     lib_path.push("exec");
     self.process = Option::Some(
       Command::new(lib_path.as_os_str())
+        .args(path.into_iter())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -210,9 +211,10 @@ impl Session {
     return self.lang_idxs_by_ext.get(ext).map(|idx| &self.langs[*idx]);
   }
 
-  pub fn read_ast(&self, input_path: &Path) -> Box<Read> {
+  pub fn read_ast<P: AsRef<Path>>(&self, input_path: P) -> Box<Read> {
     let input_ext = String::from(
       input_path
+        .as_ref()
         .extension()
         .expect("input must have extension - can't determine language")
         .to_string_lossy(),
@@ -250,11 +252,11 @@ impl Session {
     }
   }
 
-  pub fn start(&mut self) {
+  pub fn start(&mut self, path: &Option<PathBuf>) {
     let mut libs_dir = self.root_dir.clone();
     libs_dir.push("libraries");
     for lib in self.libs.values_mut() {
-      lib.start(&libs_dir);
+      lib.start(&path, &libs_dir);
     }
   }
 

@@ -44,6 +44,54 @@ impl Display for Float {
   }
 }
 
+impl Display for Prim {
+  fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    match self {
+      Prim::Integer(x) => x.fmt(f),
+      Prim::Float(x) => x.fmt(f),
+      Prim::String(x) => write!(
+        f,
+        "\"{}\"",
+        x.chars()
+          .flat_map(|c| c.escape_default())
+          .collect::<String>()
+      ),
+    }
+  }
+}
+
+impl Prim {
+  pub fn type_str(&self) -> &'static str {
+    match self {
+      Prim::Integer(_) => "integer",
+      Prim::Float(_) => "float",
+      Prim::String(_) => "string",
+    }
+  }
+}
+
+impl Display for Value {
+  fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    match self {
+      Value::Splice(idx) => write!(f, "\\{}", idx),
+      Value::Prim(prim) => prim.fmt(f),
+      Value::Record { head, props } => {
+        write!(f, "{}[", head)?;
+        let mut first = true;
+        for prop in props {
+          if first {
+            first = false;
+          } else {
+            write!(f, ", ")?;
+          }
+          prop.fmt(f)?;
+        }
+        return write!(f, "]");
+      }
+    }
+  }
+}
+
 #[allow(dead_code)]
 impl Value {
   pub fn unit() -> Value {
@@ -96,6 +144,30 @@ impl Value {
     };
   }
 
+  pub fn option(val: Option<Value>) -> Value {
+    match val {
+      None => {
+        return Value::Record {
+          head: String::from("None"),
+          props: Vec::default(),
+        };
+      }
+      Some(val) => {
+        return Value::Record {
+          head: String::from("Some"),
+          props: vec![val],
+        };
+      }
+    };
+  }
+
+  pub fn list<I: Iterator<Item = Value>>(vals: &mut I) -> Value {
+    match vals.next() {
+      None => return Value::nil(),
+      Some(fst) => return Value::cons(fst, Value::list(vals)),
+    };
+  }
+
   pub fn record_head_to_fun(head: &String) -> Option<(String, String)> {
     if let Some(sep_pos) = head.chars().position(|c| c == '_') {
       let (lib, name) = head.split_at(sep_pos);
@@ -103,6 +175,14 @@ impl Value {
       return Some((String::from(lib), String::from(name)));
     } else {
       return None;
+    }
+  }
+
+  pub fn is_splice(&self) -> bool {
+    if let Value::Splice(_) = self {
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -115,7 +195,23 @@ impl Value {
   }
 
   pub fn matches(&self, other: &Value) -> bool {
-    return self.is_hole() || self == other;
+    if self.is_hole() {
+      return true;
+    }
+    if let Value::Record { head, props } = self {
+      if let Value::Record {
+        head: other_head,
+        props: other_props,
+      } = other
+      {
+        return head == other_head
+          && Iterator::zip(props.iter(), other_props.iter())
+            .all(|(prop, other_prop)| prop.matches(other_prop));
+      }
+    } else {
+      return self == other;
+    }
+    return false;
   }
 
   pub fn subst(&mut self, old: &Value, new: &Value) {
@@ -126,6 +222,22 @@ impl Value {
         prop.subst(old, new);
       }
     }
+  }
+
+  pub fn fill_splices<F: Copy + Fn(usize) -> Value>(&mut self, f: F) {
+    match self {
+      Value::Splice(idx) => *self = f(*idx),
+      Value::Prim(_) => (),
+      Value::Record { head: _, props } => {
+        for prop in props {
+          prop.fill_splices(f);
+        }
+      }
+    };
+  }
+
+  pub fn flush(&mut self) {
+    self.fill_splices(|idx| Value::hole(idx as i32));
   }
 
   pub fn modify_children<F: FnMut(&mut Value) -> bool>(&mut self, f: &mut F) {
@@ -205,6 +317,19 @@ impl Value {
         }
       }
     });
+  }
+
+  pub fn sub_splices(&self) -> Vec<usize> {
+    let mut res: Vec<usize> = Vec::new();
+    if let Value::Splice(idx) = self {
+      res.push(*idx);
+    }
+    for child in self.breadth_first() {
+      if let Value::Splice(idx) = child {
+        res.push(*idx);
+      }
+    }
+    return res;
   }
 
   pub fn any_sub<F: Fn(&Value) -> bool>(&self, pred: F) -> bool {

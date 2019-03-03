@@ -179,15 +179,16 @@ spec = do
     describe "The compiled executable" $
       it "Transforms source code" $ \_ ->
         forExampleExec $ \(TestFile _ testInfo execTests) execPath ->
-          forM_ execTests $ \(ExecTest name inTxt inExt outTxt outExt) -> unless (name `elem` testInfoSkipRun testInfo) $ denoteFailIn ("executable test " <> name) $ do
+          forM_ execTests $ \(ExecTest name inPath inTxt inExt outTxt outExt) -> unless (name `elem` testInfoSkipRun testInfo) $ denoteFailIn ("executable test " <> name) $ do
             let execProg
                   = CmdProgram
                   { cmdProgramStage = StageRunning
                   , cmdProgramPath = execPath
+                  , cmdProgramEnv = testInfoRunEnv testInfo
                   }
             progOutRes <- runResultT $ do
               inAstData <- codeToAstData inTxt inExt
-              outAstData <- runCmdProgramArgs execProg ["--stdin", "--stdout"] inAstData
+              outAstData <- runCmdProgramArgs execProg [T.pack inPath, "--stdin", "--stdout"] inAstData
               astDataToCode outAstData outExt
             if name `elem` testInfoCantRun testInfo then
               assertProperFailure testInfo progOutRes

@@ -20,3 +20,11 @@ functions:
   args: 2
 - name: Append
   args: 2
+- name: Value_Get
+  args: 1
+- name: Value_Set
+  args: 2
+- name: Set_Has
+  args: 2
+- name: Set_Add
+  args: 1

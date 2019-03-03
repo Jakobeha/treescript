@@ -44,7 +44,7 @@ for (line in readLines(stdin)) {
       idx_and_inp <- get_next_word(inp)
       idx <- idx_and_inp[2]
       inp <- idx_and_inp[3]
-      cat("\\", idx)
+      cat("\\", idx, sep="")
     } else if (word == "Scheme_Symbol") {
       inp <- read_expect_integer(inp, 1)
       word_and_inp <- get_next_word(inp)

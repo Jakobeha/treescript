@@ -27,16 +27,21 @@ E[&RecurseR[]];
 ---
 \i: R_Symbol[\];
 \x: R_Symbol[\];
-r'y': \y;
+#Gen_FreeString[R_Symbol[Hole[1]]]: \y;
 
 &Contains[in; x].
 ---
 Find[#Flush[\x]; \in] &Find[]: Found[\x];
 
+&Contains2[in; x; y].
+---
+Find[\x; \in] &Find[]: Found[\y];
+
 &Find[].
 ===
 Find[\; Nil[]]: NotFound[];
 Find[\x; Cons[\y; \]] &IsTrue[x: #Base_Matches[\x; \y]]: Found[\y];
+Find[\x; Cons[R_Call[\; \elems]; \]] &Contains2[in: \elems]: Found[\y];
 Find[\x; Cons[\; \xs]]: Find[\x; \xs];
 
 &SubstIn[in; old; new].
@@ -48,7 +53,7 @@ E[R_PairList[\exprs]]: R_PairList[E[\exprs]];
 E[&RecurseR[]];
 
 &Subst[old; new].
-===
+---
 \old: \new;
 E[&RecurseR[]];
 

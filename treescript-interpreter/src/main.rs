@@ -1,6 +1,8 @@
 #![feature(refcell_map_split, generators, generator_trait)]
 
 extern crate clap;
+#[macro_use]
+mod debug;
 mod parse;
 mod print;
 mod program;
@@ -51,7 +53,6 @@ fn main() {
     .arg(Arg::with_name("stdin")
           .long("stdin")
           .help("reads input as AST data from STDIN. Useful for piping/shell scripts")
-          .conflicts_with("INPUT")
           .conflicts_with("recurse"))
     .arg(Arg::with_name("stdout")
           .long("stdout")
@@ -63,12 +64,14 @@ fn main() {
   if matches.is_present("recurse") {
     panic!("TODO");
   } else {
+    let in_path: Option<PathBuf> = matches
+      .value_of("INPUT")
+      .map(|in_path| PathBuf::from(in_path));
     let mut input: Box<Read>;
     if matches.is_present("stdin") {
       input = Box::new(io::stdin());
     } else {
-      let input_path = Path::new(matches.value_of("INPUT").unwrap());
-      input = session.read_ast(input_path);
+      input = session.read_ast(in_path.as_ref().unwrap());
     }
     let mut raw_output_commit: Option<AtomicFileCommit> = None;
     let mut output: Box<Write>;
@@ -97,7 +100,12 @@ fn main() {
       output = output_;
       raw_output_commit = Some(raw_output_commit_);
     }
-    prog.run(&mut session, &mut input.as_mut(), &mut output.as_mut());
+    prog.run(
+      &mut session,
+      &in_path,
+      &mut input.as_mut(),
+      &mut output.as_mut(),
+    );
     if let Some(raw_output) = raw_output_commit {
       raw_output.run().expect("can't finish writing output");
     }

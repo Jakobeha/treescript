@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use treescript_interpreter::lib_process::{BasicLibProcessError, LibProcess};
+use treescript_interpreter::lib_process::{BasicLibProcessError, Config, LibProcess};
+use treescript_interpreter::session::LibrarySpec;
 use treescript_interpreter::value::{Float, Prim, Value};
 
 struct LibBase {
@@ -154,6 +155,12 @@ impl LibBase {
 
 impl LibProcess for LibBase {
   type Error = BasicLibProcessError;
+
+  fn dependencies() -> Vec<LibrarySpec> {
+    return Vec::new();
+  }
+
+  fn configure(&mut self, _config: Config) {}
 
   fn call_fun(&mut self, name: String, args: Vec<Value>) -> Result<Value, Self::Error> {
     match name.as_str() {

@@ -11,8 +11,7 @@ IsSymbol[].
 ===
 scm'(lambda (\x \x2 . \xs) \body)': scm'(lambda (\x) (lambda (\x2 . \xs) \body))';
 scm'(\f \arg . \args)' &NonEmpty[xs: \args] &IsFalse[x: IsEqual[\f; scm'lambda']]: scm'((\f \arg) . \args)';
-E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
-E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';
+E[&Recurse[]];
 
 
 &Apply[].
@@ -27,8 +26,7 @@ Subst[scm'(lambda (\old) \body)'; \old; \] &Env[x: \old]: scm'(lambda (\old) \bo
 Subst[scm'(lambda (\x) \body)'; \old; \new] &Env[]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
 Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
 Subst[\body; \; \]: \body;
-E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
-E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';
+E[&Recurse[]];
 
 &Env[x; x2; xs].
 ---
@@ -58,3 +56,8 @@ Apply[IsSymbol[]; Scheme_Symbol[\]]: True[];
 Apply[IsSymbol[]; \]: False[];
 IsEqual[\x; \x]: True[];
 IsEqual[\; \]: False[];
+
+&Recurse[].
+---
+E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
+E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \(E[\body]))';

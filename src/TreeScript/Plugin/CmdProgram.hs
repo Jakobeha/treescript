@@ -9,10 +9,12 @@ module TreeScript.Plugin.CmdProgram
 
 import TreeScript.Misc
 
+import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.IO.Class
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import System.Environment
 import System.Exit
 import System.IO
 import System.Process
@@ -22,6 +24,7 @@ data CmdProgram
   = CmdProgram
   { cmdProgramStage :: Stage
   , cmdProgramPath :: FilePath
+  , cmdProgramEnv :: [(String, String)]
   } deriving (Read, Show)
 
 convertErr :: Stage -> T.Text -> Error
@@ -34,11 +37,13 @@ convertErr stage err
 
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
 runCmdProgramArgs :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
-runCmdProgramArgs (CmdProgram stage ppath) args inp = do
+runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
   let liftCmdIO = liftIOAndCatch stage
-      pproc
+  parentEnv <- liftCmdIO getEnvironment
+  let pproc
         = (proc ppath $ map T.unpack args)
-        { std_in = CreatePipe
+        { env = Just $ parentEnv ++ progEnv
+        , std_in = CreatePipe
         , std_out = CreatePipe
         , std_err = CreatePipe
         }
@@ -48,18 +53,17 @@ runCmdProgramArgs (CmdProgram stage ppath) args inp = do
   liftCmdIO $ hSetEncoding perr latin1
   liftCmdIO $ T.hPutStr pin inp
   liftCmdIO $ hClose pin
+  err <- liftCmdIO $ redirectExceptLast perr
   exitCode <- liftCmdIO $ waitForProcess phandle
-  out <- liftCmdIO $ T.hGetContents pout
-  err <- liftCmdIO $ T.hGetContents perr
   case exitCode of
     ExitSuccess -> do
-      let errs = filter (not . T.null . T.strip) $ T.lines err
-      tellErrors $ map (convertErr stage) errs
-      pure out
-    ExitFailure code
-      | T.null $ T.strip err ->
+      unless (T.null $ T.strip err) $
+        liftCmdIO $ T.putStrLn err
+      liftCmdIO $ T.hGetContents pout
+    ExitFailure code -> do
+      if T.null $ T.strip err then
         mkFail $ convertErr stage $ "unknown error (code " <> pprint code <> ")"
-      | otherwise -> do
+      else
         mkFail $ convertErr stage $ T.strip err
 
 -- | Runs the command-line program without arguments.

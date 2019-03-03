@@ -9,6 +9,7 @@ use enum_map::enum_map;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::iter;
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -99,11 +100,17 @@ impl Program {
       .next();
   }
 
-  pub fn run<R: Read, W: Write>(&self, session: &mut Session, input: &mut R, output: &mut W) {
+  pub fn run<R: Read, W: Write>(
+    &self,
+    session: &mut Session,
+    in_path: &Option<PathBuf>,
+    input: &mut R,
+    output: &mut W,
+  ) {
     let mut parser = Parser { input: input };
     let mut printer = Printer { output: output };
 
-    session.start();
+    session.start(in_path);
     while let Option::Some(mut next) = parser.scan_value() {
       self.main_group.reduce(session, &mut next);
       printer.print_value(next).unwrap();

@@ -138,12 +138,13 @@ fn test_all_raw_ast() {
     for io_pair in example.io_pairs {
       let mut input = session.read_ast(io_pair.input.as_path());
       let mut output = session.read_ast(io_pair.output.as_path());
+      let in_path = Some(io_pair.input);
       let mut exp_output = String::new();
       output.read_to_string(&mut exp_output).unwrap();
       let mut act_output_cursor = Cursor::new(Vec::new());
       example
         .exec
-        .run(&mut session, &mut input, &mut act_output_cursor);
+        .run(&mut session, &in_path, &mut input, &mut act_output_cursor);
       let act_output = String::from_utf8(act_output_cursor.get_ref().clone()).unwrap();
       assert_eq!(exp_output.trim(), act_output.trim());
     }
