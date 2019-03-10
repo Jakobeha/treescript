@@ -128,21 +128,6 @@ getRealPluginPath = do
     setupInitialPlugins path
   pure path
 
-validatePluginName :: String -> T.Text -> PreSessionRes ()
-validatePluginName name actualName = do
-  let expectedName
-        = case name of
-            [] -> T.empty
-            (nameHead : nameTail) -> T.pack $ toUpper nameHead : nameTail
-  when (expectedName /= actualName) $
-    tellError $ mkPluginLoadError $ T.concat
-      [ "from folder name, expected specification to be named '"
-      , expectedName
-      , "' but it's actually named '"
-      , actualName
-      , "'"
-      ]
-
 mkLanguage :: FilePath -> String -> PreSessionRes Language
 mkLanguage pluginPath name = do
   let path = pluginPath </> name
@@ -155,7 +140,6 @@ mkLanguage pluginPath name = do
       Left err
         -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
       Right res -> pure res
-  validatePluginName name $ langSpecName spec
   pure Language
     { languageSpec = spec
     , languageParser
@@ -182,7 +166,6 @@ mkLibrary pluginPath name = do
       Left err
         -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
       Right res -> pure res
-  validatePluginName name $ librarySpecName spec
   pure Library
     { librarySpec = spec
     , libraryDirName = T.pack name

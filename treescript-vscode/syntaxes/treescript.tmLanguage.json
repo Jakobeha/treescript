@@ -89,6 +89,37 @@
 		"strings": {
 			"patterns": [
 				{
+					"name": "meta.target.javascript.treescript",
+					"begin": "(js')",
+					"end": "(')|(\\\\\\()",
+					"captures": {
+						"1": {
+							"name": "string.quoted.single.treescript"
+						},
+						"2": {
+							"name": "constant.character.escape.treescript"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.treescript",
+							"match": "\\\\(_|[a-z]\\w*)",
+							"captures": {
+								"1": {
+									"name": "entity.name.tag.treescript"
+								}
+							}
+						},
+						{
+							"name": "keyword.operator.javascript",
+							"match": "[\\(\\[\\{\\}\\]\\)]"
+						},
+						{
+							"include": "source.js"
+						}
+					]
+				},
+				{
 					"name": "meta.target.r.treescript",
 					"begin": "(r')",
 					"end": "(')|(\\\\\\()",

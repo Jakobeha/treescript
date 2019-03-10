@@ -22,20 +22,18 @@ TreeScript is a DSL for writing code to analyze and transform syntax trees.
 
 TreeScript is especially designed to:
 
-- Convert one language into another (e.g. CoffeeScript to JavaScript, C to Java)
-- Perform refactors - trivial (e.g. rename a variable) and non-trivial (move all global variables with a literal prefix into a namespace, and remove the prefix)
-- Apply syntax sugar
-- Apply one or more passes (part of compilation, related to syntax sugar)
-- Optimize source code by transforming expressions into equivalent ones which run faster
+- **Refactor:** Trivial (e.g. rename a variable) and non-trivial (convert all symbols from camel case to snake case)
+- **Transpile:** Convert one language into another (e.g. CoffeeScript to JavaScript, C to Java)
+- **Analyze:** - e.g. find the # of occurrences of a certain symbol.
 - Allow small groups to slightly customize existing languages, creating their own "mini DSLs".
 
 TreeScript could also:
 
-- Analyze code - e.g. find the # of occurrences of a certain symbol.
-- Fully interpret a language, by "reducing" its syntax tree as much as possible
-- Fully compile a language - convert it's syntax tree into a very basic syntax tree
-- Print a language - convert it's syntax tree into text
-- Parse a language - convert text into a syntax tree
+- **Compile:** - Apply one or more passes, convert a syntax tree into a very basic syntax tree
+- **Optimize:** Transform expressions into equivalent ones which run faster
+- **Interpret:** "Reduce" a syntax tree as much as possible
+- **Print:** Convert a syntax tree into text
+- **Parse:** Convert text into a syntax tree
 
 TreeScript is very minimal, but it can easily be extended. It relies on "libraries" to handle logic and operations like function lookup. You can download libraries, or easily create them yourself in any language.
 
@@ -584,3 +582,15 @@ All record heads are static strings, and records must be declared, like in versi
 "Matchers" and "paths" are renamed to "binds". Now, they both consist of a single string (desugared into an integer). Input binds can contain the empty string (or integer 0), in which case they're like "any" matchers, but not output binds. Like before, binds and functions should encapsulate all abstraction.
 
 There are no "regular" values - all values are input or output values. Thus, all values have the same specification - a value is either a primitive, record, or bind (or with sugar, a code block).
+
+---
+
+Analyze Example
+
+```treescript
+js'function \name(\args...) { \body... }': Int_Code[Count[\body]] &Count[];
+
+&Count[]
+===
+Count[\xs] &IsList[\xs]: #Num_Add[#List_Map[Count[\1]]
+```

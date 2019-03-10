@@ -13,6 +13,7 @@ node_modules
 .history
 .vscode
 .vscode-test
+.jshintrc
 
 # RStudio
 .Rproj.user
