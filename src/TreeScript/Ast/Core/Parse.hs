@@ -165,6 +165,7 @@ parseValue (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
 parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
 parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code) = parseSpliceCode code
+parseValue (S.ValueHole (S.Hole ann idxAnn idx)) = pure $ hole ann idxAnn idx
 parseValue (S.ValueGroup group)
   = mkFail $ parseError (getAnn group) "expected value, got group"
 

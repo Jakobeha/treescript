@@ -97,12 +97,21 @@ data Bind an
   , bindSymbol :: Maybe (Symbol an) -- ^ The bound symbol, or "nil" for no binding.
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | @\<idx>@ - syntax sugar for @Hole[<idx>]@.
+data Hole an
+  = Hole
+  { holeAnn :: an
+  , holeIdxAnn :: an
+  , holeIdx :: Int
+  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Type of data in TreeScript, or a group.
 data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
   | ValueBind (Bind an)
   | ValueSpliceCode (SpliceCode an)
+  | ValueHole (Hole an)
   | ValueGroup (Group an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -195,11 +204,16 @@ instance TreePrintable Bind where
   treePrint par _ (Bind _ sym)
     = "\\" <> foldMap par sym
 
+instance TreePrintable Hole where
+  treePrint _ leaf (Hole _ _ idx)
+    = "\\" <> leaf idx
+
 instance TreePrintable Value where
   treePrint par _ (ValuePrimitive prim) = par prim
   treePrint par _ (ValueRecord record) = par record
   treePrint par _ (ValueBind bind) = par bind
   treePrint par _ (ValueSpliceCode code) = par code
+  treePrint par _ (ValueHole hole) = par hole
   treePrint par _ (ValueGroup group) = par group
 
 instance TreePrintable ReducerClause where

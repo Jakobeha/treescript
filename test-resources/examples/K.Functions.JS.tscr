@@ -19,4 +19,4 @@ Program[\xs]: JS_Program["script"; \xs];
 
 &EvalStatemets[].
 ---
-E[Program[\xs]]: JS_Program["script"; #List_Map[E[JS_Program["script"; Cons[Hole[1]; Nil[]]]]; \xs]];
+E[Program[\xs]]: JS_Program["script"; #List_Map[E[JS_Program["script"; Cons[\1; Nil[]]]]; \xs]];

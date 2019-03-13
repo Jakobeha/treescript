@@ -75,6 +75,7 @@ Value : Primitive { ValuePrimitive $1 }
       | Record { ValueRecord $1 }
       | Bind { ValueBind $1 }
       | SpliceCode { ValueSpliceCode $1 }
+      | Hole { ValueHole $1 }
       | Group { ValueGroup $1 }
       ;
 Primitive : int { PrimInteger (getAnn $1) (annd $1) }
@@ -109,6 +110,8 @@ SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
 SpliceTextTail : codeEnd { SpliceTextNil (getAnn $1) (annd $1) }
                | codeMiddle Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
                ;
+Hole : '\\' int { Hole ($1 <> getAnn $2) (getAnn $2) (annd $2) }
+     ;
 LowerSym : lowerSym { Symbol (getAnn $1) (annd $1) }
          ;
 UpperSym : upperSym { Symbol (getAnn $1) (annd $1) }

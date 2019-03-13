@@ -246,3 +246,15 @@ compactRecordDecl (RecordDecl _ head' props)
       }
   , recordDeclCompactNumProps = length props
   }
+
+hole :: an -> an -> Int -> Value an
+hole ann idxAnn idx
+  = ValueRecord Record
+  { recordAnn = ann
+  , recordHead
+      = RecordHead
+      { recordHeadIsFunc = False
+      , recordHeadName = "Hole"
+      }
+  , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
+  }

@@ -27,7 +27,7 @@ E[&RecurseR[]];
 ---
 \i: R_Symbol[\];
 \x: R_Symbol[\];
-#Gen_FreeString[R_Symbol[Hole[1]]]: \y;
+#Gen_FreeString[R_Symbol[\1]]: \y;
 
 &Contains[in; x].
 ---
@@ -63,5 +63,5 @@ E[&RecurseR[]];
 
 &RecurseR[].
 ---
-E[R_Call[\fun; \args]]: R_Call[E[\fun]; #List_Map[E[Hole[1]]; \args]];
-E[R_PairList[\elems]]: R_PairList[#List_Map[E[Hole[1]]; \elems]];
+E[R_Call[\fun; \args]]: R_Call[E[\fun]; #List_Map[E[\1]; \args]];
+E[R_PairList[\elems]]: R_PairList[#List_Map[E[\1]; \elems]];
