@@ -1,0 +1,14 @@
+name: Num
+functions:
+- name: Add
+  args: 2
+- name: Subtract
+  args: 2
+- name: Multiply
+  args: 2
+- name: Divide
+  args: 2
+- name: GreaterThan
+  args: 2
+- name: LessThan
+  args: 2

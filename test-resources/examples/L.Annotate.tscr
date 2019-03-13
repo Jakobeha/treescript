@@ -42,7 +42,7 @@ Find[#Flush[\x]; \in] &Find[]: Found[\x];
 &Find[].
 ===
 Find[\; Nil[]]: NotFound[];
-Find[\x; Cons[\y; \]] &IsTrue[x: #Base_Matches[\x; \y]]: Found[\y];
+Find[\x; Cons[\y; \]] &IsTrue[x: #Any_Matches[\x; \y]]: Found[\y];
 Find[\x; Cons[\; \xs]]: Find[\x; \xs];
 
 &SubstIn[in; old; new].

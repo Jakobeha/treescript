@@ -1,0 +1,6 @@
+name: Any
+functions:
+- name: IsEqual
+  args: 2
+- name: Matches
+  args: 2

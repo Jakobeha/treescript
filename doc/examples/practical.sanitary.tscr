@@ -40,7 +40,7 @@ Find[\x; \in] &Find[]: Found[\y];
 &Find[].
 ===
 Find[\; Nil[]]: NotFound[];
-Find[\x; Cons[\y; \]] &IsTrue[x: #Base_Matches[\x; \y]]: Found[\y];
+Find[\x; Cons[\y; \]] &IsTrue[x: #Any_Matches[\x; \y]]: Found[\y];
 Find[\x; Cons[R_Call[\; \elems]; \]] &Contains2[in: \elems]: Found[\y];
 Find[\x; Cons[\; \xs]]: Find[\x; \xs];
 
@@ -63,5 +63,5 @@ E[&RecurseR[]];
 
 &RecurseR[].
 ---
-E[R_Call[\fun; \args]]: R_Call[E[\fun]; #Base_Map[E[Hole[1]]; \args]];
-E[R_PairList[\elems]]: R_PairList[#Base_Map[E[Hole[1]]; \elems]];
+E[R_Call[\fun; \args]]: R_Call[E[\fun]; #List_Map[E[Hole[1]]; \args]];
+E[R_PairList[\elems]]: R_PairList[#List_Map[E[Hole[1]]; \elems]];

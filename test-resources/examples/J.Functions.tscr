@@ -10,10 +10,10 @@ Subst[body; old; new].
 scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
 //Addition
 scm'(+ \(Scheme_Atom[\x]))': Add[\x];
-scm'(\(Add[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_Add[\x; \y]];
+scm'(\(Add[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Num_Add[\x; \y]];
 //Less than
 scm'(< \(Scheme_Atom[\x]))': LT[\x];
-scm'(\(LT[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Base_LessThan[\x; \y]];
+scm'(\(LT[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Num_LessThan[\x; \y]];
 //If
 scm'(if #true \true \false)': \true;
 scm'(if #false \true \false)': \false;
