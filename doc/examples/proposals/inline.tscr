@@ -1,38 +1,47 @@
 // Inline - Put the details right after the main
 // Depth-First
 
-md'\...xs': js'{\...(\xs &Map[&Section[]][])}';
+md'\...xs': json'{\...(\xs &Map[&Section[]][])}';
 
-&Map[&X[]][].
+&Map[&X[]][]
 ---
 Nil[]: Nil[];
 Cons[\x; \xs]: Cons[\x &X[]; \xs &Map[&X[]]];
 
-&Section[].
+&Section[]
 ---
 md'
 ## \head
 \...xs
-': js'\(#String_ToLower[\head]): [
+': json'\(#String_ToLower[\head]): [
   \...(\xs &Map[&Item[]][])
 ]';
 
-&Item[].
+&Item[]
 ---
 md'
 ### \head
 \...xs
-': js'{
+': json'{
   "name": \(#String_ToLower[\head]),
   \...(\xs &Map[&Detail[]][])
 }';
 
-&Detail[].
+&Detail[]
 ---
 md'- \(\x &Split[front: \head; back: \content])':
-  js'\(#String_ToLower[\head]): \content';
-// TODO
+  json'\(#String_ToLower[\head]): \content';
+md'
+- \head
+  \...blts
+': json'\(#String_ToLower[\head]): [
+  \...(\blts &Map[&Bullet[]][])
+]';
 
 &Split[\front; \back; \x].
 ---
 #String_Split[\x]: Cons[\front; Cons[": "; Cons[\back; Nil[]]]];
+
+&Bullet[]
+---
+md'- \x': \x;

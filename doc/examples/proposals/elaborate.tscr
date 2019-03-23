@@ -1,8 +1,40 @@
 // Elaborate - All the mains, followed by all the details
 // Breadth-First
 
-md'\...xs': js'{\...ys}',
+md'\...xs': json'{\...ys}',
   \ys: \xs &Map[&Section[]][];
+
+&Section[]
+---
+md'
+## \head
+\...xs': json'\lhead: [ \...ys ]',
+  \lhead: #String_ToLower[\head],
+  \ys: \xs &Map[&Item[]][];
+
+&Item[]
+---
+md'
+### \head
+\...xs': json'{ "name": \lhead, \...ys }',
+  \lhead: #String_ToLower[\head],
+  \ys: \xs &Map[&Detail[]][];
+
+&Detail[]
+---
+md'- \x':
+  json'\lhead: \content',
+  Cons[\head; Cons[": "; Cons[\content; Nil[]]]]: #String_Split[\x; ": "],
+  \lhead: #String_ToLower[\head];
+md'
+- \head
+  \...blt1s': json'\lhead: [ \...blt2s ]',
+  \lhead: #String_ToLower[\head],
+  \blt2s: \blt1s &Map[&Bullet[]][];
+
+&Bullet[]
+---
+md'- \x': \x;
 
 &Map[&X[]][]
 ---
@@ -10,29 +42,3 @@ Nil[]: Nil[];
 Cons[\x; \xs]: Cons[\y &X[]; \ys &Map[&X[]]],
   \y: \x &X[],
   \ys: \xs &Map[&X[]];
-
-&Section[].
----
-md'
-## \head
-\...xs
-': js'\lhead: [ \...ys ]',
-  \lhead: #String_ToLower[\head],
-  \ys: \xs &Map[&Item[]][];
-
-&Item[].
----
-md'
-### \head
-\...xs
-': js'{ "name": \lhead, \...ys }',
-  \lhead: #String_ToLower[\head],
-  \ys: \xs &Map[&Detail[]][];
-
-&Detail[].
----
-md'- \x(\x &Split[front: \head; back: \content])':
-  js'\lhead: \content',
-  Cons[\front; Cons[": "; Cons[\back; Nil[]]]]: #String_Split[\head],
-  \lhead: #String_ToLower[\head];
-// TODO
