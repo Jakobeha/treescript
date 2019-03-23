@@ -217,8 +217,13 @@ parseGroupPropDecl1 (S.GenPropertyRecord val) = do
 parseGroupPropDecl1 (S.GenPropertyGroup prop) = do
   mkFail $ parseError (getAnn prop) "expected lowercase symbol, got group property"
 
+parseGroupMode :: S.GroupMode Range -> GroupMode Range
+parseGroupMode (S.GroupModeContinue an) = GroupModeContinue an
+parseGroupMode (S.GroupModeStop an) = GroupModeStop an
+parseGroupMode (S.GroupModeLoop an) = GroupModeLoop an
+
 parseEmptyGroupDef1 :: S.GroupDecl Range -> I.FreeSessionRes (I.GroupDef Range)
-parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ (S.Symbol _ head') props) repeats) = do
+parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ (S.Symbol _ head') props) mode) = do
   nextFree <- get
   (props', bindEnv)
      <- lift
@@ -229,7 +234,7 @@ parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ (S.Symbol _ head') props) repeat
     { I.groupDefAnn = rng
     , I.groupDefHead = head'
     , I.groupDefProps = props'
-    , I.groupDefRepeats = repeats
+    , I.groupDefMode = parseGroupMode mode
     , I.groupDefStatements = []
     , I.groupDefBindEnv = bindEnv
     }
@@ -238,13 +243,13 @@ parseRestGroupDefs1 :: S.GroupDecl Range -> [S.TopLevel Range] -> I.FreeSessionR
 parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
 parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
 parseRestGroupDefs1 decl (S.TopLevelStatement stmt : xs) = do
-  I.GroupDef yRng yHead yProps yRepeats yStmts yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
+  I.GroupDef yRng yHead yProps yMode yStmts yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
   nextFree <- get
   let yBindEnv' = yBindEnv{ I.bindEnvNextFree = nextFree }
   (stmt', yBindEnv'') <- lift $ runStateT (parseStatement1 stmt) yBindEnv'
   put $ I.bindEnvNextFree yBindEnv''
   let yStmts' = stmt' : yStmts
-  pure $ I.GroupDef (getAnn stmt <> yRng) yHead yProps yRepeats yStmts' yBindEnv'' N.:| ys
+  pure $ I.GroupDef (getAnn stmt <> yRng) yHead yProps yMode yStmts' yBindEnv'' N.:| ys
 parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
 
@@ -317,8 +322,8 @@ groupStmtsByReduceType
   . map (\stmt -> (statementReduceType stmt, stmt))
 
 parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
-parseGroupDef2 (I.GroupDef rng _ props repeats stmts bindEnv)
-    = GroupDef rng (map (\(_, bind) -> bind) props) repeats
+parseGroupDef2 (I.GroupDef rng _ props mode stmts bindEnv)
+    = GroupDef rng (map (\(_, bind) -> bind) props) mode
   <$> traverse (traverseDropFatals $ parseStatement2 bindEnv) (groupStmtsByReduceType stmts)
 
 parseGroupDefEnv :: Int -> I.GroupDef Range -> (T.Text, (Int, V.Vector (Bind Range), M.Map T.Text Int))

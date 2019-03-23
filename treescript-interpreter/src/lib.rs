@@ -8,5 +8,7 @@ mod print;
 pub mod program;
 mod reduce;
 pub mod session;
+#[cfg(test)]
+mod tests;
 mod util;
 pub mod value;

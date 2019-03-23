@@ -1,0 +1,38 @@
+// Inline - Put the details right after the main
+// Depth-First
+
+md'\...xs': js'{\...(\xs &Map[&Section[]][])}';
+
+&Map[&X[]][].
+---
+Nil[]: Nil[];
+Cons[\x; \xs]: Cons[\x &X[]; \xs &Map[&X[]]];
+
+&Section[].
+---
+md'
+## \head
+\...xs
+': js'\(#String_ToLower[\head]): [
+  \...(\xs &Map[&Item[]][])
+]';
+
+&Item[].
+---
+md'
+### \head
+\...xs
+': js'{
+  "name": \(#String_ToLower[\head]),
+  \...(\xs &Map[&Detail[]][])
+}';
+
+&Detail[].
+---
+md'- \(\x &Split[front: \head; back: \content])':
+  js'\(#String_ToLower[\head]): \content';
+// TODO
+
+&Split[\front; \back; \x].
+---
+#String_Split[\x]: Cons[\front; Cons[": "; Cons[\back; Nil[]]]];

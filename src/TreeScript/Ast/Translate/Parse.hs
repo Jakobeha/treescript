@@ -70,10 +70,15 @@ parseStatement (C.StatementGroup group)
 parseStatement (C.StatementReducer reducer)
   = StatementReducer $ parseReducer reducer
 
+parseGroupMode :: C.GroupMode an -> GroupMode
+parseGroupMode (C.GroupModeContinue _) = GroupModeContinue
+parseGroupMode (C.GroupModeStop _) = GroupModeStop
+parseGroupMode (C.GroupModeLoop _) = GroupModeLoop
+
 parseGroupDef :: C.GroupDef an -> GroupDef
-parseGroupDef (C.GroupDef _ props repeats stmts) = GroupDef
+parseGroupDef (C.GroupDef _ props mode stmts) = GroupDef
   { groupDefProps = map C.bindIdx props
-  , groupDefRepeats = repeats
+  , groupDefMode = parseGroupMode mode
   , groupDefStatements = map (map parseStatement) $ A.elems stmts
   }
 

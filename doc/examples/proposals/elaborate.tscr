@@ -1,0 +1,38 @@
+// Elaborate - All the mains, followed by all the details
+// Breadth-First
+
+md'\...xs': js'{\...ys}',
+  \ys: \xs &Map[&Section[]][];
+
+&Map[&X[]][]
+---
+Nil[]: Nil[];
+Cons[\x; \xs]: Cons[\y &X[]; \ys &Map[&X[]]],
+  \y: \x &X[],
+  \ys: \xs &Map[&X[]];
+
+&Section[].
+---
+md'
+## \head
+\...xs
+': js'\lhead: [ \...ys ]',
+  \lhead: #String_ToLower[\head],
+  \ys: \xs &Map[&Item[]][];
+
+&Item[].
+---
+md'
+### \head
+\...xs
+': js'{ "name": \lhead, \...ys }',
+  \lhead: #String_ToLower[\head],
+  \ys: \xs &Map[&Detail[]][];
+
+&Detail[].
+---
+md'- \x(\x &Split[front: \head; back: \content])':
+  js'\lhead: \content',
+  Cons[\front; Cons[": "; Cons[\back; Nil[]]]]: #String_Split[\head],
+  \lhead: #String_ToLower[\head];
+// TODO

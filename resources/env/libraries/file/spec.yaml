@@ -2,5 +2,7 @@ name: File
 functions:
 - name: Path
   args: 0
+- name: Stem
+  args: 0
 - name: Ast
   args: 0

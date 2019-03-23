@@ -5,7 +5,7 @@ NotFound[].
 &OptimizeFor[];
 
 &OptimizeFor[].
----
+--*
 r'
 for (\i in \iter) {
   ...\in
@@ -45,7 +45,7 @@ Find[\x; Cons[R_Call[\; \elems]; \]] &Contains2[in: \elems]: Found[\y];
 Find[\x; Cons[\; \xs]]: Find[\x; \xs];
 
 &SubstIn[in; old; new].
----
+--*
 \in: \in &Subst[];
 E[Cons[\fst; \rst]]: Cons[E[\fst]; E[\rst]];
 E[R_Call[R_Symbol["{"]; \exprs]]: R_Call[R_Symbol["{"]; E[\exprs]];
@@ -53,7 +53,7 @@ E[R_PairList[\exprs]]: R_PairList[E[\exprs]];
 E[&RecurseR[]];
 
 &Subst[old; new].
----
+--*
 \old: \new;
 E[&RecurseR[]];
 

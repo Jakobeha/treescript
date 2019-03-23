@@ -25,6 +25,16 @@ impl LibFile {
     );
   }
 
+  fn get_stem(&self) -> Value {
+    return Value::option(
+      self
+        .path
+        .as_ref()
+        .and_then(|path| path.file_stem())
+        .map(|stem| Value::Prim(Prim::String(String::from(stem.to_string_lossy())))),
+    );
+  }
+
   fn get_ast(&self) -> Value {
     return Value::option(
       self
@@ -58,6 +68,16 @@ impl LibProcess for LibFile {
           });
         }
         return Ok(self.get_path());
+      }
+      "Stem" => {
+        if args.len() != 0 {
+          return Err(BasicLibProcessError::InvalidNumArgs {
+            fun: String::from("Stem"),
+            expected: 0,
+            actual: args.len(),
+          });
+        }
+        return Ok(self.get_stem());
       }
       "Ast" => {
         if args.len() != 0 {

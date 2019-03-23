@@ -2,7 +2,7 @@ extern crate enum_map;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceType, Statement};
+use crate::reduce::{Consume, GroupDef, GroupDefSerial, GroupMode, ReduceType, Statement};
 use crate::session::{LibrarySpec, Session};
 use crate::value::Value;
 use enum_map::enum_map;
@@ -33,7 +33,7 @@ impl From<ProgramSerial> for Program {
       libraries: serial.libraries,
       main_group: GroupDef {
         props: vec![],
-        loops: false,
+        mode: GroupMode::Continue,
         statements: enum_map![
           ReduceType::Regular => main_statements.clone(),
           ReduceType::EvalCtx => vec![],

@@ -20,6 +20,7 @@ import GHC.Generics
 -- | Punctuation, used for control flow.
 data Punc an
   = PuncThinLineSep an -- ^ @---@
+  | PuncThinStopLineSep an -- ^ @--*@
   | PuncThickLineSep an -- ^ @===@
   | PuncHash an -- ^ @#@
   | PuncBackSlash an -- ^ @\\@
@@ -96,6 +97,7 @@ instance Printable (SpliceFrag an) where
 
 instance Printable (Punc an) where
   pprint (PuncThinLineSep _) = "---"
+  pprint (PuncThinStopLineSep _) = "--*"
   pprint (PuncThickLineSep _) = "==="
   pprint (PuncHash _) = "#"
   pprint (PuncBackSlash _) = "\\"

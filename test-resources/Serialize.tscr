@@ -1,0 +1,7 @@
+Foo[foo].
+
+&Foo[foo: "foo"];
+
+&Foo[foo].
+===
+"bar": Foo[\foo];

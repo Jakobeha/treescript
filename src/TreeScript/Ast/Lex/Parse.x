@@ -62,6 +62,7 @@ treescript :-
 <0> \) { enterCodeBlock False `andBegin` state_code_block }
 
 <0> \- \- \- { mkPunc PuncThinLineSep }
+<0> \- \- \* { mkPunc PuncThinStopLineSep }
 <0> \= \= \= { mkPunc PuncThickLineSep }
 <0> \# { mkPunc PuncHash }
 <0> \\ { mkPunc PuncBackSlash }

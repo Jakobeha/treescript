@@ -7,9 +7,6 @@ use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use treescript_interpreter::program::Program;
-/*use treescript_interpreter::reduce::{
-  Consume, GroupDefSerial, GroupRef, Reducer, ReducerClause, Statement,
-};*/
 
 struct ExampleIOPair {
   input: PathBuf,
@@ -80,6 +77,7 @@ fn read_dir(path: PathBuf) -> Vec<DirEntry> {
 fn test_resources_path() -> PathBuf {
   let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
   path.push("test-resources");
+  path.push("integration");
   return path;
 }
 
@@ -89,47 +87,6 @@ fn examples() -> Vec<ExampleExec> {
     .map(|entry| ExampleExec::from(entry))
     .collect();
 }
-
-/*fn test_serialize_prog() {
-  let prog = ProgramSerial {
-    num_props_by_head: Default::default(),
-    libraries: Default::default(),
-    main_statements: vec![Statement::Group(GroupRef {
-      idx: 1,
-      props: vec![Value::Prim(Prim::String(String::from("foo")))],
-    })],
-    sub_groups: vec![GroupDefSerial {
-      props: vec![1],
-      loops: true,
-      statements: vec![
-        vec![Statement::Reducer(Reducer {
-          input: ReducerClause {
-            consumes: vec![Consume::Prim(Prim::String(String::from("Scheme_Cons")))],
-            produce: Value::Prim(Prim::String(String::from("Scheme_Cons"))),
-            groups: Default::default(),
-          },
-          output: ReducerClause {
-            consumes: vec![Consume::Record(String::from("Foo")), Consume::Bind(1)],
-            produce: Value::Record {
-              head: String::from("Foo"),
-              props: vec![Value::Splice(1)],
-            },
-            groups: Default::default(),
-          },
-        })],
-        Default::default(),
-        Default::default(),
-      ],
-    }],
-  };
-
-  let vec = rmp_serde::to_vec(&prog).unwrap();
-  let mut write_path = test_resources_path();
-  write_path.push("A-Simple");
-  write_path.push("A-Simple.msgpack");
-  let mut file = File::create(write_path).unwrap();
-  file.write_all(vec.as_slice()).unwrap();
-}*/
 
 #[test]
 fn test_all_raw_ast() {

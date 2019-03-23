@@ -73,12 +73,19 @@ data Group an
   , groupProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | What happens when a statement inside a group successfully transforms an expression.
+data GroupMode an
+  = GroupModeContinue an
+  | GroupModeStop an
+  | GroupModeLoop an
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Declares a group - reducers below will be part of the group.
 data GroupDecl an
   = GroupDecl
   { groupDeclAnn :: an
   , groupDeclGroup :: Group an
-  , groupDeclRepeat :: Bool
+  , groupDeclMode :: GroupMode an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
@@ -186,12 +193,14 @@ instance TreePrintable Group where
   treePrint par _ (Group _ head' props)
     = "&" <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
 
+instance TreePrintable GroupMode where
+  treePrint _ _ (GroupModeContinue _) = "---"
+  treePrint _ _ (GroupModeStop _) = "--*"
+  treePrint _ _ (GroupModeLoop _) = "==="
+
 instance TreePrintable GroupDecl where
-  treePrint par _ (GroupDecl _ group repeats)
-    = par group <> ".\n" <> printRepeats
-    where printRepeats
-            | repeats = "==="
-            | otherwise = "---"
+  treePrint par _ (GroupDecl _ group mode)
+    = par group <> ".\n" <> par mode
 
 instance TreePrintable Record where
   treePrint par _ (Record _ isFun head' props)

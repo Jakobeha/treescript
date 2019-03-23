@@ -1,9 +1,11 @@
 extern crate enum_map;
 extern crate serde;
+extern crate serde_repr;
 use crate::session::Session;
 use crate::value::{Prim, Value};
 use enum_map::{Enum, EnumMap};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::{HashSet, VecDeque};
 use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
@@ -60,17 +62,25 @@ pub enum Statement {
   Group(GroupRef),
 }
 
+#[derive(Clone, Debug, Deserialize_repr, Serialize_repr)]
+#[repr(usize)]
+pub enum GroupMode {
+  Continue,
+  Stop,
+  Loop,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupDefSerial {
   pub props: Vec<usize>,
-  pub loops: bool,
+  pub mode: GroupMode,
   pub statements: Vec<Vec<Statement>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct GroupDef {
   pub props: Vec<usize>,
-  pub loops: bool,
+  pub mode: GroupMode,
   pub statements: EnumMap<ReduceType, Vec<Statement>>,
   pub env: Weak<Vec<GroupDef>>,
 }
@@ -208,7 +218,7 @@ impl GroupDef {
     let stmts = x.statements;
     return GroupDef {
       props: x.props,
-      loops: x.loops,
+      mode: x.mode,
       statements: EnumMap::from(|typ| stmts[typ as usize].clone()),
       env: Weak::new(),
     };
@@ -257,10 +267,12 @@ impl GroupDef {
   }
 
   fn apply_functions(&self, session: &mut Session, x: &mut Value) {
-    self.apply_if_function(session, x);
-    for sub in x.breadth_first_mut() {
-      self.apply_if_function(session, sub);
+    if let Value::Record { head: _, props } = x {
+      for sub in props {
+        self.apply_functions(session, sub);
+      }
     }
+    self.apply_if_function(session, x);
   }
 
   fn apply_consume(
@@ -492,13 +504,17 @@ impl GroupDef {
       }
       if reduce_res {
         progress = true;
-        if self.loops {
-          self.reduce_nested(session, in_binds, reduce_type, x);
-          return true;
-        }
+        match self.mode {
+          GroupMode::Continue => (),
+          GroupMode::Stop => return true,
+          GroupMode::Loop => {
+            self.reduce_nested(session, in_binds, reduce_type, x);
+            return true;
+          }
+        };
       }
     }
-    if !progress && reduce_type == ReduceType::Regular {
+    if reduce_type == ReduceType::Regular {
       for alt_out_stmt in self.statements[ReduceType::EvalCtx].iter() {
         let mut alt_out = Value::Record {
           head: String::from("E"),
@@ -525,10 +541,14 @@ impl GroupDef {
           });
           if progress {
             *x = alt_out;
-            if self.loops {
-              self.reduce_nested(session, in_binds, reduce_type, x);
-              return true;
-            }
+            match self.mode {
+              GroupMode::Continue => (),
+              GroupMode::Stop => return true,
+              GroupMode::Loop => {
+                self.reduce_nested(session, in_binds, reduce_type, x);
+                return true;
+              }
+            };
             break;
           }
         }

@@ -1,0 +1,25 @@
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; "refactor"]]: \x &Refactor[];
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; "transpile"]]: \x &Transpile[];
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; "optimize"]]: \x &Optimize[];
+// &IsTrue[x: #Any_IsEqual[#File_Stem[]; "refactor"]] &Refactor[];
+// &IsTrue[x: #Any_IsEqual[#File_Stem[]; "transpile"]] &Transpile[];
+// &IsTrue[x: #Any_IsEqual[#File_Stem[]; "refactor"]] &Optimize[];
+
+&Refactor[].
+===
+R_Symbol[\str]: R_Symbol[#String_ToCamel[\str]];
+E[R_Call[\name; \args]]: R_Call[E[\name]; #List_Map[E[\1]; \args]];
+
+&Transpile[].
+===
+r'sqrt(\x)': scm'(sqrt \x)';
+R_Symbol[\x]: Scheme_Symbol[\x];
+E[scm'(\x . \xs)']: scm'(\(E[\x]) . \(E[\xs]))';
+
+&Optimize[].
+===
+js'\(JS_Literal[\x]) + \(JS_Literal[\y])' &IsTrue[x: #Type_IsNum[\x]] &IsTrue[x: #Type_IsNum[\y]]: JS_Literal[#Num_Add[\x; \y]];
+
+&IsTrue[x].
+---
+\x: True[];

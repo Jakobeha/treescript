@@ -52,7 +52,13 @@ impl<'a, R: Read> Parser<'a, R> {
   fn scan_string(&mut self) -> String {
     let mut word = String::new();
     let mut iter = CodePoints::from(self.input.by_ref()).map(|res| res.unwrap());
-    assert!(iter.next() == Option::Some('"'));
+    loop {
+      match iter.next() {
+        Some('"') => break,
+        Some(' ') | Some('\n') => (),
+        next => panic!("expected Some('\"') for string start, got {}", next),
+      };
+    }
     let mut is_escaping = false;
     let mut is_done = false;
     for next in iter.by_ref().take_while(|next| *next != '\n') {

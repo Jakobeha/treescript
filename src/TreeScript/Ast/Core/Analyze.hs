@@ -249,13 +249,13 @@ getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
 getAllProgramUsedLibraries
   = traverse (libraryWithName StageExtracting) . allProgramUsedLibNames
 
--- | The statements in the group and super-groups, substituting exported binds, and whether they repeat.
-allGroupDefStatements :: [Value an] -> GroupDef an -> (Bool, A.Array ReduceType [Statement an])
-allGroupDefStatements props (GroupDef _ propIdxs repeats stmts)
-  = (repeats, map (mapValuesInStatement $ substMany1 propSubsts) <$> stmts)
+-- | The statements in the group and super-groups, substituting exported binds, and their mode.
+allGroupDefStatements :: [Value an] -> GroupDef an -> (GroupMode an, A.Array ReduceType [Statement an])
+allGroupDefStatements props (GroupDef _ propIdxs mode stmts)
+  = (mode, map (mapValuesInStatement $ substMany1 propSubsts) <$> stmts)
   where propSubsts = zip (map ValueBind propIdxs) props
 
--- | The statements in the referenced group, substituting exported binds, and whether they repeat.
-allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> (Bool, A.Array ReduceType [Statement an])
+-- | The statements in the referenced group, substituting exported binds, and their mode.
+allGroupRefStatements :: V.Vector (GroupDef an) -> GroupRef an -> (GroupMode an, A.Array ReduceType [Statement an])
 allGroupRefStatements groups (GroupRef _ idx props)
   = allGroupDefStatements props $ groups V.! idx

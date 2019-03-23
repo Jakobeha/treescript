@@ -1,0 +1,4 @@
+name: Type
+functions:
+- name: IsNum
+  args: 1

@@ -77,11 +77,18 @@ data Statement
   | StatementGroup GroupRef
   deriving (Eq, Ord, Read, Show, Generic)
 
+-- | What happens when a statement inside a group successfully transforms an expression.
+data GroupMode
+  = GroupModeContinue
+  | GroupModeStop
+  | GroupModeLoop
+  deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef
   = GroupDef
   { groupDefProps :: [Int]
-  , groupDefRepeats :: Bool
+  , groupDefMode :: GroupMode
   , groupDefStatements :: [[Statement]]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 

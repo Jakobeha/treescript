@@ -84,7 +84,7 @@ defaultSettings :: Settings
 defaultSettings
   = Settings
   { settingsLogLevel = LogLevelDebug
-  , settingsOverwriteWithDefault = True
+  , settingsOverwriteWithDefault = False
   }
 
 emptySessionEnv :: SessionEnv

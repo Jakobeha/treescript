@@ -104,12 +104,19 @@ data ReduceType
   | ReduceTypeAltConsume
   deriving (Eq, Ord, Read, Show, Bounded, A.Ix)
 
+-- | What happens when a statement inside a group successfully transforms an expression.
+data GroupMode an
+  = GroupModeContinue an
+  | GroupModeStop an
+  | GroupModeLoop an
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefProps :: [Bind an]
-  , groupDefRepeats :: Bool
+  , groupDefMode :: GroupMode an
   , groupDefStatements :: A.Array ReduceType [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -180,6 +187,11 @@ instance Printable (Reducer an) where
   pprint (Reducer _ input output)
     = pprint input <> ": " <> pprint output
 
+instance Printable (GroupMode an) where
+  pprint (GroupModeContinue _) = "---"
+  pprint (GroupModeStop _) = "--*"
+  pprint (GroupModeLoop _) = "==="
+
 instance Printable (Statement an) where
   pprint (StatementGroup group) = pprint group <> ";"
   pprint (StatementReducer red) = pprint red <> ";"
@@ -189,7 +201,7 @@ instance Printable (Program an) where
     = T.unlines $ map pprint decls ++ [T.empty] ++ map pprint stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
 
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ props repeats reds)
+printGroupDef head' (GroupDef _ props mode reds)
   = T.unlines $ printDecl : map pprint (concat $ A.elems reds)
   where printDecl
            = "&"
@@ -198,10 +210,7 @@ printGroupDef head' (GroupDef _ props repeats reds)
           <> T.intercalate "; " (map pprint props)
           <> "]"
           <> ".\n"
-          <> printRepeats
-        printRepeats
-          | repeats = "==="
-          | otherwise = "---"
+          <> pprint mode
 
 mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
 mkBuiltinDecl isFunc head' numProps
