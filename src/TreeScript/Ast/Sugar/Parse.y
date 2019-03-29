@@ -19,15 +19,16 @@ import Data.Semigroup
 %monad { Result }
 %tokentype { L.Lexeme Range }
 %token
-  '---' { L.LexemePunc (L.PuncThinLineSep $$) }
-  '--*' { L.LexemePunc (L.PuncThinStopLineSep $$) }
-  '===' { L.LexemePunc (L.PuncThickLineSep $$) }
+  '---' { L.LexemePunc (L.PuncLineSep $$) }
+  '...' { L.LexemePunc (L.PuncEllipsis $$) }
+  '_' { L.LexemePunc (L.PuncUnderscore $$) }
   '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
   '&' { L.LexemePunc (L.PuncAnd $$) }
   ':' { L.LexemePunc (L.PuncColon $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }
+  ',' { L.LexemePunc (L.PuncComma $$) }
   '[' { L.LexemePunc (L.PuncOpenBracket $$) }
   ']' { L.LexemePunc (L.PuncCloseBracket $$) }
   eof { L.LexemePunc (L.PuncEof $$) }
@@ -40,7 +41,6 @@ import Data.Semigroup
   codeEnd { L.LexemePrim (L.PrimCode (L.SpliceFrag $$ False True)) }
   upperSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseUpper) }
   lowerSym { L.LexemeSymbol (L.Symbol $$ L.SymbolCaseLower) }
-  splicedBind { L.LexemeSplicedBind $$ }
 
 %%
 
@@ -51,30 +51,33 @@ NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
 TopLevel : RecordDecl { TopLevelRecordDecl $1 }
-         | Statement { TopLevelStatement $1 }
+         | TopLevelStatement { TopLevelStatement $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Statement : Value ';' { StatementGroup $1 }
-          | Reducer ';' { StatementReducer $1 }
+TopLevelStatement : Statement ';' { $1 }
+                  ;
+Statement : Value { StatementGroup $1 }
+          | Reducer { StatementReducer $1 }
           ;
-GroupDecl : Group '.' GroupMode { GroupDecl (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
-          ;
-GroupMode : '---' { GroupModeContinue $1 }
-          | '--*' { GroupModeStop $1 }
-          | '===' { GroupModeLoop $1 }
-          ;
-Reducer : ReducerClause ':' ReducerClause { Reducer (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
+GroupDecl : Group '---' { GroupDecl (getAnn $1 <> $2) $1 }
+Reducer : Value ':' Value Groups Guards
+        { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4 <> map getAnn $5) $1 $3 (reverse $4) (reverse $5) }
         ;
-ReducerClause : Value Groups { ReducerClause (sconcat $ getAnn $1 N.:| map getAnn $2) $1 (reverse $2) }
-              ;
 Groups : { [] }
        | NonEmptyGroups { $1 }
        ;
 NonEmptyGroups : Group { [$1] }
-               | Groups Group { $2 : $1 }
+               | NonEmptyGroups Group { $2 : $1 }
                ;
+Guards : { [] }
+       | NonEmptyGuards { $1 }
+       ;
+NonEmptyGuards : Guard { [$1] }
+               | NonEmptyGuards Guard { $2 : $1 }
+               ;
+Guard : ',' Statement { $2 }
 Value : Primitive { ValuePrimitive $1 }
       | Record { ValueRecord $1 }
       | Bind { ValueBind $1 }
@@ -89,32 +92,46 @@ Primitive : int { PrimInteger (getAnn $1) (annd $1) }
 Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) False $1 (annd $2) }
        | '#' UpperSym GenProperties { Record ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
        ;
-Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) $2 (annd $3) }
+Group : '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) True $2 [] (annd $3) }
+      | '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) False $2 [] (annd $3) }
+      | '&' LowerSym GenProperties GenProperties { Group ($1 <> getAnn $2 <> getAnn $3 <> getAnn $4) True $2 (annd $3) (annd $4) }
+      | '&' UpperSym GenProperties GenProperties { Group ($1 <> getAnn $2 <> getAnn $3 <> getAnn $4) False $2 (annd $3) (annd $4) }
       ;
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }
+              ;
 NonEmptyGenProperties : GenProperty { [$1] }
                       | NonEmptyGenProperties ';' GenProperty { $3 : $1 }
                       ;
 GenProperty : LowerSym { GenPropertyDecl $1 }
+            | SubGroupProperty { GenPropertySubGroup $1 }
             | Value { GenPropertyRecord $1 }
-            | GroupProperty { GenPropertyGroup $1 }
             ;
-GroupProperty : LowerSym ':' Value { GroupProperty (getAnn $1 <> $2 <> getAnn $3) $1 $3 }
-              ;
-Bind : '\\' { Bind $1 Nothing }
-     | '\\' LowerSym { Bind ($1 <> getAnn $2) (Just $2) }
-     | splicedBind { Bind (getAnn $1) (fmap (Symbol (getAnn $1)) (annd $1)) }
+SubGroupProperty : '&' LowerSym { SubGroupProperty ($1 <> getAnn $2) $2 }
+                 ;
+Bind : '\\' BindTarget { Bind ($1 <> getAnn $2) $2 }
      ;
+BindTarget : '_' { BindTargetNone $1 }
+           | LowerSym { BindTargetSome $1 }
+           ;
 SpliceCode : LowerSym SpliceText { SpliceCode (getAnn $1 <> getAnn $2) $1 $2 }
            ;
 SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
-           | codeStart Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
+           | codeStart Splice SpliceTextTail
+           { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) False $2 $3 }
+           | codeStart '...' Splice SpliceTextTail
+           { SpliceTextCons (getAnn $1 <> $2 <> getAnn $3 <> getAnn $4) (annd $1) True $3 $4 }
            ;
+Splice : BindTarget { SpliceBind $1 }
+       | int { SpliceHole (HoleIdx (getAnn $1) (annd $1)) }
+       ;
 SpliceTextTail : codeEnd { SpliceTextNil (getAnn $1) (annd $1) }
-               | codeMiddle Value SpliceTextTail { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) $2 $3 }
+               | codeMiddle Splice SpliceTextTail
+               { SpliceTextCons (getAnn $1 <> getAnn $2 <> getAnn $3) (annd $1) False $2 $3 }
+               | codeMiddle '...' Splice SpliceTextTail
+               { SpliceTextCons (getAnn $1 <> $2 <> getAnn $3 <> getAnn $4) (annd $1) True $3 $4 }
                ;
-Hole : '\\' int { Hole ($1 <> getAnn $2) (getAnn $2) (annd $2) }
+Hole : '\\' int { Hole ($1 <> getAnn $2) (HoleIdx (getAnn $2) (annd $2)) }
      ;
 LowerSym : lowerSym { Symbol (getAnn $1) (annd $1) }
          ;

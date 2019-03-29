@@ -36,9 +36,9 @@ md'
 ---
 md'- \x': \x;
 
-&Map[&X[]][]
+&Map[&x][]
 ---
 Nil[]: Nil[];
-Cons[\x; \xs]: Cons[\y &X[]; \ys &Map[&X[]]],
+Cons[\x; \xs]: Cons[\y; \ys],
   \y: \x &X[],
-  \ys: \xs &Map[&X[]];
+  \ys: \xs &Map[&x[]];

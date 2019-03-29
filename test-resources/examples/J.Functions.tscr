@@ -4,30 +4,41 @@ Subst[body; old; new].
 
 &Apply[];
 
-&Apply[].
-===
+&Apply[]
+---
 //Lambda application
 scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
 //Addition
-scm'(+ \(Scheme_Atom[\x]))': Add[\x];
-scm'(\(Add[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Num_Add[\x; \y]];
+scm'(+ \xAt)': Add[\x], Scheme_Atom[\x]: \xAt;
+scm'(\xAdd \yAt)': Scheme_Atom[#Num_Add[\x; \y]], Add[\x]: \xAdd, Scheme_Atom[\y]: \yAt;
 //Less than
-scm'(< \(Scheme_Atom[\x]))': LT[\x];
-scm'(\(LT[\x]) \(Scheme_Atom[\y]))': Scheme_Atom[#Num_LessThan[\x; \y]];
+scm'(< \xAt)': LT[\x], Scheme_Atom[\x]: \xAt;
+scm'(\xLt \yAdd)': Scheme_Atom[#Num_LessThan[\x; \y]], LT[\x]: \xLt, Scheme_Atom[\y]: \yAt;
 //If
 scm'(if #true \true \false)': \true;
 scm'(if #false \true \false)': \false;
-E[scm'(\x \y)']: scm'(\(E[\x]) \(E[\y]))';
-E[scm'(if \cond \true \false)']: scm'(if \(E[\cond]) \true \false)';
-E[scm'(list \x \y \z)']: scm'(list \(E[\x]) \(E[\y]) \(E[\z]))';
+E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
+E[scm'(if \cond \true \false)']: scm'(if \cond2 \true \false)', \cond2: E[\cond];
+E[scm'(list \x \y \z)']: scm'(list \x2 \y2 \z2)',
+  \x2: E[\x],
+  \y2: E[\y],
+  \z2: E[\z];
 
-&Subst[].
-===
+&Subst[]
+---
 Subst[\old; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \(Subst[\body; \old; \new]))';
-Subst[scm'(\f \x)'; \old; \new]: scm'(\(Subst[\f; \old; \new]) \(Subst[\x; \old; \new]))';
-Subst[scm'(if \cond \true \false)'; \old; \new]: scm'(if \(Subst[\cond; \old; \new]) \(Subst[\true; \old; \new]) \(Subst[\false; \old; \new]))';
-Subst[scm'(list \x \y \z)'; \old; \new]: scm'(list \(Subst[\x; \old; \new]) \(Subst[\y; \old; \new]) \(Subst[\z; \old; \new]))';
-Subst[\body; \; \]: \body;
-E[scm'(\x . \y)']: scm'(\(E[\x]) . \(E[\y]))';
+Subst[scm'(lambda (\old) \body)'; \old; \_]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \body2)',
+  \body2: Subst[\body; \old; \new] &Subst[];
+Subst[scm'(\f \x)'; \old; \new]: scm'(\f2 \x2)',
+  \f2: Subst[\f; \old; \new] &Subst[],
+  \x2: Subst[\x; \old; \new] &Subst[];
+Subst[scm'(if \cond \true \false)'; \old; \new]: scm'(if \cond2 \true2 \false2)',
+  \cond2: Subst[\cond; \old; \new] &Subst[],
+  \true2: Subst[\true; \old; \new] &Subst[],
+  \false2: Subst[\false; \old; \new] &Subst[];
+Subst[scm'(list \x \y \z)'; \old; \new]: scm'(list \x2 \y2 \z2)',
+  \x2: Subst[\x; \old; \new] &Subst[],
+  \y2: Subst[\y; \old; \new] &Subst[],
+  \z2: Subst[\z; \old; \new] &Subst[];
+Subst[\body; \_; \_]: \body;

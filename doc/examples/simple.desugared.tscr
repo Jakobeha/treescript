@@ -9,7 +9,7 @@ Subst[\old; \old; \new]: \new;
 Subst[
   Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old]; Scheme_Nil[]]; \body]];
   \old;
-  \
+  \_
 ]: Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old]; Scheme_Nil[]]; \body]];
 Subst[
   Scheme_Cons["lambda"; Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x]; Scheme_Nil[]]; \body]];
@@ -21,4 +21,4 @@ Subst[
   \old;
   \new
 ]: Scheme_Cons[Subst[\f; \old; \new]; Scheme_Cons[Subst[\x; \old; \new]; Scheme_Nil[]]];
-Subst[\body; \; \]: \body;
+Subst[\body; \_; \_]: \body;

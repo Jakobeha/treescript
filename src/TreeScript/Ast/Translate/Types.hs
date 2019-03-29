@@ -52,23 +52,19 @@ data Consume
 -- | References a group.
 data GroupRef
   = GroupRef
-  { groupRefIdx :: Int
-  , groupRefProps :: [Value]
-  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
-
--- | The input or output of a reducer.
-data ReducerClause
-  = ReducerClause
-  { reducerClauseConsumes :: [Consume]
-  , reducerClauseProduce :: Value
-  , reducerClauseGroups :: [GroupRef]
+  { groupRefIsProp :: Bool
+  , groupRefIdx :: Int
+  , groupRefGroupProps :: [GroupRef]
+  , groupRefValueProps :: [Value]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer
   = Reducer
-  { reducerInput :: ReducerClause
-  , reducerOutput :: ReducerClause
+  { reducerInput :: [Consume]
+  , reducerOutput :: Value
+  , reducerNexts :: [GroupRef]
+  , reducerGuards :: [Statement]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 
 -- | Performs some transformations on values.
@@ -77,18 +73,11 @@ data Statement
   | StatementGroup GroupRef
   deriving (Eq, Ord, Read, Show, Generic)
 
--- | What happens when a statement inside a group successfully transforms an expression.
-data GroupMode
-  = GroupModeContinue
-  | GroupModeStop
-  | GroupModeLoop
-  deriving (Eq, Ord, Read, Show, Generic, MessagePack)
-
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef
   = GroupDef
-  { groupDefProps :: [Int]
-  , groupDefMode :: GroupMode
+  { groupDefGroupProps :: [Int]
+  , groupDefValueProps :: [Int]
   , groupDefStatements :: [[Statement]]
   } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
 

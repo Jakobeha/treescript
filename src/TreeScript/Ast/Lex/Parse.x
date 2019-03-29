@@ -24,15 +24,16 @@ $digit = 0-9
 $octit = 0-7
 $hexit = [0-9 A-F a-f]
 $large = [A-Z \xc0-\xd6 \xd8-\xde]
-$small = [a-z \xdf-\xf6 \xf8-\xff \_]
+$small = [a-z \xdf-\xf6 \xf8-\xff]
 $alpha = [$small $large]
-$alphaNum = [$alpha $digit]
+$alphaNum = [$alpha $digit \_]
 $asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\(\)\,\;\[\]\`\{\}]
 $unicodeSymbol = [] -- TODO
 $symbol = [$asciiSymbol $unicodeSymbol]
 $escapeChar = [abfnrtv\\\"\'\&]
 $stringChar = [$white $digit $alpha $symbol]
 
+@ellipsis = \. \. \.
 @decimal = $digit+
 @octal = $octit+
 @hexadecimal = $hexit+
@@ -59,17 +60,17 @@ treescript :-
 
 <0> \/ \* { enterBlockComment `andBegin` state_comment }
 <0> \' { enterCodeBlock True `andBegin` state_code_block }
-<0> \) { enterCodeBlock False `andBegin` state_code_block }
 
-<0> \- \- \- { mkPunc PuncThinLineSep }
-<0> \- \- \* { mkPunc PuncThinStopLineSep }
-<0> \= \= \= { mkPunc PuncThickLineSep }
+<0> \- \- \- { mkPunc PuncLineSep }
+<0> @ellipsis { mkPunc PuncEllipsis } -- Always results in a parser error, but ok here
+<0> \_ { mkPunc PuncUnderscore }
 <0> \# { mkPunc PuncHash }
 <0> \\ { mkPunc PuncBackSlash }
 <0> \& { mkPunc PuncAnd }
 <0> : { mkPunc PuncColon }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
+<0> \, { mkPunc PuncComma }
 <0> \[ { mkPunc PuncOpenBracket }
 <0> \] { mkPunc PuncCloseBracket }
 
@@ -85,13 +86,14 @@ treescript :-
 <state_comment> . ;
 <state_comment> \n { skip }
 <state_code_block> \' { exitCodeBlock True `andBegin` initialState }
-<state_code_block> \\ \( { exitCodeBlock False `andBegin` initialState }
 <state_code_block> \\ \' { addCharToCodeBlock '\'' }
 <state_code_block> \\ \\ { addCharToCodeBlock '\\' }
 <state_code_block> \\ { exitCodeBlock False `andBegin` state_code_block_bind }
 <state_code_block> [. \n] { addCurrentToCodeBlock }
-<state_code_block_bind> @lowerSymbol { exitCodeBlockBind True `andBegin` state_code_block }
-<state_code_block_bind> $white { exitCodeBlockBind False `andBegin` state_code_block }
+<state_code_block_bind> @ellipsis { mkPunc PuncEllipsis }
+<state_code_block_bind> @lowerSymbol { exitCodeBlockSplice (\str -> LexemeSymbol $ Symbol str SymbolCaseLower) `andBegin` state_code_block }
+<state_code_block_bind> @decimal { exitCodeBlockSplice (LexemePrim . PrimInteger . mapAnnd T.parseInt) `andBegin` state_code_block }
+<state_code_block_bind> \_ { exitCodeBlockSplice (LexemePunc . PuncUnderscore . getAnn) `andBegin` state_code_block }
 
 {
 
@@ -277,16 +279,13 @@ exitCodeBlock isEnd inp len = do
     , spliceFragContent = Annd rng contentStr
     }
 
-exitCodeBlockBind :: Bool -> Action
-exitCodeBlockBind hasSym inp len = do
+exitCodeBlockSplice :: (Annd T.Text Range -> Lexeme Range) -> Action
+exitCodeBlockSplice f inp len = do
   let (loc, str) = convertInput inp len
       rng = mkRange loc str
-      sb
-        | hasSym = Annd rng $ Just str
-        | otherwise = Annd (singletonRange $ rangeStart rng) Nothing
+      sb = f $ Annd rng str
   enterCodeBlockDirect False $ rangeEnd rng
-  return $ LexemeSplicedBind sb
-
+  return sb
 
 -- = Execution
 
@@ -341,7 +340,7 @@ scanner str = runAlex str scanRest
                 (False, False) -> return [tok]
             _ -> do
               toks <- scanRest
-              return (tok : toks)
+              return $ tok : toks
 
 parse :: T.Text -> Result (Program Range)
 parse str

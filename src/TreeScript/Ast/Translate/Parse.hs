@@ -44,24 +44,20 @@ parseConsumes (C.ValueRecord (C.Record _ (C.RecordHead True head') props))
   = [ConsumeFunction head' $ map parseValue props]
 parseConsumes (C.ValueBind bind) = [ConsumeSplice $ C.bindIdx bind]
 
-parseReducerClause :: C.ReducerClause an -> ReducerClause
-parseReducerClause (C.ReducerClause _ val groups)
-  = ReducerClause
-  { reducerClauseConsumes = parseConsumes val
-  , reducerClauseProduce = parseValue val
-  , reducerClauseGroups = map parseGroupRef groups
-  }
-
 parseGroupRef :: C.GroupRef an -> GroupRef
-parseGroupRef (C.GroupRef _ idx props) = GroupRef
-  { groupRefIdx = idx
-  , groupRefProps = map parseValue props
+parseGroupRef (C.GroupRef _ isProp idx gprops vprops) = GroupRef
+  { groupRefIsProp = isProp
+  , groupRefIdx = idx
+  , groupRefGroupProps = map parseGroupRef gprops
+  , groupRefValueProps = map parseValue vprops
   }
 
 parseReducer :: C.Reducer an -> Reducer
-parseReducer (C.Reducer _ input output) = Reducer
-  { reducerInput = parseReducerClause input
-  , reducerOutput = parseReducerClause output
+parseReducer (C.Reducer _ input output nexts guards) = Reducer
+  { reducerInput = parseConsumes input
+  , reducerOutput = parseValue output
+  , reducerNexts = map parseGroupRef nexts
+  , reducerGuards = map parseStatement guards
   }
 
 parseStatement :: C.Statement an -> Statement
@@ -70,15 +66,10 @@ parseStatement (C.StatementGroup group)
 parseStatement (C.StatementReducer reducer)
   = StatementReducer $ parseReducer reducer
 
-parseGroupMode :: C.GroupMode an -> GroupMode
-parseGroupMode (C.GroupModeContinue _) = GroupModeContinue
-parseGroupMode (C.GroupModeStop _) = GroupModeStop
-parseGroupMode (C.GroupModeLoop _) = GroupModeLoop
-
 parseGroupDef :: C.GroupDef an -> GroupDef
-parseGroupDef (C.GroupDef _ props mode stmts) = GroupDef
-  { groupDefProps = map C.bindIdx props
-  , groupDefMode = parseGroupMode mode
+parseGroupDef (C.GroupDef _ gprops vprops stmts) = GroupDef
+  { groupDefGroupProps = map C.bindIdx gprops
+  , groupDefValueProps = map C.bindIdx vprops
   , groupDefStatements = map (map parseStatement) $ A.elems stmts
   }
 

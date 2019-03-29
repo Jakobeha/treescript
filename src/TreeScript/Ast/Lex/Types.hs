@@ -13,21 +13,21 @@ module TreeScript.Ast.Lex.Types
 
 import TreeScript.Misc
 
-import Data.Maybe
 import qualified Data.Text as T
 import GHC.Generics
 
 -- | Punctuation, used for control flow.
 data Punc an
-  = PuncThinLineSep an -- ^ @---@
-  | PuncThinStopLineSep an -- ^ @--*@
-  | PuncThickLineSep an -- ^ @===@
+  = PuncLineSep an -- ^ @---@
+  | PuncEllipsis an -- ^ @...@
+  | PuncUnderscore an -- ^ @_@
   | PuncHash an -- ^ @#@
   | PuncBackSlash an -- ^ @\\@
   | PuncAnd an -- ^ @&@
   | PuncColon an -- ^ @:@
   | PuncPeriod an -- ^ @.@
   | PuncSemicolon an -- ^ @;@
+  | PuncComma an -- ^ @;@
   | PuncOpenBracket an -- ^ @[@
   | PuncCloseBracket an -- ^ @]@
   | PuncEof an -- ^ End of file
@@ -67,7 +67,6 @@ data Lexeme an
   = LexemePunc (Punc an)
   | LexemePrim (Primitive an)
   | LexemeSymbol (Symbol an)
-  | LexemeSplicedBind (Annd (Maybe T.Text) an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -90,21 +89,22 @@ instance Printable (SpliceFrag an) where
     = pprintStart <> pprint (annd content) <> pprintEnd
     where pprintStart
             | isStart = "'"
-            | otherwise = ")"
+            | otherwise = ""
           pprintEnd
             | isEnd = "'"
-            | otherwise = "\\("
+            | otherwise = "\\"
 
 instance Printable (Punc an) where
-  pprint (PuncThinLineSep _) = "---"
-  pprint (PuncThinStopLineSep _) = "--*"
-  pprint (PuncThickLineSep _) = "==="
+  pprint (PuncLineSep _) = "---"
+  pprint (PuncEllipsis _) = "..."
+  pprint (PuncUnderscore _) = "_"
   pprint (PuncHash _) = "#"
   pprint (PuncBackSlash _) = "\\"
   pprint (PuncAnd _) = "&"
   pprint (PuncColon _) = ":"
   pprint (PuncPeriod _) = "."
   pprint (PuncSemicolon _) = ";"
+  pprint (PuncComma _) = ","
   pprint (PuncOpenBracket _) = "["
   pprint (PuncCloseBracket _) = "]"
   pprint (PuncEof _) = ""
@@ -122,7 +122,6 @@ instance Printable (Lexeme an) where
   pprint (LexemePunc punc) = pprint punc
   pprint (LexemePrim prim) = pprint prim
   pprint (LexemeSymbol sym) = pprint sym
-  pprint (LexemeSplicedBind txt) = "\\" <> T.empty `fromMaybe` annd txt
 
 instance Printable (Program an) where
   pprint (Program lexemes) = T.concat $ map pprint $ annd lexemes
@@ -153,7 +152,6 @@ instance ReducePrintable (Lexeme an) where
   reducePrint (LexemePunc punc) = reducePrint punc
   reducePrint (LexemePrim prim) = reducePrint prim
   reducePrint (LexemeSymbol sym) = reducePrint sym
-  reducePrint (LexemeSplicedBind txt) = T.empty `fromMaybe` annd txt
 
 instance ReducePrintable (Program an) where
   reducePrint (Program lexemes) = T.concat $ map reducePrint $ annd lexemes

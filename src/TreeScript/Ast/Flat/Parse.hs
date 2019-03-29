@@ -41,7 +41,7 @@ parse txt = traverse parse1 $ filter (not . T.null) $ T.lines txt
         "splice" -> do
           idx <- P.decimal
           separatorParser
-          pure $ LexemeSplice idx
+          pure $ LexemeEnterSplice idx
         "integer" -> do
           value <- P.decimal
           separatorParser
@@ -67,7 +67,7 @@ parse txt = traverse parse1 $ filter (not . T.null) $ T.lines txt
     separatorParser = (() <$ P.char ' ') P.<|> P.eof
 
 lexLangSrc :: Lexeme -> SessionRes (Maybe T.Text)
-lexLangSrc (LexemeSplice _) = pure Nothing
+lexLangSrc (LexemeEnterSplice _) = pure Nothing
 lexLangSrc (LexemePrimitive _) = pure Nothing
 lexLangSrc (LexemeRecordHead head' _)
   = case T.splitOn "_" head' of

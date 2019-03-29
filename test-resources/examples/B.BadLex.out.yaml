@@ -1,2 +1,2 @@
 lexes?: false
-error: 'while lexing - after 1:8 - unexpected chars: , baz: «]?'
+error: 'while lexing - after 1:14 - unexpected chars: «]?'

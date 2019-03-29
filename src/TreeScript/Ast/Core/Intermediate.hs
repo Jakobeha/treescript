@@ -20,12 +20,11 @@ import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import GHC.Generics
 
 -- = Bind identifier/index environment
 
-type GroupEnv = M.Map T.Text (Int, V.Vector (C.Bind Range), M.Map T.Text Int)
+type GroupEnv = M.Map T.Text Int
 
 data BindEnv
   = BindEnv
@@ -33,11 +32,19 @@ data BindEnv
   , bindEnvNextFree :: Int
   } deriving (Eq, Ord, Read, Show)
 
+data GroupValEnv a
+  = GroupValEnv
+  { groupValEnvGroup :: a
+  , groupValEnvValue :: a
+  } deriving (Eq, Ord, Read, Show, Functor)
+
 type GroupSessionRes a = ReaderT GroupEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
-type FreeSessionRes a = StateT Int (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type PropSessionRes a = StateT (GroupValEnv BindEnv) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+
+type FreeSessionRes a = StateT (GroupValEnv Int) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 data Variance
   = VarianceContravariant
@@ -45,49 +52,48 @@ data Variance
 
 -- = Intermediate AST
 
--- | Property in a group reference - assigns a value to a bind in the group's reducers.
-data GroupProperty an
-  = GroupProperty
-  { groupPropertyAnn :: an
-  , groupPropertyKey :: S.Symbol an -- ^ The bind which gets assigned.
-  , groupPropertyValue :: C.Value an -- ^ The value which gets assigned to the bind.
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+-- | The head of a group reference, and whether it's a property - property heads become indices before value heads.
+data GroupHead an
+  = GroupHeadGlobal (S.Symbol an)
+  | GroupHeadProp (C.Bind an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
 data GroupRef an
   = GroupRef
   { groupRefAnn :: an
-  , groupRefHead :: S.Symbol an
-  , groupRefProps :: [GroupProperty an]
+  , groupRefHead :: GroupHead an
+  , groupRefGroupProps :: [GroupRef an]
+  , groupRefValueProps :: [C.Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A group as a statement.
-data Group an
-  = Group
-  { groupAnn :: an
-  , groupReduceType :: C.ReduceType
-  , groupRef :: GroupRef an
+data GroupStmt an
+  = GroupStmt
+  { groupStmtAnn :: an
+  , groupStmtReduceType :: C.ReduceType
+  , groupStmtRef :: GroupRef an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | The input or output of a reducer.
-data ReducerClause an
-  = ReducerClause
-  { reducerClauseAnn :: an
-  , reducerClauseValue :: C.Value an
-  , reducerClauseGroups :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+-- | Guards a reducer.
+data Guard an
+  = GuardGroup (GroupRef an)
+  | GuardReducer (Reducer an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: ReducerClause an
-  , reducerOutput :: ReducerClause an
+  , reducerInput :: C.Value an
+  , reducerOutput :: C.Value an
+  , reducerNexts :: [GroupRef an]
+  , reducerGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Performs some transformations on values.
 data Statement an
-  = StatementGroup (Group an)
+  = StatementGroup (GroupStmt an)
   | StatementReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -96,10 +102,10 @@ data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefProps :: [(T.Text, C.Bind an)]
-  , groupDefMode :: C.GroupMode an
+  , groupDefGroupProps :: [(T.Text, C.Bind an)]
+  , groupDefValueProps :: [(T.Text, C.Bind an)]
   , groupDefStatements :: [Statement an]
-  , groupDefBindEnv :: BindEnv
+  , groupDefPropEnv :: GroupValEnv BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 emptyBindEnv :: BindEnv
@@ -107,6 +113,13 @@ emptyBindEnv
   = BindEnv
   { bindEnvBinds = M.empty
   , bindEnvNextFree = 1
+  }
+
+emptyPropEnv :: GroupValEnv BindEnv
+emptyPropEnv
+  = GroupValEnv
+  { groupValEnvGroup = emptyBindEnv
+  , groupValEnvValue = emptyBindEnv
   }
 
 bindEnvLookup :: T.Text -> BindEnv -> (Int, BindEnv)
@@ -120,3 +133,10 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
           }
         )
       Just idx -> (idx, env)
+
+zipGroupValEnvWith :: (a -> b -> c) -> GroupValEnv a -> GroupValEnv b -> GroupValEnv c
+zipGroupValEnvWith f (GroupValEnv xg xv) (GroupValEnv yg yv)
+  = GroupValEnv
+  { groupValEnvGroup = f xg yg
+  , groupValEnvValue = f xv yv
+  }

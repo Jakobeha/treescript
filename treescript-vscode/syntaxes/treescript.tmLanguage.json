@@ -55,7 +55,7 @@
 		},
 		"bind": {
 			"name": "keyword.operator.bind.treescript",
-			"match": "\\\\([a-z]\\w*)?",
+			"match": "\\\\(_|[a-z]\\w*)",
 			"captures": {
 				"1": {
 					"name": "entity.name.tag.treescript"
@@ -68,7 +68,7 @@
 		},
 		"group": {
 			"name": "support.class.group.treescript",
-			"match": "&([A-Z]\\w*)"
+			"match": "&([A-Za-z]\\w*)"
 		},
 		"general": {
 			"patterns": [
@@ -91,19 +91,16 @@
 				{
 					"name": "meta.target.javascript.treescript",
 					"begin": "(js')",
-					"end": "(')|(\\\\\\()",
+					"end": "(')",
 					"captures": {
 						"1": {
 							"name": "string.quoted.single.treescript"
-						},
-						"2": {
-							"name": "constant.character.escape.treescript"
 						}
 					},
 					"patterns": [
 						{
 							"name": "constant.character.escape.treescript",
-							"match": "\\\\(_|[a-z]\\w*)",
+							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
 									"name": "entity.name.tag.treescript"
@@ -115,26 +112,51 @@
 							"match": "[\\(\\[\\{\\}\\]\\)]"
 						},
 						{
+							"name": "keyword.control.javascript",
+							"match": "function|class"
+						},
+						{
 							"include": "source.js"
+						}
+					]
+				},
+				{
+					"name": "meta.target.markdown.treescript",
+					"begin": "(md')",
+					"end": "(')",
+					"captures": {
+						"1": {
+							"name": "string.quoted.single.treescript"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.treescript",
+							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
+							"captures": {
+								"1": {
+									"name": "entity.name.tag.treescript"
+								}
+							}
+						},
+						{
+							"include": "source.markdown"
 						}
 					]
 				},
 				{
 					"name": "meta.target.r.treescript",
 					"begin": "(r')",
-					"end": "(')|(\\\\\\()",
+					"end": "(')",
 					"captures": {
 						"1": {
 							"name": "string.quoted.single.treescript"
-						},
-						"2": {
-							"name": "constant.character.escape.treescript"
 						}
 					},
 					"patterns": [
 						{
 							"name": "constant.character.escape.treescript",
-							"match": "\\\\(_|[a-z]\\w*)",
+							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
 									"name": "entity.name.tag.treescript"
@@ -153,19 +175,16 @@
 				{
 					"name": "meta.target.scheme.treescript",
 					"begin": "(scheme')",
-					"end": "(')|(\\\\\\()",
+					"end": "(')",
 					"captures": {
 						"1": {
 							"name": "string.quoted.single.treescript"
-						},
-						"2": {
-							"name": "constant.character.escape.treescript"
 						}
 					},
 					"patterns": [
 						{
 							"name": "constant.character.escape.treescript",
-							"match": "\\\\(_|[a-z]\\w*)",
+							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
 									"name": "entity.name.tag.treescript"
@@ -179,20 +198,17 @@
 				},
 				{
 					"name": "meta.target.other.treescript",
-					"begin": "((?:[a-z]\\w*)?')|(\\))",
-					"end": "(')|(\\\\\\()",
+					"begin": "((?:[a-z]\\w*)?')",
+					"end": "(')",
 					"captures": {
 						"1": {
 							"name": "string.quoted.single.treescript"
-						},
-						"2": {
-							"name": "constant.character.escape.treescript"
 						}
 					},
 					"patterns": [
 						{
 							"name": "constant.character.escape.treescript",
-							"match": "\\\\(_|[a-z]\\w*)",
+							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
 									"name": "entity.name.tag.treescript"

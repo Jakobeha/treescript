@@ -71,24 +71,20 @@ data Value an
 data GroupRef an
   = GroupRef
   { groupRefAnn :: an
+  , groupRefIsProp :: Bool
   , groupRefIdx :: Int
-  , groupRefProps :: [Value an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | The input or output of a reducer.
-data ReducerClause an
-  = ReducerClause
-  { reducerClauseAnn :: an
-  , reducerClauseValue :: Value an
-  , reducerClauseGroups :: [GroupRef an]
+  , groupRefGroupProps :: [GroupRef an]
+  , groupRefValueProps :: [Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: ReducerClause an
-  , reducerOutput :: ReducerClause an
+  , reducerInput :: Value an
+  , reducerOutput :: Value an
+  , reducerNexts :: [GroupRef an]
+  , reducerGuards :: [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Performs some transformations on values.
@@ -101,22 +97,14 @@ data Statement an
 data ReduceType
   = ReduceTypeRegular
   | ReduceTypeEvalCtx
-  | ReduceTypeAltConsume
   deriving (Eq, Ord, Read, Show, Bounded, A.Ix)
-
--- | What happens when a statement inside a group successfully transforms an expression.
-data GroupMode an
-  = GroupModeContinue an
-  | GroupModeStop an
-  | GroupModeLoop an
-  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
-  , groupDefProps :: [Bind an]
-  , groupDefMode :: GroupMode an
+  , groupDefGroupProps :: [Bind an]
+  , groupDefValueProps :: [Bind an]
   , groupDefStatements :: A.Array ReduceType [Statement an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -176,41 +164,47 @@ instance Printable (Value an) where
   pprint (ValueBind bind) = pprint bind
 
 instance Printable (GroupRef an) where
-  pprint (GroupRef _ head' props)
-    = "&" <> pprint head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
-
-instance Printable (ReducerClause an) where
-  pprint (ReducerClause _ val groups)
-    = T.intercalate " " $ pprint val : map pprint groups
+  pprint (GroupRef _ isProp head' gprops vprops)
+     = "&"
+    <> printIsProp isProp
+    <> pprint head'
+    <> printGroupProps pprint gprops
+    <> printProps pprint vprops
+    where printIsProp False = "+"
+          printIsProp True = "-"
 
 instance Printable (Reducer an) where
-  pprint (Reducer _ input output)
-    = pprint input <> ": " <> pprint output
-
-instance Printable (GroupMode an) where
-  pprint (GroupModeContinue _) = "---"
-  pprint (GroupModeStop _) = "--*"
-  pprint (GroupModeLoop _) = "==="
+  pprint (Reducer _ input output nexts guards)
+    = pprint input <> ": " <> pprint output <> foldMap printNext nexts <> foldMap printGuard guards
+    where printNext next' = " " <> pprint next'
+          printGuard guard = ",\n  " <> pprint guard
 
 instance Printable (Statement an) where
-  pprint (StatementGroup group) = pprint group <> ";"
-  pprint (StatementReducer red) = pprint red <> ";"
+  pprint (StatementGroup group) = pprint group
+  pprint (StatementReducer red) = pprint red
 
 instance Printable (Program an) where
   pprint (Program _ decls stmts groups)
-    = T.unlines $ map pprint decls ++ [T.empty] ++ map pprint stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
+    = T.unlines $ map pprint decls ++ [T.empty] ++ map printStmt stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
+    where printStmt stmt = pprint stmt <> ";"
+
+printProps :: (a -> T.Text) -> [a] -> T.Text
+printProps f props = "[" <> T.intercalate "; " (map f props) <> "]"
+
+printGroupProps :: (a -> T.Text) -> [a] -> T.Text
+printGroupProps _ [] = ""
+printGroupProps f props = printProps f props
 
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ props mode reds)
+printGroupDef head' (GroupDef _ gprops vprops reds)
   = T.unlines $ printDecl : map pprint (concat $ A.elems reds)
   where printDecl
            = "&"
           <> pprint head'
-          <> "["
-          <> T.intercalate "; " (map pprint props)
-          <> "]"
-          <> ".\n"
-          <> pprint mode
+          <> printGroupProps printGroupDefProp gprops
+          <> printProps pprint vprops
+          <> "\n---"
+        printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
 
 mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
 mkBuiltinDecl isFunc head' numProps

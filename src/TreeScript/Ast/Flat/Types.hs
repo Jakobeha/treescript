@@ -13,6 +13,6 @@ data Primitive
 
 -- | A single lexeme in AST data.
 data Lexeme
-  = LexemeSplice Int
+  = LexemeEnterSplice Int
   | LexemePrimitive Primitive
   | LexemeRecordHead T.Text Int
