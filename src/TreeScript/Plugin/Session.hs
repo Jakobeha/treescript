@@ -25,7 +25,6 @@ import TreeScript.Misc
 import Control.Monad.Logger hiding (LogLevel (..))
 import qualified Control.Monad.Logger as L (LogLevel (..))
 import Control.Monad.Reader
-import Data.Char
 import Data.List
 import qualified Data.Text as T
 import Data.Yaml

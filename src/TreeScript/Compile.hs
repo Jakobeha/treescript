@@ -1,6 +1,7 @@
 -- | Fully compile a TreeScript program.
 module TreeScript.Compile
   ( compile
+  , compileRaw
   ) where
 
 import qualified TreeScript.Ast.Translate as T
@@ -19,6 +20,19 @@ compile input output
   | input == output = mkFail $ mkOverlapInOutError StageReadArgs
   | otherwise
   = ( T.exportFile output
+  <=< T.parse
+  <=< C.parse
+  <=< ResultT . pure . S.parse
+  <=< ResultT . pure . L.parse
+  <=< liftIOAndCatch StageReadInput . T.readFile
+    ) input
+
+-- | Read the TreeScript source from the first path, serialize it, and move the raw data to the second path. For testing.
+compileRaw :: FilePath -> FilePath -> SessionRes ()
+compileRaw input output
+  | input == output = mkFail $ mkOverlapInOutError StageReadArgs
+  | otherwise
+  = ( T.exportRaw output
   <=< T.parse
   <=< C.parse
   <=< ResultT . pure . S.parse

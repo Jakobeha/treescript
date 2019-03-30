@@ -4,6 +4,7 @@
 module TreeScript.Ast.Translate.Compile
   ( export
   , exportFile
+  , exportRaw
   ) where
 
 import TreeScript.Ast.Translate.Types
@@ -27,3 +28,7 @@ exportFile :: FilePath -> Program -> SessionRes ()
 exportFile outPath prog = liftIOAndCatch StageWriteCompiled $ do
   B.writeFile outPath $ export prog
   setFileMode outPath exportFileMode
+
+-- | Serialize the code's data into the output path, for testing.
+exportRaw :: FilePath -> Program -> SessionRes ()
+exportRaw outPath = liftIOAndCatch StageWriteCompiled . B.writeFile outPath . pack

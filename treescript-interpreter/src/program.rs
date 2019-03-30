@@ -2,7 +2,7 @@ extern crate enum_map;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{Consume, GroupDef, GroupDefSerial, GroupMode, ReduceType, Statement};
+use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceType, Statement};
 use crate::session::{LibrarySpec, Session};
 use crate::value::Value;
 use enum_map::enum_map;
@@ -32,12 +32,11 @@ impl From<ProgramSerial> for Program {
     let mut program = Program {
       libraries: serial.libraries,
       main_group: GroupDef {
-        props: vec![],
-        mode: GroupMode::Continue,
+        group_props: vec![],
+        value_props: vec![],
         statements: enum_map![
           ReduceType::Regular => main_statements.clone(),
           ReduceType::EvalCtx => vec![],
-          ReduceType::AltConsume => vec![],
         ],
         env: Weak::new(),
       },
@@ -86,11 +85,11 @@ impl Program {
     return self
       .groups()
       .flat_map(|group| group.statements[ReduceType::Regular].iter())
-      .flat_map(|statement| match statement {
-        Statement::Reducer(reducer) => vec![&reducer.input, &reducer.output],
-        Statement::Group(_) => vec![],
+      .filter_map(|statement| match statement {
+        Statement::Reducer(reducer) => Some(reducer),
+        Statement::Group(_) => None,
       })
-      .flat_map(|clause| clause.consumes.iter())
+      .flat_map(|reducer| reducer.input.iter())
       .filter_map(|consume| match consume {
         Consume::Record(head) => Some(head),
         _ => None,

@@ -5,6 +5,8 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- TODO Groups out of values, group statements with guards
+
 -- | Types for the @Sugar@ AST.
 module TreeScript.Ast.Sugar.Types
   ( module TreeScript.Ast.Sugar.Types
@@ -265,3 +267,8 @@ instance TreePrintable TopLevel where
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
+
+unrollGuards :: Statement an -> [Statement an]
+unrollGuards (StatementGroup group) = [StatementGroup group]
+unrollGuards (StatementReducer (Reducer ann inp out next guards))
+  = StatementReducer (Reducer ann inp out next []) : guards

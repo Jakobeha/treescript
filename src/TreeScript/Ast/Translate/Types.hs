@@ -56,7 +56,7 @@ data GroupRef
   , groupRefIdx :: Int
   , groupRefGroupProps :: [GroupRef]
   , groupRefValueProps :: [Value]
-  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+  } deriving (Eq, Ord, Read, Show, Generic)
 
 -- | Transforms a value into a different value. Like a "function".
 data Reducer
@@ -65,7 +65,7 @@ data Reducer
   , reducerOutput :: Value
   , reducerNexts :: [GroupRef]
   , reducerGuards :: [Statement]
-  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+  } deriving (Eq, Ord, Read, Show, Generic)
 
 -- | Performs some transformations on values.
 data Statement
@@ -79,7 +79,7 @@ data GroupDef
   { groupDefGroupProps :: [Int]
   , groupDefValueProps :: [Int]
   , groupDefStatements :: [[Statement]]
-  } deriving (Eq, Ord, Read, Show, Generic, MessagePack)
+  } deriving (Eq, Ord, Read, Show, Generic)
 
 -- | A full TreeScript program.
 data Program
@@ -121,12 +121,44 @@ instance MessagePack Consume where
     = ConsumeFunction <$> fromObject xEncoded <*> fromObject yEncoded
   fromObject _ = fail "invalid encoding for Consume"
 
+instance MessagePack GroupRef where
+  toObject (GroupRef isProp idx gprops vprops)
+    = ObjectArray [toObject isProp, toObject idx, toObject gprops, toObject vprops]
+  fromObject (ObjectArray [isProp, idx, gprops, vprops])
+      = GroupRef
+    <$> fromObject isProp
+    <*> fromObject idx
+    <*> fromObject gprops
+    <*> fromObject vprops
+  fromObject _ = fail "invalid encoding for GroupRef"
+
+instance MessagePack Reducer where
+  toObject (Reducer input output nexts guards)
+    = ObjectArray [toObject input, toObject output, toObject nexts, toObject guards]
+  fromObject (ObjectArray [input, output, nexts, guards])
+      = Reducer
+    <$> fromObject input
+    <*> fromObject output
+    <*> fromObject nexts
+    <*> fromObject guards
+  fromObject _ = fail "invalid encoding for Reducer"
+
 instance MessagePack Statement where
   toObject (StatementReducer red) = ObjectArray [ObjectInt 0, ObjectArray [toObject red]]
   toObject (StatementGroup group) = ObjectArray [ObjectInt 1, ObjectArray [toObject group]]
   fromObject (ObjectArray [ObjectInt 0, ObjectArray [xEncoded]]) = StatementReducer <$> fromObject xEncoded
   fromObject (ObjectArray [ObjectInt 1, ObjectArray [xEncoded]]) = StatementGroup <$> fromObject xEncoded
   fromObject _ = fail "invalid encoding for Statement"
+
+instance MessagePack GroupDef where
+  toObject (GroupDef gprops vprops stmts)
+    = ObjectArray [toObject gprops, toObject vprops, toObject stmts]
+  fromObject (ObjectArray [gprops, vprops, stmts])
+      = GroupDef
+    <$> fromObject gprops
+    <*> fromObject vprops
+    <*> fromObject stmts
+  fromObject _ = fail "invalid encoding for GroupDef"
 
 instance MessagePack Program where
   toObject (Program libs mainStmts groups)

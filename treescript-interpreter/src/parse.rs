@@ -56,7 +56,7 @@ impl<'a, R: Read> Parser<'a, R> {
       match iter.next() {
         Some('"') => break,
         Some(' ') | Some('\n') => (),
-        next => panic!("expected Some('\"') for string start, got {}", next),
+        next => panic!("expected Some('\"') for string start, got {:?}", next),
       };
     }
     let mut is_escaping = false;

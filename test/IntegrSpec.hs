@@ -2,8 +2,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Tests all parts of compiling.
-module CompileSpec
+-- | Tests all parts of compiling and interpreting.
+module IntegrSpec
        ( spec ) where
 
 import Core.Test

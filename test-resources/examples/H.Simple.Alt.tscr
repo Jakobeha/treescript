@@ -1,0 +1,21 @@
+Subst[body; old; new].
+
+&Apply[];
+
+&Apply[]
+---
+scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
+E[scm'(\x \y)']: scm'(\x2 \y2)',
+  \x2: E[\x],
+  \y2: E[\y];
+
+&Subst[]
+---
+Subst[\old; \old; \new]: \new;
+Subst[scm'(lambda (\old) \body)'; \old; \_]: scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \body2)',
+  \body2: Subst[\body; \old; \new] &Subst[];
+Subst[scm'(\f \x)'; \old; \new]: scm'(\f2 \x2)',
+  \f2: Subst[\f; \old; \new] &Subst[],
+  \x2: Subst[\x; \old; \new] &Subst[];
+Subst[\body; \_; \_]: \body;

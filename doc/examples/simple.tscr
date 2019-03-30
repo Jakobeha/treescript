@@ -1,18 +1,23 @@
-Subst[body; old; new].
-
 &Apply[];
 
 &Apply[]
 ---
-scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
-E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
+scm'((lambda (\x) \body) \arg)': \body &Subst[\x; \arg] &Apply[];
+scm'(\x \y)': scm'(\x2 \y2)' &Apply[],
+  \x2: \x &Apply[],
+  \y2: \y &Apply[];
+scm'(\f \x)': scm'(\f2 \x)' &Apply[],
+  \f2: \f &Apply[];
+scm'(\f \x)': scm'(\f \x2)' &Apply[],
+  \x2: \x &Apply[];
 
-&Subst[]
+&Subst[old; new]
 ---
-Subst[\old; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \_]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \body2)', \body2: Subst[\body; \old; \new];
-Subst[scm'(\f \x)'; \old; \new]: scm'(\f2 \x2)', \f2: Subst[\f; \old; \new], \x2: Subst[\x; \old; \new];
-Subst[\body; \_; \_]: \body;
-E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
-E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \body2)', \body2: E[\body];
+\old: \new;
+scm'(lambda (\old) \body)': scm'(lambda (\old) \body)';
+scm'(lambda (\x) \body)': scm'(lambda (\x) \body2)',
+  \body2: \body &Subst[\old; \new];
+scm'(\f \x)': scm'(\f2 \x2)',
+  \f2: \f &Subst[\old; \new],
+  \x2: \x &Subst[\old; \new];
+\x: \x;

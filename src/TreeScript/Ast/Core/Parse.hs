@@ -264,14 +264,13 @@ parseEmptyGroupDef1 :: S.GroupDecl Range -> I.FreeSessionRes (I.GroupDef Range)
 parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ isProp (S.Symbol headRng head') gprops vprops))
   | isProp = mkFail $ parseError headRng "can't declare a lowercase group - lowercase groups are group properties"
   | otherwise = do
-    I.GroupValEnv gnextFree vnextFree <- get
     (gprops', gbindEnv)
       <- lift
-        $ (`runStateT` I.BindEnv{ I.bindEnvBinds = M.empty, I.bindEnvNextFree = gnextFree })
+        $ (`runStateT` I.emptyBindEnv)
         $ traverseDropFatals parseSubGroupPropDecl1 gprops
     (vprops', vbindEnv)
       <- lift
-        $ (`runStateT` I.BindEnv{ I.bindEnvBinds = M.empty, I.bindEnvNextFree = vnextFree })
+        $ (`runStateT` I.emptyBindEnv)
         $ traverseDropFatals parseGroupValPropDecl1 vprops
     let propEnv = I.GroupValEnv
           { I.groupValEnvGroup = gbindEnv
@@ -301,11 +300,11 @@ parseRestGroupDefs1 decl (S.TopLevelStatement stmt : xs) = do
 parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
 
-parseAllGroupDefs1 :: I.GroupValEnv Int -> [S.TopLevel Range] -> SessionRes [I.GroupDef Range]
-parseAllGroupDefs1 _ [] = pure []
-parseAllGroupDefs1 nextFree (S.TopLevelGroupDecl x : xs)
-  = N.toList <$> evalStateT (parseRestGroupDefs1 x xs) nextFree
-parseAllGroupDefs1 _ (_ : _) = error "expected group declaration when parsing group definitions"
+parseAllGroupDefs1 :: [S.TopLevel Range] -> SessionRes [I.GroupDef Range]
+parseAllGroupDefs1 [] = pure []
+parseAllGroupDefs1 (S.TopLevelGroupDecl x : xs)
+  = N.toList <$> evalStateT (parseRestGroupDefs1 x xs) I.emptyFreeEnv
+parseAllGroupDefs1 (_ : _) = error "expected group declaration when parsing group definitions"
 
 parseGroupRef2 :: I.GroupRef Range -> I.GroupSessionRes (GroupRef Range)
 parseGroupRef2 (I.GroupRef rng head' gprops vprops) = do
@@ -376,8 +375,8 @@ parseRaw (S.Program rng topLevels) = do
       decls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
       stmts = mapMaybe (\case S.TopLevelStatement x -> Just x; _ -> Nothing) topLevelsOutGroups
   decls' <- traverse parseRecordDecl decls
-  (stmts1, stmtsPropEnv) <- runStateT (traverseDropFatals parseStatement1 stmts) I.emptyPropEnv
-  groups1 <- parseAllGroupDefs1 (I.bindEnvNextFree <$> stmtsPropEnv) topLevelsInGroups
+  stmts1 <- evalStateT (traverseDropFatals parseStatement1 stmts) I.emptyPropEnv
+  groups1 <- parseAllGroupDefs1 topLevelsInGroups
   let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
   stmts' <- runReaderT (traverseDropFatals parseStatement2 stmts1) groupEnv
   groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv

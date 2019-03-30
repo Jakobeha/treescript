@@ -122,6 +122,13 @@ emptyPropEnv
   , groupValEnvValue = emptyBindEnv
   }
 
+emptyFreeEnv :: GroupValEnv Int
+emptyFreeEnv
+  = GroupValEnv
+  { groupValEnvGroup = 0
+  , groupValEnvValue = 0
+  }
+
 bindEnvLookup :: T.Text -> BindEnv -> (Int, BindEnv)
 bindEnvLookup bind env@(BindEnv binds nextFree)
   = case binds M.!? bind of

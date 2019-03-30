@@ -62,20 +62,16 @@ Statement : Value { StatementGroup $1 }
           | Reducer { StatementReducer $1 }
           ;
 GroupDecl : Group '---' { GroupDecl (getAnn $1 <> $2) $1 }
-Reducer : Value ':' Value Groups Guards
-        { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4 <> map getAnn $5) $1 $3 (reverse $4) (reverse $5) }
+Reducer : Value ':' Value Groups
+        { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4) [] }
+        | Value ':' Value Groups Guard
+        { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.<| getAnn $5 N.:| map getAnn $4) $1 $3 (reverse $4) (unrollGuards $5) }
         ;
 Groups : { [] }
        | NonEmptyGroups { $1 }
        ;
 NonEmptyGroups : Group { [$1] }
                | NonEmptyGroups Group { $2 : $1 }
-               ;
-Guards : { [] }
-       | NonEmptyGuards { $1 }
-       ;
-NonEmptyGuards : Guard { [$1] }
-               | NonEmptyGuards Guard { $2 : $1 }
                ;
 Guard : ',' Statement { $2 }
 Value : Primitive { ValuePrimitive $1 }

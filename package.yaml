@@ -105,6 +105,7 @@ tests:
     - filepath
     - hspec
     - HUnit
+    - process
     - QuickCheck
     - temporary
     - yaml
