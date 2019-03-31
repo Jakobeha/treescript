@@ -20,9 +20,6 @@ stack install treescript
 
 ```
 
-<!--ts-->
-<!--te-->
-
 ## Purpose
 
 TreeScript is a DSL for writing code to analyze and transform syntax trees.
