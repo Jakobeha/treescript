@@ -1,6 +1,6 @@
 # TreeScript Interpreter
 
-An interpreter for the [TreeScript](https://github.org/jakobeha/treescript#readme) language.
+An interpreter for the [TreeScript](https://github.com/jakobeha/treescript#readme) language.
 
 Additionally:
 
