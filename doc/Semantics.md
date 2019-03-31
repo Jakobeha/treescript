@@ -11,7 +11,7 @@ c’println(\str)’: js’console.log(\str)’;
 A **group** organizes other statements.
 
 ```treescript
-&Print[](
+&Print[];
 
 &Print[].
 ——-
