@@ -1,17 +1,19 @@
 'use strict'
 
+// tslint:disable:max-line-length
 import * as child_process from 'child_process';
 import { commands, ExtensionContext, OutputChannel, TextDocument, window, workspace, WorkspaceFolder } from 'vscode';
 import { LanguageClient, LanguageClientOptions, RevealOutputChannelOn, ServerOptions, TransportKind } from 'vscode-languageclient';
+// tslint:enable:max-line-length
 
-let isSetupGeneral: Boolean = false
+let isSetupGeneral: boolean = false
 const clients: Map<string, LanguageClient> = new Map()
 
-//Code derived from vscode-hie-server (https://github.com/alanz/vscode-hie-server/blob/master/src/extension.ts)
+// Code derived from vscode-hie-server (https://github.com/alanz/vscode-hie-server/blob/master/src/extension.ts)
 
 export async function activate(context: ExtensionContext) {
-	// Try to activate every time a new file is opened, for multi-root
-	// workspaces.
+  // Try to activate every time a new file is opened, for multi-root
+  // workspaces.
   workspace.onDidOpenTextDocument(async (document: TextDocument) => await ensureSetupForDoc(context, document))
   workspace.textDocuments.forEach(async (document: TextDocument) => await ensureSetupForDoc(context, document))
   // Deactivate if workspace is removed.
@@ -69,7 +71,8 @@ async function ensureSetupForFolder(context: ExtensionContext, folder: Workspace
   }
 
   if (!await isServerInstalled()) {
-    const notInstalledMsg: string = 'TreeScript language server (in CLI) not installed. Install via "stack install treescript"'
+    const notInstalledMsg: string =
+    'TreeScript language server (in CLI) not installed. Install via "stack install treescript"'
     const retry: string = 'Retry'
     window.showErrorMessage(notInstalledMsg, retry).then(option => {
       if (option === retry) {
@@ -90,15 +93,15 @@ function setup(context: ExtensionContext, folder: WorkspaceFolder) {
   const uri = folder.uri
   const key = uri.toString()
   const command = 'treescript'
-  //const tempDir = os.tmpdir()
+  // const tempDir = os.tmpdir()
   const genArgs = ['serve']
   const runArgs = genArgs
   const debugArgs = genArgs
-  //const debugArgs = genArgs.concat(['-d', '-l', path.join(tempDir, 'treescript.log')])
+  // const debugArgs = genArgs.concat(['-d', '-l', path.join(tempDir, 'treescript.log')])
 
   const serverOptions: ServerOptions = {
-    run: { command: command, transport: TransportKind.stdio, args: runArgs },
-    debug: { command: command, transport: TransportKind.stdio, args: debugArgs }
+    run: { command, transport: TransportKind.stdio, args: runArgs },
+    debug: { command, transport: TransportKind.stdio, args: debugArgs }
   }
 
   // Set a unique name per workspace folder (useful for multi-root workspaces).
@@ -120,9 +123,9 @@ function setup(context: ExtensionContext, folder: WorkspaceFolder) {
     revealOutputChannelOn: RevealOutputChannelOn.Info,
     outputChannel,
     outputChannelName: langName,
-    //middleware: {
+    // middleware: {
     //  provideHover: DocsBrowser.hoverLinksMiddlewareHook
-    //},
+    // },
     // Set the server's workspace folder to the current workspace folder.
     workspaceFolder: folder
   }
@@ -165,9 +168,9 @@ export function deactivate(): Thenable<void> {
  * Check if the treescript CLI (server) is installed.
  */
 async function isServerInstalled(): Promise<boolean> {
-  return new Promise<boolean>((resolve, _reject) => {
+  return new Promise<boolean>(resolve => {
     const cmd: string = process.platform === 'win32' ? 'where treescript' : 'which treescript'
-    child_process.exec(cmd, (error, _stdout, _stderr) => resolve(!error))
+    child_process.exec(cmd, error => resolve(!error))
   })
 }
 
@@ -176,7 +179,7 @@ async function isServerInstalled(): Promise<boolean> {
  */
 async function registerPointCommand(command: string, context: ExtensionContext) {
   const name = 'treescript.commands.' + command
-  const editorCmd = commands.registerTextEditorCommand(name, (editor, _edit) => {
+  const editorCmd = commands.registerTextEditorCommand(name, editor => {
     const cmd = {
       command,
       arguments: [
@@ -198,7 +201,7 @@ async function registerPointCommand(command: string, context: ExtensionContext) 
     }
 
     client.sendRequest('workspace/executeCommand', cmd).then(
-      _hints => {
+      () => {
         return true
       },
       err => {

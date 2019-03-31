@@ -26,5 +26,5 @@
     "triple-equals": true,
     "ordered-imports": true,
     "curly": true
-  },
+  }
 }

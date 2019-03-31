@@ -1,14 +1,12 @@
-# treescript-vscode README
+# treescript-vscode
 
-This is the README for your extension "treescript-vscode". After writing up a brief description, we recommend including the following sections.
+Adds support for the TreeScript language. Syntax highlighting and (coming soon) a language client for building and running TreeScript
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+Currently only supports syntax highlighting. In the future will support more, such as highlighting error messages and refactors.
 
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
+![Syntax Highlighting]\(images/syntax.png\)
 
 > Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
 
