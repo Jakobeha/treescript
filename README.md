@@ -13,12 +13,21 @@ Modifies[\expr; \i]: False[];
 Modifies[\expr; \n]: False[];
 ```
 
-Install via the following commands:
+## Installation
+
+Make sure you've installed [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download)
+
+Install with the following command:
 
 ```sh
-stack install treescript
-
+TODO
 ```
+
+This script:
+- Downloads and extracts the tarball
+- Runs [`install.sh`](install.sh), which:
+  - Runs `stack install` to install the compiler
+  - Runs `cargo install
 
 ## Purpose
 

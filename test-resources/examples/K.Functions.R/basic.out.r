@@ -1,5 +1,5 @@
-x1 <- data.frame(matrix(runif(5L * 10000L), ncol = 5L))
-medians <- vapply(x1, median, numeric(1L))
+x1 <- data.frame(matrix(runif(5 * 10000), ncol = 5))
+medians <- vapply(x1, median, numeric(1))
 if (is.data.frame(x1)) {
   free0 <- as.list(x1)
   for (i1 in seq_along(medians)) {
@@ -8,13 +8,13 @@ if (is.data.frame(x1)) {
   }
   x1 <- as.data.frame(free0)
 }
-x2 <- data.frame(matrix(0L, ncol = 7L))
+x2 <- data.frame(matrix(0, ncol = 7))
 if (is.data.frame(x2)) {
   free1 <- as.list(x2)
-  for (i2 in 1L:7L) {
+  for (i2 in 1:7) {
     if (TRUE) {
       cat("Running action...")
-      free1[[i2]] <- 5L
+      free1[[i2]] <- 5
       cat("Ran action")
     }
   }

@@ -1,14 +1,19 @@
 {
   "name": "treescript-vscode",
   "displayName": "treescript-vscode",
-  "treescription": "Tools for the TreeScript programming language / client for the language server",
+  "description": "Support for the TreeScript programming language",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jakobeha/treescript"
+  },
+  "homepage": "https://github.com/Jakobeha/treescript/src/master/treescript-interpreter/README.md",
   "keywords": [
     "language",
     "treescript",
     "lsp",
     "multi-root ready"
   ],
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "MIT",
   "publisher": "jakobeha",
   "engines": {

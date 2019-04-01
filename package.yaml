@@ -21,7 +21,6 @@ description:         Please see the README on GitHub at <https://github.com/jako
 extra-source-files:
 - README.md
 - ChangeLog.md
-- resources/bin/**
 - resources/env/**
 - src/TreeScript/Ast/Lex/Parse.x
 - src/TreeScript/Ast/Sugar/Parse.y
