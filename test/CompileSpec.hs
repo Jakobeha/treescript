@@ -59,30 +59,37 @@ spec = do
   exampleCoreVars <- runIO $ mkVarMap exampleFiles
   exampleTranslateVars <- runIO $ mkVarMap exampleFiles
   exampleExecVars <- runIO $ mkVarMap exampleFiles
+  exampleUnsetVars <- runIO $ mkVarMap exampleFiles
   let forExampleFile :: (TestFile -> SpecWith FilePath) -> SpecWith FilePath
       forExampleFile f =
         forM_ exampleFiles $ \file ->
           unless (testInfoSkip $ testFileTestInfo file) $
             describe (T.unpack $ "In " <> fileName (testFileSrcFile file)) $
               f file
-      forExampleIntermediateIn :: M.Map TestFile (MVar (PhaseRes a)) -> TestFile -> (a -> IO ()) -> IO ()
-      forExampleIntermediateIn xVars file f = do
-        let xVar = xVars M.! file
-        withMVar xVar $ \case
+      forExampleIntermediateIn :: M.Map TestFile (MVar (PhaseRes a))
+                               -> M.Map TestFile (MVar (PhaseRes b))
+                               -> TestFile
+                               -> (a -> IO ())
+                               -> IO ()
+      forExampleIntermediateIn curVars nextVars file f = do
+        let curVar = curVars M.! file
+        withMVar curVar $ \case
           PhaseResUnset -> pendingWith "WARNING: previous phase unset! This is a bug in the test suite"
-          PhaseResFailure False -> pendingWith "no previous phase"
-          PhaseResFailure True -> pure ()
+          PhaseResFailure intentional -> do
+            insertVarMapFailure nextVars file intentional
+            unless intentional $
+              pendingWith "no previous phase"
           PhaseResSuccess val -> f val
       forExampleLex :: TestFile -> (L.Program Range -> IO ()) -> IO ()
-      forExampleLex = forExampleIntermediateIn exampleLexVars
+      forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
-      forExampleSugar = forExampleIntermediateIn exampleSugarVars
+      forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
       forExampleCore :: TestFile -> (C.Program Range -> IO ()) -> IO ()
-      forExampleCore = forExampleIntermediateIn exampleCoreVars
+      forExampleCore = forExampleIntermediateIn exampleCoreVars exampleTranslateVars
       forExampleTranslate :: TestFile -> (T.Program -> IO ()) -> IO ()
-      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars
+      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
-      forExampleExec = forExampleIntermediateIn exampleExecVars
+      forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
       codeToAstData :: T.Text -> T.Text -> ResultT IO T.Text
       codeToAstData txt ext
         | ext == "tast" = pure txt
