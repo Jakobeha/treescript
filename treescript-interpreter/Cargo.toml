@@ -1,6 +1,6 @@
 [package]
 name = "treescript-interpreter"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["jakob <jakobeha@gmail.com>"]
 license = "GPL-3.0-or-later"
 description = "TreeScript interpreter, with some built-in libraries and API to create more"
