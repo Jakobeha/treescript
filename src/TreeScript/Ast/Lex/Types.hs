@@ -18,16 +18,17 @@ import GHC.Generics
 
 -- | Punctuation, used for control flow.
 data Punc an
-  = PuncLineSep an -- ^ @---@
-  | PuncEllipsis an -- ^ @...@
+  = PuncEllipsis an -- ^ @...@
   | PuncUnderscore an -- ^ @_@
   | PuncHash an -- ^ @#@
   | PuncBackSlash an -- ^ @\\@
-  | PuncAnd an -- ^ @&@
-  | PuncColon an -- ^ @:@
+  | PuncFwdTri an -- ^ @>@
+  | PuncBwdTri an -- ^ @<@
+  | PuncFwdArrow an -- ^ @->@
+  | PuncBwdArrow an -- ^ @<-@
   | PuncPeriod an -- ^ @.@
   | PuncSemicolon an -- ^ @;@
-  | PuncComma an -- ^ @;@
+  | PuncComma an -- ^ @,@
   | PuncOpenBracket an -- ^ @[@
   | PuncCloseBracket an -- ^ @]@
   | PuncEof an -- ^ End of file
@@ -95,13 +96,14 @@ instance Printable (SpliceFrag an) where
             | otherwise = "\\"
 
 instance Printable (Punc an) where
-  pprint (PuncLineSep _) = "---"
-  pprint (PuncEllipsis _) = "..."
+  \pprint (PuncEllipsis _) = "..."
   pprint (PuncUnderscore _) = "_"
   pprint (PuncHash _) = "#"
   pprint (PuncBackSlash _) = "\\"
-  pprint (PuncAnd _) = "&"
-  pprint (PuncColon _) = ":"
+  pprint (PuncFwdTri _) = ">"
+  pprint (PuncBwdTri _) = "<"
+  pprint (PuncFwdArrow _) = "->"
+  pprint (PuncBwdArrow _) = "<-"
   pprint (PuncPeriod _) = "."
   pprint (PuncSemicolon _) = ";"
   pprint (PuncComma _) = ","
