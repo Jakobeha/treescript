@@ -51,8 +51,8 @@ class (Printable a, ReducePrintable a) => LeafPrintable a
 
 -- | A printable annotated tree. All leaves must implement 'LeafPrintable' and be printable in a few formats. Additionally, nodes must support annotations. This class only needs to implement one method, to recursively print in any of these formats, and allow annotations to alter printing.
 class (Annotatable a) => TreePrintable a where
-  -- | Prints the tree
-  treePrint :: (PrintOut o) -- ^ Type of format of the print. Would require a proxy, but the type can be inferred by the recursive printers.
+  -- | Prints the tree. @(PrintOut o)@ is the type of format of the print - it would require a proxy, but the type can be inferred by the recursive printers.
+  treePrint :: (PrintOut o)
             => (forall p. (TreePrintable p) => p an -> o) -- ^ Function to recursively print subtrees (not leaves).
             -> (forall l. (LeafPrintable l) => l -> o) -- ^ Function to recursively print leaves.
             -> a an

@@ -63,7 +63,7 @@ writeExpr <- function(expr) {
     } else if (identical(expr, FALSE)) {
       writeRecord("False", 0)
     } else if (is.numeric(expr)) {
-      if (expr%%1 == 0) {
+      if (is.integer(expr)) {
         writeWord("integer")
       } else {
         writeWord("float")

@@ -8,12 +8,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// tslint:disable:max-line-length
 const child_process = require("child_process");
 const vscode_1 = require("vscode");
 const vscode_languageclient_1 = require("vscode-languageclient");
+// tslint:enable:max-line-length
 let isSetupGeneral = false;
 const clients = new Map();
-//Code derived from vscode-hie-server (https://github.com/alanz/vscode-hie-server/blob/master/src/extension.ts)
+// Code derived from vscode-hie-server (https://github.com/alanz/vscode-hie-server/blob/master/src/extension.ts)
 function activate(context) {
     return __awaiter(this, void 0, void 0, function* () {
         // Try to activate every time a new file is opened, for multi-root
@@ -92,14 +94,14 @@ function setup(context, folder) {
     const uri = folder.uri;
     const key = uri.toString();
     const command = 'treescript';
-    //const tempDir = os.tmpdir()
+    // const tempDir = os.tmpdir()
     const genArgs = ['serve'];
     const runArgs = genArgs;
     const debugArgs = genArgs;
-    //const debugArgs = genArgs.concat(['-d', '-l', path.join(tempDir, 'treescript.log')])
+    // const debugArgs = genArgs.concat(['-d', '-l', path.join(tempDir, 'treescript.log')])
     const serverOptions = {
-        run: { command: command, transport: vscode_languageclient_1.TransportKind.stdio, args: runArgs },
-        debug: { command: command, transport: vscode_languageclient_1.TransportKind.stdio, args: debugArgs }
+        run: { command, transport: vscode_languageclient_1.TransportKind.stdio, args: runArgs },
+        debug: { command, transport: vscode_languageclient_1.TransportKind.stdio, args: debugArgs }
     };
     // Set a unique name per workspace folder (useful for multi-root workspaces).
     const langName = 'TreeScript (' + folder.name + ')';
@@ -120,9 +122,9 @@ function setup(context, folder) {
         revealOutputChannelOn: vscode_languageclient_1.RevealOutputChannelOn.Info,
         outputChannel,
         outputChannelName: langName,
-        //middleware: {
+        // middleware: {
         //  provideHover: DocsBrowser.hoverLinksMiddlewareHook
-        //},
+        // },
         // Set the server's workspace folder to the current workspace folder.
         workspaceFolder: folder
     };
@@ -161,9 +163,9 @@ exports.deactivate = deactivate;
  */
 function isServerInstalled() {
     return __awaiter(this, void 0, void 0, function* () {
-        return new Promise((resolve, _reject) => {
+        return new Promise(resolve => {
             const cmd = process.platform === 'win32' ? 'where treescript' : 'which treescript';
-            child_process.exec(cmd, (error, _stdout, _stderr) => resolve(!error));
+            child_process.exec(cmd, error => resolve(!error));
         });
     });
 }
@@ -173,7 +175,7 @@ function isServerInstalled() {
 function registerPointCommand(command, context) {
     return __awaiter(this, void 0, void 0, function* () {
         const name = 'treescript.commands.' + command;
-        const editorCmd = vscode_1.commands.registerTextEditorCommand(name, (editor, _edit) => {
+        const editorCmd = vscode_1.commands.registerTextEditorCommand(name, editor => {
             const cmd = {
                 command,
                 arguments: [
@@ -193,7 +195,7 @@ function registerPointCommand(command, context) {
             if (client === undefined) {
                 return;
             }
-            client.sendRequest('workspace/executeCommand', cmd).then(_hints => {
+            client.sendRequest('workspace/executeCommand', cmd).then(() => {
                 return true;
             }, err => {
                 console.error(err);

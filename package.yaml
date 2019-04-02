@@ -1,9 +1,9 @@
 name:                treescript
 version:             0.1.0.0
 github:              "jakobeha/treescript"
-git:                 "https://github.org/jakobeha/treescript"
-homepage:            "https://github.org/jakobeha/treescript/src/master/README.md"
-bug-reports:         "https://github.org/jakobeha/treescript/issues"
+git:                 "https://github.com/jakobeha/treescript"
+homepage:            "https://github.com/jakobeha/treescript/src/master/README.md"
+bug-reports:         "https://github.com/jakobeha/treescript/issues"
 license:             GPL-3
 author:              "Jakob Hain"
 maintainer:          "jakobeha@gmail.com"
@@ -16,12 +16,11 @@ category:            Language
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.org/jakobeha/treescript#readme>
+description:         Please see the README on GitHub at <https://github.com/jakobeha/treescript#readme>
 
 extra-source-files:
 - README.md
 - ChangeLog.md
-- resources/bin/**
 - resources/env/**
 - src/TreeScript/Ast/Lex/Parse.x
 - src/TreeScript/Ast/Sugar/Parse.y

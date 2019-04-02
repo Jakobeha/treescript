@@ -1,65 +1,27 @@
-# treescript-vscode README
+# treescript-vscode
 
-This is the README for your extension "treescript-vscode". After writing up a brief description, we recommend including the following sections.
+Adds support for the [TreeScript](https://github.com/Jakobeha/treescript#readme) language. Syntax highlighting and (coming soon) a language client for building and running TreeScript
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+Currently only supports syntax highlighting. In the future will support more, such as highlighting error messages and refactors.
 
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+![Syntax Highlighting](images/syntax.png)
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+No requirements for the syntax highlighting. See [TreeScript's homepage](https://github.com/Jakobeha/treescript#readme) for how to install the TreeScript compiler / interpreter.
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: enable/disable this extension
-* `myExtension.thing`: set to `blah` to do something
+None yet, the current settings don't actually do anything.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+Syntax highlighting for certain languages not supported, syntax highlighting after a code splice not supported, JavaScript syntax highlighting messes up some of the splices.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.1.0
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
------------------------------------------------------------------------------------------------------------
-
-## Working with Markdown
-
-**Note:** You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on OSX or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+CMD+V` on OSX or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux) or `Cmd+Space` (OSX) to see a list of Markdown snippets
-
-### For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Initial release

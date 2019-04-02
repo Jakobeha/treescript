@@ -1,6 +1,6 @@
-\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; "rename-func.in"]]: \x &RenameFunc[];
-\x: \x &CamelCase[];
-\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; "constant-arith.in"]]: \x &ConstantArith[];
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; Some["rename-func.in"]]]: \x &RenameFunc[];
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; Some["camel-case.in"]]]: \x &CamelCase[];
+\x &IsTrue[x: #Any_IsEqual[#File_Stem[]; Some["constant-arith.in"]]]: \x &ConstantArith[];
 // &#Any_IsEqual[#File_Stem[]; "rename-func"] &RenameFunc[];
 // &#Any_IsEqual[#File_Stem[]; "camel-case"] &CamelCase[];
 // &#Any_IsEqual[#File_Stem[]; "constant-arith"] &ConstantArith[];
@@ -13,20 +13,20 @@ E[scm'(\x . \xs)']: scm'(\(E[\x]) . \(E[\xs]))';
 &CamelCase[].
 ---
 R_Symbol[\str] &IsFalse[x: #Any_IsEqual[#String_ToCamel[\str]; ""]]: R_Symbol[#String_ToCamel[\str]];
-R_Named[\name; \arg] &IsFalse[x: #Any_IsEqual[#String_ToCamel[\name]; ""]]: R_Named[#String_ToCamel[\str]; \arg];
+R_Named[\name; \arg] &IsFalse[x: #Any_IsEqual[#String_ToCamel[\name]; ""]]: R_Named[#String_ToCamel[\name]; \arg];
 E[R_Call[\name; \args]]: R_Call[E[\name]; #List_Map[E[\1]; \args]];
 E[R_Named[\name; \arg]]: R_Named[\name; E[\arg]];
 
 &ConstantArith[].
 ===
-js'\(JS_Literal[\x]) + \(JS_Literal[\y])'
+js'\(JS_Literal[\x; \; JS_Undefined[]]) + \(JS_Literal[\y; \; JS_Undefined[]])'
   &IsTrue[x: #Type_IsNum[\x]]
-  &IsTrue[x: #Type_IsNum[\y]]: JS_Literal[#Num_Add[\x; \y]];
-E[JS_FunctionDeclaration[\id; \params; BlockStatement[\body];
+  &IsTrue[x: #Type_IsNum[\y]]: JS_Literal[#Num_Add[\x; \y]; JS_Undefined[]; JS_Undefined[]];
+E[JS_FunctionDeclaration[\id; \params; JS_BlockStatement[\body];
   \generator; \async; \expression]]: JS_FunctionDeclaration[
-  \id; \params; BlockStatement[#List_Map[E[\1]; \body]]; \generator;
+  \id; \params; JS_BlockStatement[#List_Map[E[\1]; \body]]; \generator;
   \async; \expression];
-E[JS_ExpressionStatement[\expr]]: JS_ExpressionStatement[E[\expr]];
+E[JS_ExpressionStatement[\a; \expr]]: JS_ExpressionStatement[\a; E[\expr]];
 
 &IsTrue[x].
 ---

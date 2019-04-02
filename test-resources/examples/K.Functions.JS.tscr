@@ -1,22 +1,7 @@
 Program[xs].
 
-&Setup[];
 &Main[];
-&Teardown[];
 
 &Main[].
 ---
 js'function \name() { \body; }': js'var \name = () => { \body; }';
-E[&EvalStatemets[]];
-
-&Setup[].
----
-JS_Program["script"; \xs]: Program[\xs];
-
-&Teardown[].
----
-Program[\xs]: JS_Program["script"; \xs];
-
-&EvalStatemets[].
----
-E[Program[\xs]]: JS_Program["script"; #List_Map[E[JS_Program["script"; Cons[\1; Nil[]]]]; \xs]];
