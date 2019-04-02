@@ -15,7 +15,7 @@ Modifies[\expr; \n]: False[];
 
 ## Installation
 
-Make sure you've installed [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download)
+TreeScript requires [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download). Additionally, the base libraries require [`R`](https://cran.r-project.org/mirrors.html) and [`Node.js`](https://nodejs.org/en/)
 
 Install with the following command:
 
