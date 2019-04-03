@@ -15,7 +15,14 @@ Modifies[\expr; \n]: False[];
 
 ## Installation
 
-TreeScript requires [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download). Additionally, the base libraries require [`R`](https://cran.r-project.org/mirrors.html) and [`Node.js`](https://nodejs.org/en/). Syntax highlighting requires [`Visual Studio Code`](https://code.visualstudio.com/).
+Currently TreeScript requires:
+
+- [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/)
+- [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+- For syntax highlighting, [`Visual Studio Code`](https://code.visualstudio.com/download)
+- For scheme and R language support [`R`](https://cran.r-project.org/mirrors.html)
+- For JavaScript language support, [`Node.js`](https://nodejs.org/en/)
+- Additionally, make sure that `~/.local/bin` and `~/.cargo/bin` are on your `PATH` environment
 
 Install with the following command:
 
