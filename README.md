@@ -15,19 +15,24 @@ Modifies[\expr; \n]: False[];
 
 ## Installation
 
-TreeScript requires [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download). Additionally, the base libraries require [`R`](https://cran.r-project.org/mirrors.html) and [`Node.js`](https://nodejs.org/en/)
+TreeScript requires [`Stack`](https://docs.haskellstack.org/en/stable/install_and_upgrade/), [`Cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html), and (for syntax highlighting) [`Visual Studio Code`](https://code.visualstudio.com/download). Additionally, the base libraries require [`R`](https://cran.r-project.org/mirrors.html) and [`Node.js`](https://nodejs.org/en/). Syntax highlighting requires [`Visual Studio Code`](https://code.visualstudio.com/).
 
 Install with the following command:
 
 ```sh
-TODO
+tstmp=$(mktemp -d)
+curl -Ls https://github.com/Jakobeha/treescript/releases/download/v0.1.0.0/treescript-0.1.0.0.tar.gz | tar xvz -C $tstmp
+$tstmp/treescript-0.1.0.0/install.sh
 ```
 
 This script:
-- Downloads and extracts the tarball
+
+- Creates a temporary directory
+- Downloads and extracts the tarball into the directory
 - Runs [`install.sh`](install.sh), which:
+  - Runs `cargo install` to install the interpreter and libraries
   - Runs `stack install` to install the compiler
-  - Runs `cargo install
+  - If VS Code is installed, runs `code --load-extension` to install syntax highlighting
 
 ## Purpose
 
