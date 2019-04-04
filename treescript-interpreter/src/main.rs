@@ -78,7 +78,7 @@ fn main() {
     if matches.is_present("stdout") {
       output = Box::new(io::stdout());
     } else {
-      let output_path = matches.value_of("OUTPUT").map_or_else(
+      let output_path = matches.value_of("output").map_or_else(
         || {
           let mut path = PathBuf::from(matches.value_of("INPUT").unwrap());
           let inferred_lang = prog
@@ -111,5 +111,3 @@ fn main() {
     }
   }
 }
-
-//fn main() {}

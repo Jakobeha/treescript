@@ -55,6 +55,7 @@ dependencies:
 - semigroupoids
 - shelly
 - system-filepath
+- temporary
 - text
 - transformers
 - unix
