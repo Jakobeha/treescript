@@ -12,7 +12,6 @@ module TreeScript.Ast.Core.Types
 
 import TreeScript.Misc
 
-import qualified Data.Array as A
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -73,39 +72,32 @@ data GroupRef an
   { groupRefAnn :: an
   , groupRefIsProp :: Bool
   , groupRefIdx :: Int
-  , groupRefGroupProps :: [GroupRef an]
-  , groupRefValueProps :: [Value an]
+  , groupRefSubgroups :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Transforms a value into a different value. Like a "function".
+-- | Matches a value against a different value. Like a "let" statement.
+data Guard an
+  = Guard
+  { guardAnn :: an
+  , guardInput :: Value an
+  , guardOutput :: Value an
+  , guardNexts :: [GroupRef an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Transforms a value into a different value. Like a case in a "match" statement.
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: Value an
-  , reducerOutput :: Value an
-  , reducerNexts :: [GroupRef an]
-  , reducerGuards :: [Statement an]
+  , reducerMain :: Guard an
+  , reducerSubGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Performs some transformations on values.
-data Statement an
-  = StatementGroup (GroupRef an)
-  | StatementReducer (Reducer an)
-  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | How and where a reducer or group is applied.
-data ReduceType
-  = ReduceTypeRegular
-  | ReduceTypeEvalCtx
-  deriving (Eq, Ord, Read, Show, Bounded, A.Ix)
 
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefGroupProps :: [Bind an]
-  , groupDefValueProps :: [Bind an]
-  , groupDefStatements :: A.Array ReduceType [Statement an]
+  , groupDefReducers :: [Reducer an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -113,7 +105,6 @@ data Program an
   = Program
   { programAnn :: an
   , programRecordDecls :: [RecordDecl an]
-  , programMainStatements :: [Statement an]
   , programGroups :: [GroupDef an]
   }
 
@@ -122,7 +113,6 @@ instance (Semigroup an) => Semigroup (Program an) where
     = Program
     { programAnn = xAnn <> yAnn
     , programRecordDecls = xDecls <> yDecls
-    , programMainStatements = xStmts <> yStmts
     , programGroups = xGroups <> yGroups
     }
 
@@ -131,7 +121,6 @@ instance (Monoid an) => Monoid (Program an) where
     = Program
     { programAnn = mempty
     , programRecordDecls = mempty
-    , programMainStatements = mempty
     , programGroups = mempty
     }
 
@@ -173,37 +162,40 @@ instance Printable (GroupRef an) where
     where printIsProp False = "+"
           printIsProp True = "-"
 
+instance Printable (Guard an) where
+  pprint (Guard _ input output nexts)
+     = pprint input
+    <> " <- "
+    <> pprint output
+    <> foldMap printNext nexts
+    where printNext next' = " " <> pprint next'
+
 instance Printable (Reducer an) where
-  pprint (Reducer _ input output nexts guards)
-    = pprint input <> ": " <> pprint output <> foldMap printNext nexts <> foldMap printGuard guards
+  pprint (Reducer _ (Guard _ input output nexts) guards)
+     = pprint input
+    <> " -> "
+    <> pprint output
+    <> foldMap printNext nexts
+    <> foldMap printGuard guards
+    <> ";"
     where printNext next' = " " <> pprint next'
           printGuard guard = ",\n  " <> pprint guard
 
-instance Printable (Statement an) where
-  pprint (StatementGroup group) = pprint group
-  pprint (StatementReducer red) = pprint red
-
 instance Printable (Program an) where
-  pprint (Program _ decls stmts groups)
-    = T.unlines $ map pprint decls ++ [T.empty] ++ map printStmt stmts ++ [T.empty] ++ zipWith printGroupDef [0..] groups
-    where printStmt stmt = pprint stmt <> ";"
+  pprint (Program _ decls groups)
+    = T.unlines $ map pprint decls ++ [T.empty] ++ zipWith printGroupDef [0..] groups
 
 printProps :: (a -> T.Text) -> [a] -> T.Text
 printProps f props = "[" <> T.intercalate "; " (map f props) <> "]"
 
-printGroupProps :: (a -> T.Text) -> [a] -> T.Text
-printGroupProps _ [] = ""
-printGroupProps f props = printProps f props
-
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ gprops vprops reds)
-  = T.unlines $ printDecl : map pprint (concat $ A.elems reds)
+printGroupDef head' (GroupDef _ gprops reds)
+  = T.unlines $ printDecl : map pprint reds
   where printDecl
            = "&"
           <> pprint head'
-          <> printGroupProps printGroupDefProp gprops
-          <> printProps pprint vprops
-          <> "\n---"
+          <> printProps printGroupDefProp gprops
+          <> "."
         printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
 
 mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
@@ -217,9 +209,13 @@ mkBuiltinDecl isFunc head' numProps
   , recordDeclCompactNumProps = numProps
   }
 
+-- | Specifies that a record declaration can take any number of properties.
+varNumProps :: Int
+varNumProps = (-1)
+
 builtinDecls :: [RecordDeclCompact]
 builtinDecls =
-  [ mkBuiltinDecl False "E" 1
+  [ mkBuiltinDecl False "T" varNumProps
   , mkBuiltinDecl False "Unit" 0
   , mkBuiltinDecl False "True" 0
   , mkBuiltinDecl False "False" 0
@@ -228,16 +224,7 @@ builtinDecls =
   , mkBuiltinDecl False "Some" 1
   , mkBuiltinDecl False "Cons" 2
   , mkBuiltinDecl False "Hole" 1
-  , mkBuiltinDecl True "Flush" 1
   ]
-
--- | The head of a special record, whose contents can contain unassigned binds in covariant or contravariant positions.
-flushRecordHead :: RecordHead
-flushRecordHead
-  = RecordHead
-  { recordHeadIsFunc = True
-  , recordHeadName = "Flush"
-  }
 
 compactRecordDecl :: RecordDecl an -> RecordDeclCompact
 compactRecordDecl (RecordDecl _ head' props)

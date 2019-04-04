@@ -63,48 +63,40 @@ data GroupRef an
   = GroupRef
   { groupRefAnn :: an
   , groupRefHead :: GroupHead an
-  , groupRefGroupProps :: [GroupRef an]
-  , groupRefValueProps :: [C.Value an]
+  , groupRefSubgroups :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A group as a statement.
 data GroupStmt an
   = GroupStmt
   { groupStmtAnn :: an
-  , groupStmtReduceType :: C.ReduceType
   , groupStmtRef :: GroupRef an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Guards a reducer.
+-- | Matches an input value against an output value. Like a "let" statement.
 data Guard an
-  = GuardGroup (GroupRef an)
-  | GuardReducer (Reducer an)
-  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+  = Guard
+  { guardAnn :: an
+  , guardInput :: C.Value an
+  , guardOutput :: C.Value an
+  , guardNexts :: [GroupRef an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Transforms a value into a different value. Like a "function".
+-- | Transforms a value into a different value. Like a "match" case.
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: C.Value an
-  , reducerOutput :: C.Value an
-  , reducerNexts :: [GroupRef an]
+  , reducerMain :: Guard an
   , reducerGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Performs some transformations on values.
-data Statement an
-  = StatementGroup (GroupStmt an)
-  | StatementReducer (Reducer an)
-  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Defines a group of reducers, which can be referenced by other reducers.
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefGroupProps :: [(T.Text, C.Bind an)]
-  , groupDefValueProps :: [(T.Text, C.Bind an)]
-  , groupDefStatements :: [Statement an]
+  , groupDefSubgroups :: [(T.Text, C.Bind an)]
+  , groupDefReducers :: [Reducer an]
   , groupDefPropEnv :: GroupValEnv BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 

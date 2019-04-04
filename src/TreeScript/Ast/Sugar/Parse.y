@@ -21,10 +21,9 @@ import Data.Semigroup
 %token
   '...' { L.LexemePunc (L.PuncEllipsis $$) }
   '_' { L.LexemePunc (L.PuncUnderscore $$) }
+  '&' { L.LexemePunc (L.PuncAnd $$) }
   '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
-  '>' { L.LexemePunc (L.PuncFwdTri $$) }
-  '<' { L.LexemePunc (L.PuncBwdTri $$) }
   '->' { L.LexemePunc (L.PuncFwdArrow $$) }
   '<-' { L.LexemePunc (L.PuncBwdArrow $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
@@ -52,20 +51,15 @@ NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
 TopLevel : RecordDecl { TopLevelRecordDecl $1 }
-         | TopLevelStatement { TopLevelStatement $1 }
+         | Reducer { TopLevelReducer $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-TopLevelStatement : Statement ';' { $1 }
-                  ;
-Statement : Reducer { StatementReducer $1 }
-          | Guard { StatementGuard $1 }
-          ;
-GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
-Reducer : Value '->' Value Groups Guards
+Reducer : Value '->' Value Groups Guards ';'
         { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4 <> map getAnn $5) $1 $3 (reverse $4) (reverse $5) }
         ;
+GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
 Guards : { [] }
        | NonEmptyGuards { $1 }
        ;
@@ -85,7 +79,6 @@ Value : Primitive { ValuePrimitive $1 }
       | Bind { ValueBind $1 }
       | SpliceCode { ValueSpliceCode $1 }
       | Hole { ValueHole $1 }
-      | Group { ValueGroup $1 }
       ;
 Primitive : int { PrimInteger (getAnn $1) (annd $1) }
           | float { PrimFloat (getAnn $1) (annd $1) }
@@ -94,12 +87,9 @@ Primitive : int { PrimInteger (getAnn $1) (annd $1) }
 Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) False $1 (annd $2) }
        | '#' UpperSym GenProperties { Record ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
        ;
-Group : GroupDir LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) True $2 [] (annd $3) }
-      | GroupDir UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) False $2 [] (annd $3) }
-      | GroupDir LowerSym GenProperties GenProperties { Group ($1 <> getAnn $2 <> getAnn $3 <> getAnn $4) True $2 (annd $3) (annd $4) }
-      | GroupDir UpperSym GenProperties GenProperties { Group ($1 <> getAnn $2 <> getAnn $3 <> getAnn $4) False $2 (annd $3) (annd $4) }
+Group : '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
+      | '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) False $2 (annd $3) }
       ;
-GroupDir : { GroupDirLeft $1 }
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }
               ;

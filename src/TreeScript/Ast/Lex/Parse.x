@@ -63,12 +63,11 @@ treescript :-
 
 <0> @ellipsis { mkPunc PuncEllipsis } -- Always results in a parser error, but ok here
 <0> \_ { mkPunc PuncUnderscore }
+<0> \& { mkPunc PuncAnd }
 <0> \# { mkPunc PuncHash }
 <0> \\ { mkPunc PuncBackSlash }
 <0> \- \> { mkPunc PuncFwdArrow }
 <0> \< \- { mkPunc PuncBwdArrow }
-<0> \> { mkPunc PuncFwdTri }
-<0> \< { mkPunc PuncBwdTri }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
 <0> \, { mkPunc PuncComma }

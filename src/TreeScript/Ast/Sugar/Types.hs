@@ -64,29 +64,20 @@ data SubGroupProperty an
   , subGroupPropertySymbol :: Symbol an
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | A group value property.
-data GroupValProperty an
-  = GroupValProperty
-  { groupValPropertyAnn :: an
-  , groupValPropertyKey :: Symbol an
-  , groupValPropertyValue :: Value an
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | A record declaration property, group declaration property, record property, or group property.
+-- | Property of a record or group.
 data GenProperty an
-  = GenPropertyDecl (Symbol an) -- ^ Record or group declaration property.
+  = GenPropertyDecl (Symbol an) -- ^ Record  declaration property.
   | GenPropertySubGroup (SubGroupProperty an) -- ^ Subgroup declaration property.
   | GenPropertyRecord (Value an) -- ^ Record or subgroup property.
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Declares a group (properties will be symbols), or references it (properties will be group properties).
+-- | Declares a group (subgroups will be symbols), or references it (subgroups will be groups).
 data Group an
   = Group
   { groupAnn :: an
   , groupIsProp :: Bool
   , groupHead :: Symbol an
-  , groupGroupProps :: [GenProperty an]
-  , groupValProps :: [GenProperty an]
+  , groupSubgroups :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a group - reducers below will be part of the group.
@@ -139,29 +130,29 @@ data Value an
   | ValueBind (Bind an)
   | ValueSpliceCode (SpliceCode an)
   | ValueHole (Hole an)
-  | ValueGroup (Group an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Transforms a value into a different value. Like a "function".
+-- | Matches an input value against an output value.
+data Guard an
+  = Guard
+  { guardAnn :: an
+  , guardInput :: Value an
+  , guardOutput :: Value an
+  , guardNexts :: [Group an]
+  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Transforms a value into a different value.
 data Reducer an
   = Reducer
   { reducerAnn :: an
-  , reducerInput :: Value an
-  , reducerOutput :: Value an
-  , reducerNexts :: [Group an]
-  , reducerGuards :: [Statement an]
+  , reducerMain :: Guard an
+  , reducerGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Performs some transformations on values.
-data Statement an
-  = StatementGroup (Value an)
-  | StatementReducer (Reducer an)
-  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Not nested in anything other than the program.
 data TopLevel an
   = TopLevelRecordDecl (RecordDecl an)
-  | TopLevelStatement (Statement an)
+  | TopLevelReducer (Reducer an)
   | TopLevelGroupDecl (GroupDecl an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -210,15 +201,13 @@ instance TreePrintable GenProperty where
   treePrint par _ (GenPropertyRecord prop) = par prop
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ _ head' gprops vprops)
-    = "&" <> par head' <> printGProps gprops <> printProps vprops
-    where printGProps [] = ""
-          printGProps ps = printProps ps
-          printProps ps = "[" <> mintercalate "; " (map par ps) <> "]"
+  treePrint par _ (Group _ _ head' sgs)
+    = "&" <> par head' <> printSubgroups sgs
+    where printSubgroups ps = "[" <> mintercalate "; " (map par ps) <> "]"
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)
-    = par group <> "\n---"
+    = par group <> "."
 
 instance TreePrintable Record where
   treePrint par _ (Record _ isFun head' props)
@@ -248,27 +237,27 @@ instance TreePrintable Value where
   treePrint par _ (ValueBind bind) = par bind
   treePrint par _ (ValueSpliceCode code) = par code
   treePrint par _ (ValueHole hole) = par hole
-  treePrint par _ (ValueGroup group) = par group
+
+instance TreePrintable Guard where
+  treePrint par _ (Guard _ input output nexts)
+    = par input <> " <- " <> par output <> foldMap printNext nexts
+    where printNext next' = " " <> par next'
 
 instance TreePrintable Reducer where
-  treePrint par _ (Reducer _ input output nexts guards)
-    = par input <> ": " <> par output <> foldMap printNext nexts <> foldMap printGuard guards
+  treePrint par _ (Reducer _ (Guard _ input output nexts) guards)
+     = par input
+    <> " -> "
+    <> par output
+    <> foldMap printNext nexts
+    <> foldMap printGuard guards
+    <> ";"
     where printNext next' = " " <> par next'
           printGuard guard = ",\n  " <> par guard
 
-instance TreePrintable Statement where
-  treePrint par _ (StatementGroup group) = par group
-  treePrint par _ (StatementReducer red) = par red
-
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelStatement stmt) = par stmt <> ";"
+  treePrint par _ (TopLevelReducer red) = par red <> ";"
   treePrint par _ (TopLevelGroupDecl decl) = par decl
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
-
-unrollGuards :: Statement an -> [Statement an]
-unrollGuards (StatementGroup group) = [StatementGroup group]
-unrollGuards (StatementReducer (Reducer ann inp out next guards))
-  = StatementReducer (Reducer ann inp out next []) : guards
