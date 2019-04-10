@@ -2,3 +2,4 @@ name: Gen
 functions:
 - name: FreeString
   args: 1
+records: []

@@ -94,6 +94,8 @@ impl Display for Value {
 
 #[allow(dead_code)]
 impl Value {
+  pub const TUPLE_HEAD: &'static str = "T";
+
   pub fn unit() -> Value {
     return Value::Record {
       head: String::from("Unit"),
@@ -178,6 +180,15 @@ impl Value {
     }
   }
 
+  pub fn to_args(&self) -> Vec<Value> {
+    if let Value::Record { head, props } = self {
+      if head == Value::TUPLE_HEAD {
+        return props.clone();
+      }
+    }
+    return vec![self.clone()];
+  }
+
   pub fn is_splice(&self) -> bool {
     if let Value::Splice(_) = self {
       return true;
@@ -234,10 +245,6 @@ impl Value {
         }
       }
     };
-  }
-
-  pub fn flush(&mut self) {
-    self.fill_splices(|idx| Value::hole(idx as i32));
   }
 
   pub fn modify_children<F: FnMut(&mut Value) -> bool>(&mut self, f: &mut F) {

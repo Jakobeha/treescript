@@ -37,8 +37,8 @@ spec = do
         Result errs () ->
           assertNoErrors errs
   describe "The serialized file" $ do
+    -- WARN: Be careful of order
     it "Is valid msgpack" $
-      -- WARN: Be careful of order
       callProcess "msgpack2json" ["-i", outputMsgpack, "-o", outputJson, "-p"]
     it "Matches the format expected by the interpreter" $ do
       txt <- T.readFile outputJson

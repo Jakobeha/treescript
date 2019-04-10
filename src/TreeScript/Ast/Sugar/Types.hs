@@ -68,16 +68,24 @@ data SubGroupProperty an
 data GenProperty an
   = GenPropertyDecl (Symbol an) -- ^ Record  declaration property.
   | GenPropertySubGroup (SubGroupProperty an) -- ^ Subgroup declaration property.
-  | GenPropertyRecord (Value an) -- ^ Record or subgroup property.
+  | GenPropertyRecord (Value an) -- ^ Record property.
+  | GenPropertyGroup (Group an) -- ^ Subgroup reference property.
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Where this group is, its type.
+data GroupLoc an
+  = GroupLocGlobal an
+  | GroupLocLocal an
+  | GroupLocFunction an
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a group (subgroups will be symbols), or references it (subgroups will be groups).
 data Group an
   = Group
   { groupAnn :: an
-  , groupIsProp :: Bool
+  , groupLoc :: GroupLoc an
   , groupHead :: Symbol an
-  , groupSubgroups :: [GenProperty an]
+  , groupProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a group - reducers below will be part of the group.
@@ -91,7 +99,6 @@ data GroupDecl an
 data Record an
   = Record
   { recordAnn :: an
-  , recordIsFunc :: Bool
   , recordHead :: Symbol an
   , recordProps :: [GenProperty an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
@@ -199,22 +206,25 @@ instance TreePrintable GenProperty where
   treePrint par _ (GenPropertyDecl key) = par key
   treePrint par _ (GenPropertySubGroup prop) = par prop
   treePrint par _ (GenPropertyRecord prop) = par prop
+  treePrint par _ (GenPropertyGroup prop) = par prop
+
+instance TreePrintable GroupLoc where
+  treePrint _ _ (GroupLocGlobal _) = "&"
+  treePrint _ _ (GroupLocLocal _) = "&"
+  treePrint _ _ (GroupLocFunction _) = "#"
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ _ head' sgs)
-    = "&" <> par head' <> printSubgroups sgs
-    where printSubgroups ps = "[" <> mintercalate "; " (map par ps) <> "]"
+  treePrint par _ (Group _ loc head' sgs)
+    = par loc <> par head' <> printProps sgs
+    where printProps ps = "[" <> mintercalate "; " (map par ps) <> "]"
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)
     = par group <> "."
 
 instance TreePrintable Record where
-  treePrint par _ (Record _ isFun head' props)
-    = printIsFun <> par head' <> "[" <> mintercalate "; " (map par props) <> "]"
-    where printIsFun
-            | isFun = "#"
-            | otherwise = mempty
+  treePrint par _ (Record _ head' props)
+    = par head' <> "[" <> mintercalate ", " (map par props) <> "]"
 
 instance TreePrintable BindTarget where
   treePrint _ _ (BindTargetNone _) = "_"
@@ -256,7 +266,7 @@ instance TreePrintable Reducer where
 
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelReducer red) = par red <> ";"
+  treePrint par _ (TopLevelReducer red) = par red
   treePrint par _ (TopLevelGroupDecl decl) = par decl
 
 instance TreePrintable Program where

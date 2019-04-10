@@ -1,371 +1,218 @@
-extern crate enum_map;
 extern crate serde;
 use crate::session::Session;
 use crate::value::{Prim, Value};
-use enum_map::{Enum, EnumMap};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::{HashSet, VecDeque};
-use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
 use std::rc::Weak;
 
+macro_rules! dprint_wrap(
+    ($var:expr, $name:expr, $inner:expr) => {{
+      dprintln!($var, "Applying {} [", $name);
+      dprint_begin_indent!($var);
+      let res = $inner;
+      dprint_end_indent!($var);
+      if res.is_success() {
+        dprintln!($var, "] Succeeded");
+      } else {
+        dprintln!($var, "] Failed");
+      }
+      return res;
+    }}
+);
+
 const MAX_NUM_BINDS: usize = 32;
 
-struct BindFrame {
-  local: [Option<Value>; MAX_NUM_BINDS],
-  parent_idxs: HashSet<usize>,
+#[derive(Clone)]
+struct BindFrame([Option<Value>; MAX_NUM_BINDS]);
+
+pub enum ReduceResult {
+  Fail,
+  Success(Value),
 }
-
-struct BindStack(VecDeque<BindFrame>);
-
-#[derive(Clone, Copy, Debug, Deserialize, Enum, Eq, PartialEq, Serialize)]
-pub enum ReduceType {
-  Regular,
-  EvalCtx,
-}
-
-pub type ReduceResult = bool;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Consume {
   Bind(usize),
   Prim(Prim),
   Record(String),
-  Function { head: String, props: Vec<Value> },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum GroupLoc {
+  Global(usize),
+  Local(usize),
+  Function(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupRef {
-  pub is_prop: bool,
-  pub idx: usize,
-  pub group_props: Vec<GroupRef>,
-  pub value_props: Vec<Value>,
+  pub loc: GroupLoc,
+  pub props: Vec<GroupRef>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Guard {
+  pub input: Vec<Consume>,
+  pub output: Value,
+  pub nexts: Vec<GroupRef>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Reducer {
-  pub input: Vec<Consume>,
-  pub output: Value,
-  pub nexts: Vec<GroupRef>,
-  pub guards: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum Statement {
-  Reducer(Reducer),
-  Group(GroupRef),
+  pub main: Guard,
+  pub guards: Vec<Guard>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupDefSerial {
-  pub group_props: Vec<usize>,
-  pub value_props: Vec<usize>,
-  pub statements: Vec<Vec<Statement>>,
+  pub props: Vec<usize>,
+  pub reducers: Vec<Reducer>,
 }
 
 #[derive(Clone, Debug)]
 pub struct GroupDef {
-  pub group_props: Vec<usize>,
-  pub value_props: Vec<usize>,
-  pub statements: EnumMap<ReduceType, Vec<Statement>>,
+  pub props: Vec<usize>,
+  pub reducers: Vec<Reducer>,
   pub env: Weak<Vec<GroupDef>>,
 }
 
-impl BindFrame {
-  fn new<'a, I: IntoIterator<Item = &'a usize>>(parent_idxs: I) -> BindFrame {
-    return BindFrame {
-      local: Default::default(),
-      parent_idxs: HashSet::from_iter(parent_idxs.into_iter().map(|idx| *idx)),
+trait Succeedable {
+  fn is_success(&self) -> bool;
+}
+
+impl Succeedable for bool {
+  fn is_success(&self) -> bool {
+    return *self;
+  }
+}
+
+impl Succeedable for ReduceResult {
+  fn is_success(&self) -> bool {
+    match self {
+      ReduceResult::Fail => return false,
+      ReduceResult::Success(_) => return true,
     };
   }
 }
 
-impl Index<usize> for BindStack {
+impl Index<usize> for BindFrame {
   type Output = Option<Value>;
 
   fn index(&self, idx: usize) -> &Option<Value> {
     if idx == 0 {
       panic!("can't reference bind 0")
     }
-    for frame in self.0.iter() {
-      if !frame.parent_idxs.contains(&idx) {
-        return &frame.local[idx - 1];
-      }
-      dprint!("PRINT_FRAME", "index {} fell\n", idx);
-    }
-    panic!("root (undefined) index: {}", idx);
+    return &self.0[idx - 1];
   }
 }
 
-impl IndexMut<usize> for BindStack {
+impl IndexMut<usize> for BindFrame {
   fn index_mut(&mut self, idx: usize) -> &mut Option<Value> {
     if idx == 0 {
       panic!("can't reference bind 0")
     }
-    dprint!("PRINT_FRAME", "index_mut: {}", idx);
-    for frame in self.0.iter_mut() {
-      if !frame.parent_idxs.contains(&idx) {
-        dprint!("PRINT_FRAME", "\n");
-        return &mut frame.local[idx - 1];
-      }
-      dprint!("PRINT_FRAME", "+");
-    }
-    panic!("root (undefined) index: {}", idx);
+    return &mut self.0[idx - 1];
   }
 }
 
-impl BindStack {
-  fn root() -> BindStack {
-    return BindStack(VecDeque::new());
-  }
-
-  fn push<'a, I: IntoIterator<Item = &'a usize>>(&mut self, parent_idxs: I) {
-    self.0.push_front(BindFrame::new(parent_idxs));
-    dprint!(
-      "PRINT_FRAME",
-      "pushing: {:?}\n",
-      self.0.front().unwrap().parent_idxs
-    );
-  }
-
-  fn pop(&mut self) {
-    dprint!(
-      "PRINT_FRAME",
-      "popping: {:?}\n",
-      self.0.front().unwrap().parent_idxs
-    );
-    self.0.pop_front().expect("no frames left to pop");
-  }
-}
-
-impl Consume {
-  fn seq_from(value: Value) -> Vec<Consume> {
-    match value {
-      Value::Splice(idx) => vec![Consume::Bind(idx)],
-      Value::Prim(prim) => vec![Consume::Prim(prim)],
-      Value::Record { head, props } => {
-        let mut res = vec![Consume::Record(head)];
-        for prop in props {
-          res.append(&mut Consume::seq_from(prop));
-        }
-        return res;
-      }
-    }
-  }
-
-  fn subst_bind(self, old: usize, new: &Value) -> Vec<Consume> {
-    match self {
-      Consume::Bind(idx) if idx == old => return Consume::seq_from(new.clone()),
-      _ => return vec![self],
-    }
+impl BindFrame {
+  fn new() -> BindFrame {
+    return BindFrame(Default::default());
   }
 }
 
 impl GroupRef {
-  fn sub_group_props(&self) -> Vec<usize> {
+  fn sub_props(&self) -> Vec<usize> {
     let mut res: Vec<usize> = Vec::new();
-    if self.is_prop {
-      res.push(self.idx);
+    if let GroupLoc::Local(idx) = self.loc {
+      res.push(idx);
     }
-    for prop in self.group_props.iter() {
-      res.append(&mut prop.sub_group_props());
+    for prop in self.props.iter() {
+      res.append(&mut prop.sub_props());
     }
     return res;
   }
 
-  fn subst_bind(&mut self, old: usize, new: &Value) {
-    for prop in self.group_props.iter_mut() {
-      prop.subst_bind(old, new);
-    }
-    for prop in self.value_props.iter_mut() {
-      prop.subst(&Value::Splice(old), new);
-    }
-  }
-
-  fn subst_group_prop(&mut self, old: usize, new: &GroupRef) {
-    for prop in self.group_props.iter_mut() {
-      prop.subst_group_prop(old, new);
+  fn subst_prop(&mut self, old: usize, new: &GroupRef) {
+    for prop in self.props.iter_mut() {
+      prop.subst_prop(old, new);
     }
     // Subst this group specifically - WARN: must be after?
-    if self.is_prop && self.idx == old {
-      let mut old_group_props = self.group_props.clone();
-      let mut old_value_props = self.value_props.clone();
-      *self = new.clone();
-      self.group_props.append(&mut old_group_props);
-      self.value_props.append(&mut old_value_props);
+    if let GroupLoc::Local(idx) = self.loc {
+      if idx == old {
+        let mut old_props = self.props.clone();
+        *self = new.clone();
+        self.props.append(&mut old_props);
+      }
     }
   }
+}
 
-  fn map_values<F: FnMut(&Value) -> Value>(&self, f: F) -> GroupRef {
-    fn run<F: FnMut(&Value) -> Value>(this: &GroupRef, mut f: std::rc::Rc<F>) -> GroupRef {
-      return GroupRef {
-        is_prop: this.is_prop,
-        idx: this.idx,
-        group_props: this
-          .group_props
-          .iter()
-          .map(|group| run(group, f.clone()))
-          .collect(),
-        value_props: this
-          .value_props
-          .iter()
-          .map(std::rc::Rc::get_mut(&mut f).unwrap())
-          .collect(),
-      };
+impl Guard {
+  fn subst_prop(&mut self, old: usize, new: &GroupRef) {
+    for next in self.nexts.iter_mut() {
+      next.subst_prop(old, new);
     }
-
-    return run(self, std::rc::Rc::new(f));
   }
 }
 
 impl Reducer {
-  fn subst_bind(&mut self, old: usize, new: &Value) {
-    self.input = self
-      .input
-      .iter()
-      .flat_map(|consume| consume.clone().subst_bind(old, new))
-      .collect();
-    self.output.subst(&Value::Splice(old), new);
-    for next in self.nexts.iter_mut() {
-      next.subst_bind(old, new);
-    }
+  fn subst_prop(&mut self, old: usize, new: &GroupRef) {
+    self.main.subst_prop(old, new);
     for guard in self.guards.iter_mut() {
-      guard.subst_bind(old, new);
-    }
-  }
-
-  fn subst_group_prop(&mut self, old: usize, new: &GroupRef) {
-    for next in self.nexts.iter_mut() {
-      next.subst_group_prop(old, new);
-    }
-    for guard in self.guards.iter_mut() {
-      guard.subst_group_prop(old, new);
-    }
-  }
-}
-
-impl Statement {
-  fn subst_bind(&mut self, old: usize, new: &Value) {
-    match self {
-      Statement::Reducer(reducer) => reducer.subst_bind(old, new),
-      Statement::Group(group_ref) => group_ref.subst_bind(old, new),
-    }
-  }
-
-  fn subst_group_prop(&mut self, old: usize, new: &GroupRef) {
-    match self {
-      Statement::Reducer(reducer) => reducer.subst_group_prop(old, new),
-      Statement::Group(group_ref) => group_ref.subst_group_prop(old, new),
+      guard.subst_prop(old, new);
     }
   }
 }
 
 impl GroupDef {
   pub fn from_no_env(x: GroupDefSerial) -> GroupDef {
-    let stmts = x.statements;
     return GroupDef {
-      group_props: x.group_props,
-      value_props: x.value_props,
-      statements: EnumMap::from(|typ| stmts[typ as usize].clone()),
+      props: x.props,
+      reducers: x.reducers,
       env: Weak::new(),
     };
   }
 
-  fn subst_bind(&mut self, old: usize, new: &Value) {
-    for (_, stmts) in self.statements.iter_mut() {
-      for stmt in stmts {
-        stmt.subst_bind(old, new);
-      }
+  fn subst_prop(&mut self, old: usize, new: &GroupRef) {
+    for red in self.reducers.iter_mut() {
+      red.subst_prop(old, new);
     }
   }
 
-  fn subst_group_prop(&mut self, old: usize, new: &GroupRef) {
-    for (_, stmts) in self.statements.iter_mut() {
-      for stmt in stmts {
-        stmt.subst_group_prop(old, new);
-      }
-    }
-  }
-
-  fn subst_group_props<G: Borrow<GroupRef>, I: IntoIterator<Item = G>>(&mut self, in_props: I) {
-    let old_props = self.group_props.clone();
-    self.group_props = Vec::new();
+  fn subst_props<G: Borrow<GroupRef>, I: IntoIterator<Item = G>>(&mut self, in_props: I) {
+    let old_props = self.props.clone();
+    self.props = Vec::new();
     for (prop_idx, in_prop) in Iterator::zip(old_props.into_iter(), in_props) {
       let in_prop = in_prop.borrow();
-      let mut in_prop_idxs = in_prop.sub_group_props();
-      self.group_props.append(&mut in_prop_idxs);
-      self.subst_group_prop(prop_idx, in_prop)
+      let mut in_prop_idxs = in_prop.sub_props();
+      self.props.append(&mut in_prop_idxs);
+      self.subst_prop(prop_idx, in_prop)
     }
   }
 
-  fn subst_value_props<V: Borrow<Value>, I: IntoIterator<Item = V>>(&mut self, in_props: I) {
-    let old_props = self.value_props.clone();
-    self.value_props = Vec::new();
-    for (prop_idx, in_prop) in Iterator::zip(old_props.into_iter(), in_props) {
-      let in_prop = in_prop.borrow();
-      let mut in_prop_idxs = in_prop.sub_splices();
-      self.value_props.append(&mut in_prop_idxs);
-      dprint!(
-        "PRINT_REDUCE",
-        "Substituting {:?} with {}",
-        prop_idx,
-        in_prop
-      );
-      self.subst_bind(prop_idx, in_prop);
-    }
-  }
-
-  fn resolve(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    group_ref: &GroupRef,
-  ) -> GroupDef {
-    let mut group = self.env.upgrade().unwrap()[group_ref.idx].clone();
-    dprint!("PRINT_REDUCE", "Resolving {:?} [", group_ref.idx);
-    let group_props = group_ref
-      .group_props
-      .iter()
-      .map(|gprop| gprop.map_values(|val| self.apply_produce(session, binds, val)));
-    group.subst_group_props(group_props);
-    let value_props = group_ref
-      .value_props
-      .iter()
-      .map(|val| self.apply_produce(session, binds, val));
-    group.subst_value_props(value_props);
-    dprint!("PRINT_REDUCE", "] done resolving {:?}\n", group_ref.idx);
+  fn resolve(&self, group_idx: usize, group_props: &Vec<GroupRef>) -> GroupDef {
+    let mut group = self.env.upgrade().unwrap()[group_idx].clone();
+    dprint!("PRINT_REDUCE", "Resolving {:?} [", group_idx);
+    group.subst_props(group_props);
+    dprintln!("PRINT_REDUCE", "] done resolving {:?}", group_idx);
     return group;
   }
 
-  fn apply_if_function(&self, session: &mut Session, x: &mut Value) {
-    if let Value::Record { head, props } = x {
-      if head == "#Flush" {
-        *x = props[0].clone();
-        x.flush();
-      } else if head.starts_with("#") {
-        let head = String::from(&head[1..]);
-        *x = session.call_fun_val(head, props.clone());
-      }
-    }
-  }
-
-  fn apply_functions(&self, session: &mut Session, x: &mut Value) {
-    if let Value::Record { head: _, props } = x {
-      for sub in props {
-        self.apply_functions(session, sub);
-      }
-    }
-    self.apply_if_function(session, x);
+  fn apply_function(&self, session: &mut Session, x: &Value, head: &String) -> ReduceResult {
+    match session.call_fun_val(&head, &x) {
+      None => return ReduceResult::Fail,
+      Some(out) => return ReduceResult::Success(out),
+    };
   }
 
   fn apply_consume(
     &self,
-    session: &mut Session,
     stack: &mut Vec<Value>,
-    binds: &mut BindStack,
+    binds: &mut BindFrame,
     consume: &Consume,
-  ) -> ReduceResult {
+  ) -> bool {
     let consumed = stack.pop().unwrap();
     match consume.clone() {
       Consume::Prim(in_prim) => {
@@ -403,217 +250,125 @@ impl GroupDef {
           }
         }
       }
-      Consume::Function { head, props } => {
-        let mut out = session.call_fun_val(head, props);
-        self.apply_functions(session, &mut out);
-        return consumed == out;
-      }
     }
   }
 
-  fn apply_produce(&self, session: &mut Session, binds: &mut BindStack, output: &Value) -> Value {
-    dprint!("PRINT_REDUCE", "Producing {} -> ", output);
-    let mut res = output.clone();
-    //Keep raw splices, don't error
-    res.fill_splices(|idx| binds[idx].as_ref().cloned().unwrap_or(Value::Splice(idx)));
-    self.apply_functions(session, &mut res);
-    dprint!("PRINT_REDUCE", "{}\n", res);
-    return res;
-  }
-
-  fn consume(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    x: &Value,
-    consumes: &Vec<Consume>,
-    guards: &Vec<Statement>,
-  ) -> ReduceResult {
+  fn consume(&self, binds: &mut BindFrame, x: &Value, consumes: &Vec<Consume>) -> bool {
     dprint!("PRINT_REDUCE", "Consuming {:?} ", consumes);
     let mut stack = vec![x.clone()];
     for consume in consumes {
-      if !self.apply_consume(session, &mut stack, binds, &consume) {
-        dprint!("PRINT_REDUCE", "- Failed\n");
+      if !self.apply_consume(&mut stack, binds, &consume) {
+        dprintln!("PRINT_REDUCE", "- Failed");
         return false;
       }
     }
-    for guard in guards {
-      dprint!("PRINT_REDUCE", "+ Guard[");
-      let guard = guard.clone();
-      let guard_res = self.guard_statement(session, binds, &guard);
-      dprint!("PRINT_REDUCE", "] ");
-      if !guard_res {
-        dprint!("PRINT_REDUCE", "- Failed\n");
-        return false;
-      }
-    }
-    dprint!("PRINT_REDUCE", "- Succeeded\n");
+    dprintln!("PRINT_REDUCE", "- Succeeded");
     return true;
+  }
+
+  fn apply_produce(&self, binds: &BindFrame, output: &Value) -> Value {
+    dprint!("PRINT_REDUCE", "Producing {} -> ", output);
+    let mut out = output.clone();
+    out.fill_splices(|idx| binds[idx].as_ref().cloned().unwrap_or(Value::Splice(idx)));
+    dprintln!("PRINT_REDUCE", "{}", out);
+    return out;
+  }
+
+  fn _advance(&self, session: &mut Session, x: &Value, next: &GroupRef) -> ReduceResult {
+    match &next.loc {
+      GroupLoc::Global(idx) => {
+        return self
+          .resolve(*idx, &next.props)
+          .transform_nested(session, &x);
+      }
+      GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),
+      GroupLoc::Function(head) => return self.apply_function(session, x, head),
+    };
+  }
+
+  fn advance(&self, session: &mut Session, x: &Value, next: &GroupRef) -> ReduceResult {
+    dprint_wrap!("PRINT_REDUCE", "Advance", self._advance(session, &x, &next));
+  }
+
+  fn advance_all(&self, session: &mut Session, x: &Value, nexts: &Vec<GroupRef>) -> ReduceResult {
+    let mut out = x.clone();
+    for next in nexts {
+      match self.advance(session, &out, &next) {
+        ReduceResult::Fail => return ReduceResult::Fail,
+        ReduceResult::Success(res) => out = res,
+      };
+    }
+    return ReduceResult::Success(out);
   }
 
   fn produce(
     &self,
     session: &mut Session,
-    binds: &mut BindStack,
+    binds: &BindFrame,
     output: &Value,
     nexts: &Vec<GroupRef>,
-  ) -> Value {
-    let mut res = self.apply_produce(session, binds, &output);
-    for next in nexts {
-      let next = next.clone();
-      self.resolve(session, binds, &next).reduce_nested(
-        session,
-        binds,
-        ReduceType::Regular,
-        &mut res,
-      );
-    }
-    return res;
-  }
-
-  fn guard_reducer(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    reducer: &Reducer,
   ) -> ReduceResult {
-    let mut out = self.apply_produce(session, binds, &reducer.output);
-    for next in &reducer.nexts {
-      let next = next.clone();
-      let next_res = self.resolve(session, binds, &next).reduce_nested(
-        session,
-        binds,
-        ReduceType::Regular,
-        &mut out,
-      );
-      if !next_res {
-        return false;
-      }
-    }
-    return self.consume(session, binds, &out, &reducer.input, &reducer.guards);
+    let out = self.apply_produce(binds, &output);
+    return self.advance_all(session, &out, &nexts);
   }
 
-  fn apply_reducer(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    x: &mut Value,
-    reducer: &Reducer,
-  ) -> ReduceResult {
-    binds.push(&self.value_props);
-    if !self.consume(session, binds, x, &reducer.input, &reducer.guards) {
-      binds.pop();
-      return false;
-    }
-    *x = self.produce(session, binds, &reducer.output, &reducer.nexts);
-    binds.pop();
-    return true;
+  fn _guard(&self, session: &mut Session, binds: &mut BindFrame, guard: &Guard) -> bool {
+    match self.produce(session, binds, &guard.output, &guard.nexts) {
+      ReduceResult::Fail => return false,
+      ReduceResult::Success(out) => return self.consume(binds, &out, &guard.input),
+    };
   }
 
-  fn guard_statement(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    statement: &Statement,
-  ) -> ReduceResult {
-    match statement {
-      Statement::Reducer(reducer) => return self.guard_reducer(session, binds, reducer),
-      Statement::Group(group_ref) => {
-        return self
-          .resolve(session, binds, group_ref)
-          .guard(session, binds);
-      }
-    }
+  fn guard(&self, session: &mut Session, binds: &mut BindFrame, guard: &Guard) -> bool {
+    dprint_wrap!("PRINT_REDUCE", "Guard", self._guard(session, binds, &guard));
   }
 
-  fn apply_statement(
-    &self,
-    session: &mut Session,
-    binds: &mut BindStack,
-    reduce_type: ReduceType,
-    x: &mut Value,
-    statement: &Statement,
-  ) -> ReduceResult {
-    match statement {
-      Statement::Reducer(reducer) => return self.apply_reducer(session, binds, x, reducer),
-      Statement::Group(group_ref) => {
-        // WARN: Binds necessary?
-        return self.resolve(session, binds, group_ref).reduce_nested(
-          session,
-          binds,
-          reduce_type,
-          x,
-        );
-      }
-    }
-  }
-
-  fn guard(&self, session: &mut Session, binds: &mut BindStack) -> ReduceResult {
-    for stmt in &self.statements[ReduceType::Regular] {
-      if !self.guard_statement(session, binds, &stmt) {
+  fn guard_all(&self, session: &mut Session, binds: &mut BindFrame, guards: &Vec<Guard>) -> bool {
+    for guard in guards {
+      let guard_res = self.guard(session, binds, &guard);
+      if !guard_res {
         return false;
       }
     }
     return true;
   }
 
-  fn reduce_nested(
-    &self,
-    session: &mut Session,
-    in_binds: &mut BindStack,
-    reduce_type: ReduceType,
-    x: &mut Value,
-  ) -> ReduceResult {
-    dprint!("PRINT_REDUCE", "Reducing {}\n", x);
-    for stmt in self.statements[reduce_type].iter() {
-      let reduce_res = self.apply_statement(session, in_binds, reduce_type, x, stmt);
-      if reduce_res {
-        return true;
-      }
+  fn _reduce(&self, session: &mut Session, x: &Value, reducer: &Reducer) -> ReduceResult {
+    let mut binds = BindFrame::new();
+    if !self.consume(&mut binds, x, &reducer.main.input) {
+      return ReduceResult::Fail;
     }
-    if reduce_type == ReduceType::Regular {
-      for alt_out_stmt in self.statements[ReduceType::EvalCtx].iter() {
-        let mut alt_out = Value::Record {
-          head: String::from("E"),
-          props: vec![x.clone()],
-        };
-        if self.apply_statement(
-          session,
-          in_binds,
-          ReduceType::EvalCtx,
-          &mut alt_out,
-          &alt_out_stmt,
-        ) {
-          let mut progress = false;
-          alt_out.modify_children(&mut |alt_in| {
-            if let Value::Record { head, props: p } = alt_in {
-              if head == "E" {
-                *alt_in = p.first().unwrap().clone();
-                if self.reduce_nested(session, in_binds, reduce_type, alt_in) {
-                  progress = true;
-                }
-                return false;
-              }
-            }
-            return true;
-          });
-          if progress {
-            *x = alt_out;
-            self.reduce_nested(session, in_binds, reduce_type, x);
-            return true;
-          }
-        }
-      }
+    if !self.guard_all(session, &mut binds, &reducer.guards) {
+      return ReduceResult::Fail;
     }
-    return false;
+    return self.produce(session, &binds, &reducer.main.output, &reducer.main.nexts);
   }
 
-  pub fn reduce(&self, session: &mut Session, x: &mut Value) -> ReduceResult {
+  fn reduce(&self, session: &mut Session, x: &Value, reducer: &Reducer) -> ReduceResult {
+    dprint_wrap!(
+      "PRINT_REDUCE",
+      "Reducer",
+      self._reduce(session, &x, &reducer)
+    );
+  }
+
+  fn transform_nested(&self, session: &mut Session, x: &Value) -> ReduceResult {
+    dprintln!("PRINT_REDUCE", "Reducing {}", x);
+    for red in self.reducers.iter() {
+      let reduce_res = self.reduce(session, x, red);
+      if let ReduceResult::Success(out) = reduce_res {
+        return ReduceResult::Success(out);
+      }
+    }
+    return ReduceResult::Fail;
+  }
+
+  pub fn transform(&self, session: &mut Session, x: &Value) -> ReduceResult {
     assert!(
-      self.group_props.is_empty() && self.value_props.is_empty(),
+      self.props.is_empty(),
       "can't reduce as initial group, not the initial group, has properties"
     );
-    dprint!("PRINT_REDUCE", "--- NEW PROGRAM\n");
-    return self.reduce_nested(session, &mut BindStack::root(), ReduceType::Regular, x);
+    dprintln!("PRINT_REDUCE", "--- NEW PROGRAM");
+    return self.transform_nested(session, x);
   }
 }

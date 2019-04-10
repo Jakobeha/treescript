@@ -56,15 +56,17 @@ TopLevel : RecordDecl { TopLevelRecordDecl $1 }
          ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Reducer : Value '->' Value Groups Guards ';'
-        { Reducer (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4 <> map getAnn $5) $1 $3 (reverse $4) (reverse $5) }
+Reducer : ReducerBase Guards ';'
+        { Reducer (sconcat $ getAnn $1 N.<| $3 N.:| map getAnn $2) $1 (reverse $2) }
         ;
+ReducerBase : Value '->' Value Groups
+            { Guard (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)}
 GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
 Guards : { [] }
        | NonEmptyGuards { $1 }
        ;
-NonEmptyGuards : ',' Guard { [$1] }
-               | NonEmptyGuards ',' Guard { $2 : $1 }
+NonEmptyGuards : ',' Guard { [$2] }
+               | NonEmptyGuards ',' Guard { $3 : $1 }
                ;
 Guard : Value '<-' Value Groups
       { Guard (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)}
@@ -84,21 +86,22 @@ Primitive : int { PrimInteger (getAnn $1) (annd $1) }
           | float { PrimFloat (getAnn $1) (annd $1) }
           | string { PrimString (getAnn $1) (annd $1) }
           ;
-Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) False $1 (annd $2) }
-       | '#' UpperSym GenProperties { Record ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
+Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
        ;
-Group : '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) True $2 (annd $3) }
-      | '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) False $2 (annd $3) }
+Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocGlobal $1) $2 (annd $3) }
+      | '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocLocal $1) $2 (annd $3) }
+      | '#' UpperSym { Group ($1 <> getAnn $2) (GroupLocFunction $1) $2 [] }
       ;
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }
               ;
 NonEmptyGenProperties : GenProperty { [$1] }
-                      | NonEmptyGenProperties ';' GenProperty { $3 : $1 }
+                      | NonEmptyGenProperties ',' GenProperty { $3 : $1 }
                       ;
 GenProperty : LowerSym { GenPropertyDecl $1 }
             | SubGroupProperty { GenPropertySubGroup $1 }
             | Value { GenPropertyRecord $1 }
+            | Group { GenPropertyGroup $1 }
             ;
 SubGroupProperty : '&' LowerSym { SubGroupProperty ($1 <> getAnn $2) $2 }
                  ;

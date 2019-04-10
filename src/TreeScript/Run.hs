@@ -5,7 +5,6 @@ module TreeScript.Run
   , run
   ) where
 
-import qualified TreeScript.Ast.Flat as F
 import TreeScript.Compile
 import TreeScript.Misc
 import TreeScript.Plugin

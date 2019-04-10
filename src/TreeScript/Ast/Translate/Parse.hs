@@ -7,10 +7,7 @@ module TreeScript.Ast.Translate.Parse
 
 import TreeScript.Ast.Translate.Types
 import qualified TreeScript.Ast.Core as C
-import TreeScript.Misc
 import TreeScript.Plugin
-
-import qualified Data.Array as A
 
 parseLibraries :: C.Program an -> SessionRes [Lib]
 parseLibraries = fmap (map parseLibrary) . C.getAllProgramUsedLibraries
@@ -27,7 +24,7 @@ parsePrim (C.PrimString _ x) = PrimString x
 
 parseRecord :: C.Record an -> Record
 parseRecord (C.Record _ head' props) = Record
-  { recordHead = pprint head'
+  { recordHead = head'
   , recordProps = map parseValue props
   }
 
@@ -38,43 +35,39 @@ parseValue (C.ValueBind bind) = ValueSplice $ C.bindIdx bind
 
 parseConsumes :: C.Value an -> [Consume]
 parseConsumes (C.ValuePrimitive prim) = [ConsumePrimitive $ parsePrim prim]
-parseConsumes (C.ValueRecord (C.Record _ (C.RecordHead False head') props))
+parseConsumes (C.ValueRecord (C.Record _ head' props))
   = ConsumeRecord head' : concatMap parseConsumes props
-parseConsumes (C.ValueRecord (C.Record _ (C.RecordHead True head') props))
-  = [ConsumeFunction head' $ map parseValue props]
 parseConsumes (C.ValueBind bind) = [ConsumeSplice $ C.bindIdx bind]
 
+parseGroupLoc :: C.GroupLoc an -> GroupLoc
+parseGroupLoc (C.GroupLocGlobal _ idx) = GroupLocGlobal idx
+parseGroupLoc (C.GroupLocLocal _ idx) = GroupLocLocal idx
+parseGroupLoc (C.GroupLocFunction _ txt) = GroupLocFunction txt
+
 parseGroupRef :: C.GroupRef an -> GroupRef
-parseGroupRef (C.GroupRef _ isProp idx gprops vprops) = GroupRef
-  { groupRefIsProp = isProp
-  , groupRefIdx = idx
-  , groupRefGroupProps = map parseGroupRef gprops
-  , groupRefValueProps = map parseValue vprops
+parseGroupRef (C.GroupRef _ loc props) = GroupRef
+  { groupRefLoc = parseGroupLoc loc
+  , groupRefProps = map parseGroupRef props
+  }
+
+parseGuard :: C.Guard an -> Guard
+parseGuard (C.Guard _ input output nexts) = Guard
+  { guardInput = parseConsumes input
+  , guardOutput = parseValue output
+  , guardNexts = map parseGroupRef nexts
   }
 
 parseReducer :: C.Reducer an -> Reducer
-parseReducer (C.Reducer _ input output nexts guards) = Reducer
-  { reducerInput = parseConsumes input
-  , reducerOutput = parseValue output
-  , reducerNexts = map parseGroupRef nexts
-  , reducerGuards = map parseStatement guards
+parseReducer (C.Reducer _ main guards) = Reducer
+  { reducerMain = parseGuard main
+  , reducerGuards = map parseGuard guards
   }
-
-parseStatement :: C.Statement an -> Statement
-parseStatement (C.StatementGroup group)
-  = StatementGroup $ parseGroupRef group
-parseStatement (C.StatementReducer reducer)
-  = StatementReducer $ parseReducer reducer
 
 parseGroupDef :: C.GroupDef an -> GroupDef
-parseGroupDef (C.GroupDef _ gprops vprops stmts) = GroupDef
-  { groupDefGroupProps = map C.bindIdx gprops
-  , groupDefValueProps = map C.bindIdx vprops
-  , groupDefStatements = map (map parseStatement) $ A.elems stmts
+parseGroupDef (C.GroupDef _ props reds) = GroupDef
+  { groupDefProps = map C.bindIdx props
+  , groupDefReducers = map parseReducer reds
   }
-
-parseMainStatements :: C.Program an -> SessionRes [Statement]
-parseMainStatements = pure . map parseStatement . C.programMainStatements
 
 parseGroups :: C.Program an -> SessionRes [GroupDef]
 parseGroups = pure . map parseGroupDef . C.programGroups
@@ -84,5 +77,4 @@ parse :: C.Program an -> SessionRes Program
 parse prog
     = Program
   <$> parseLibraries prog
-  <*> parseMainStatements prog
   <*> parseGroups prog

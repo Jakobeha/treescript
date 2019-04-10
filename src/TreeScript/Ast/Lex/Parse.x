@@ -301,7 +301,7 @@ maxErrorInputLength = 32 -- TODO Make a user setting?
 
 getInputErrorDesc :: ByteString.ByteString -> T.Text
 getInputErrorDesc inp
-  | T.null inp' = "end of file"
+  | T.null inp' = "chars or end of file"
   | T.null inp'' = "end of line"
   | otherwise = "chars: " <> inp''
   where inp' = T.filter (/= '\r') $ T.takeWhile (/= '\n') $ convertStr inp

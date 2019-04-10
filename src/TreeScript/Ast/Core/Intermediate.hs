@@ -52,25 +52,19 @@ data Variance
 
 -- = Intermediate AST
 
--- | The head of a group reference, and whether it's a property - property heads become indices before value heads.
-data GroupHead an
-  = GroupHeadGlobal (S.Symbol an)
-  | GroupHeadProp (C.Bind an)
+-- | The type and identifier of a group reference.
+data GroupLoc an
+  = GroupLocGlobal (S.Symbol an)
+  | GroupLocLocal (C.Bind an)
+  | GroupLocFunction (S.Symbol an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
+-- | References a group - group gets applied when the reducer or guard matches, and if it fails, the entire reducer / guard fails.
 data GroupRef an
   = GroupRef
   { groupRefAnn :: an
-  , groupRefHead :: GroupHead an
-  , groupRefSubgroups :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | A group as a statement.
-data GroupStmt an
-  = GroupStmt
-  { groupStmtAnn :: an
-  , groupStmtRef :: GroupRef an
+  , groupRefLoc :: GroupLoc an
+  , groupRefProps :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches an input value against an output value. Like a "let" statement.
@@ -95,7 +89,7 @@ data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefSubgroups :: [(T.Text, C.Bind an)]
+  , groupDefProps :: [(T.Text, C.Bind an)]
   , groupDefReducers :: [Reducer an]
   , groupDefPropEnv :: GroupValEnv BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)

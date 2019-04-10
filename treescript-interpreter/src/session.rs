@@ -118,7 +118,7 @@ impl Library {
     );
   }
 
-  fn call_fun(&mut self, name: String, args: Vec<Value>) -> Value {
+  fn call_fun(&mut self, name: String, args: Vec<Value>) -> Option<Value> {
     let process = self
       .process
       .as_mut()
@@ -141,9 +141,7 @@ impl Library {
         props: args,
       })
       .expect("can't call function - couldn't send input to library process");
-    return parser
-      .scan_value()
-      .expect("can't call function - library process didn't give output");
+    return parser.scan_value();
   }
 
   fn stop(&mut self) {
@@ -260,7 +258,7 @@ impl Session {
     }
   }
 
-  fn call_fun(&mut self, lib: &String, name: String, args: Vec<Value>) -> Value {
+  fn call_fun(&mut self, lib: &String, name: String, args: Vec<Value>) -> Option<Value> {
     let lib = self
       .libs
       .get_mut(lib)
@@ -268,9 +266,9 @@ impl Session {
     return lib.call_fun(name, args);
   }
 
-  pub fn call_fun_val(&mut self, head: String, args: Vec<Value>) -> Value {
-    if let Some((lib, name)) = Value::record_head_to_fun(&head) {
-      return self.call_fun(&lib, name, args);
+  pub fn call_fun_val(&mut self, head: &String, args_val: &Value) -> Option<Value> {
+    if let Some((lib, name)) = Value::record_head_to_fun(head) {
+      return self.call_fun(&lib, name, args_val.to_args());
     } else {
       panic!(
         "Can't extract function lib and name from record head: {}",

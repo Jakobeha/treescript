@@ -13,20 +13,21 @@ module TreeScript.Ast.Core.Types
 import TreeScript.Misc
 
 import qualified Data.Text as T
+import qualified Data.Set as S
 import GHC.Generics
 
--- | The type of a record.
-data RecordHead
-  = RecordHead
-  { recordHeadIsFunc :: Bool
-  , recordHeadName :: T.Text
+-- | Declares a type of record or function but doesn't specifify property values.
+data DeclCompact
+  = DeclCompact
+  { declCompactHead :: T.Text
+  , declCompactNumProps :: Int
   } deriving (Eq, Ord, Read, Show)
 
--- | Declares a type of record but doesn't specifify property values.
-data RecordDeclCompact
-  = RecordDeclCompact
-  { recordDeclCompactHead :: RecordHead
-  , recordDeclCompactNumProps :: Int
+-- | Declares what nodes a language or library enables.
+data DeclSet
+  = DeclSet
+  { declSetRecords :: S.Set DeclCompact
+  , declSetFunctions :: S.Set DeclCompact
   }
 
 -- | Declares a type of record.
@@ -48,7 +49,7 @@ data Primitive an
 data Record an
   = Record
   { recordAnn :: an
-  , recordHead :: RecordHead
+  , recordHead :: T.Text
   , recordProps :: [Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -66,13 +67,19 @@ data Value an
   | ValueBind (Bind an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | The type and identifier of a group.
+data GroupLoc an
+  = GroupLocGlobal an Int
+  | GroupLocLocal an Int
+  | GroupLocFunction an T.Text
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
 data GroupRef an
   = GroupRef
   { groupRefAnn :: an
-  , groupRefIsProp :: Bool
-  , groupRefIdx :: Int
-  , groupRefSubgroups :: [GroupRef an]
+  , groupRefLoc :: GroupLoc an
+  , groupRefProps :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches a value against a different value. Like a "let" statement.
@@ -96,7 +103,7 @@ data Reducer an
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
-  , groupDefGroupProps :: [Bind an]
+  , groupDefProps :: [Bind an]
   , groupDefReducers :: [Reducer an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -108,8 +115,22 @@ data Program an
   , programGroups :: [GroupDef an]
   }
 
+instance Semigroup DeclSet where
+  DeclSet xRecs xFuns <> DeclSet yRecs yFuns
+    = DeclSet
+    { declSetRecords = xRecs <> yRecs
+    , declSetFunctions = xFuns <> yFuns
+    }
+
+instance Monoid DeclSet where
+  mempty
+    = DeclSet
+    { declSetRecords = mempty
+    , declSetFunctions = mempty
+    }
+
 instance (Semigroup an) => Semigroup (Program an) where
-  Program xAnn xDecls xStmts xGroups <> Program yAnn yDecls yStmts yGroups
+  Program xAnn xDecls xGroups <> Program yAnn yDecls yGroups
     = Program
     { programAnn = xAnn <> yAnn
     , programRecordDecls = xDecls <> yDecls
@@ -124,13 +145,6 @@ instance (Monoid an) => Monoid (Program an) where
     , programGroups = mempty
     }
 
-instance Printable RecordHead where
-  pprint (RecordHead isFunc name)
-    = printIsFunc <> name
-    where printIsFunc
-            | isFunc = "#"
-            | otherwise = T.empty
-
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
     = head' <> "[" <> T.intercalate "; " props <> "]."
@@ -142,7 +156,7 @@ instance Printable (Primitive an) where
 
 instance Printable (Record an) where
   pprint (Record _ head' props)
-    = pprint head' <> "[" <> T.intercalate "; " (map pprint props) <> "]"
+    = head' <> "[" <> T.intercalate ", " (map pprint props) <> "]"
 
 instance Printable (Bind an) where
   pprint (Bind _ idx) = "\\" <> pprint idx
@@ -152,15 +166,14 @@ instance Printable (Value an) where
   pprint (ValueRecord record) = pprint record
   pprint (ValueBind bind) = pprint bind
 
+instance Printable (GroupLoc an) where
+  pprint (GroupLocGlobal _ idx) = "&+" <> pprint idx
+  pprint (GroupLocLocal _ idx) = "&-" <> pprint idx
+  pprint (GroupLocFunction _ txt) = "#" <> txt
+
 instance Printable (GroupRef an) where
-  pprint (GroupRef _ isProp head' gprops vprops)
-     = "&"
-    <> printIsProp isProp
-    <> pprint head'
-    <> printGroupProps pprint gprops
-    <> printProps pprint vprops
-    where printIsProp False = "+"
-          printIsProp True = "-"
+  pprint (GroupRef _ loc gprops)
+    = pprint loc <> printProps pprint gprops
 
 instance Printable (Guard an) where
   pprint (Guard _ input output nexts)
@@ -198,53 +211,46 @@ printGroupDef head' (GroupDef _ gprops reds)
           <> "."
         printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
 
-mkBuiltinDecl :: Bool -> T.Text -> Int -> RecordDeclCompact
-mkBuiltinDecl isFunc head' numProps
-  = RecordDeclCompact
-  { recordDeclCompactHead
-      = RecordHead
-      { recordHeadIsFunc = isFunc
-      , recordHeadName = head'
-      }
-  , recordDeclCompactNumProps = numProps
+mkBuiltinDecl :: T.Text -> Int -> DeclCompact
+mkBuiltinDecl head' numProps
+  = DeclCompact
+  { declCompactHead = head'
+  , declCompactNumProps = numProps
   }
 
 -- | Specifies that a record declaration can take any number of properties.
 varNumProps :: Int
 varNumProps = (-1)
 
-builtinDecls :: [RecordDeclCompact]
-builtinDecls =
-  [ mkBuiltinDecl False "T" varNumProps
-  , mkBuiltinDecl False "Unit" 0
-  , mkBuiltinDecl False "True" 0
-  , mkBuiltinDecl False "False" 0
-  , mkBuiltinDecl False "Nil" 0
-  , mkBuiltinDecl False "None" 0
-  , mkBuiltinDecl False "Some" 1
-  , mkBuiltinDecl False "Cons" 2
-  , mkBuiltinDecl False "Hole" 1
-  ]
+builtinDecls :: DeclSet
+builtinDecls
+  = DeclSet
+  { declSetRecords
+      = S.fromList
+      [ mkBuiltinDecl "T" varNumProps
+      , mkBuiltinDecl "Unit" 0
+      , mkBuiltinDecl "True" 0
+      , mkBuiltinDecl "False" 0
+      , mkBuiltinDecl "Nil" 0
+      , mkBuiltinDecl "None" 0
+      , mkBuiltinDecl "Some" 1
+      , mkBuiltinDecl "Cons" 2
+      , mkBuiltinDecl "Hole" 1
+      ]
+  , declSetFunctions = S.empty
+  }
 
-compactRecordDecl :: RecordDecl an -> RecordDeclCompact
+compactRecordDecl :: RecordDecl an -> DeclCompact
 compactRecordDecl (RecordDecl _ head' props)
-  = RecordDeclCompact
-  { recordDeclCompactHead
-      = RecordHead
-      { recordHeadIsFunc = False
-      , recordHeadName = head'
-      }
-  , recordDeclCompactNumProps = length props
+  = DeclCompact
+  { declCompactHead = head'
+  , declCompactNumProps = length props
   }
 
 hole :: an -> an -> Int -> Value an
 hole ann idxAnn idx
   = ValueRecord Record
   { recordAnn = ann
-  , recordHead
-      = RecordHead
-      { recordHeadIsFunc = False
-      , recordHeadName = "Hole"
-      }
+  , recordHead = "Hole"
   , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
   }

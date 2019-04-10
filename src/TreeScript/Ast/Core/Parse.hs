@@ -17,7 +17,6 @@ import TreeScript.Plugin
 
 import Control.Monad.Reader
 import Control.Monad.State.Strict
-import qualified Data.Array as A
 import Data.Bifunctor
 import Data.List hiding (group)
 import qualified Data.List.NonEmpty as N
@@ -61,11 +60,7 @@ decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse 
       pure
         ( Record
           { recordAnn = Nothing
-          , recordHead
-              = RecordHead
-              { recordHeadIsFunc = False
-              , recordHeadName = head'
-              }
+          , recordHead = head'
           , recordProps = props
           },
           rest'
@@ -104,11 +99,13 @@ parseValPropDecl (S.GenPropertySubGroup prop) = do
 parseValPropDecl (S.GenPropertyRecord val) = do
   tellError $ parseError (getAnn val) "expected lowercase symbol, got value"
   pure undefinedSym
+parseValPropDecl (S.GenPropertyGroup grp) = do
+  tellError $ parseError (getAnn grp) "expected value, got group"
+  pure undefinedSym
 
 parseRecordDecl :: S.RecordDecl Range -> SessionRes (RecordDecl Range)
-parseRecordDecl (S.RecordDecl rng (S.Record _ isFunc (S.Symbol _ head') props))
-  | isFunc = mkFail $ parseError rng $ "can't declare function"
-  | otherwise = RecordDecl rng head' <$> traverse parseValPropDecl props
+parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props))
+  = RecordDecl rng head' <$> traverse parseValPropDecl props
 
 parsePrim :: S.Primitive Range -> I.PropSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
@@ -124,10 +121,12 @@ parseValueProperty (S.GenPropertyDecl key)
 parseValueProperty (S.GenPropertySubGroup prop)
   = mkFail $ parseError (getAnn prop) "expected value, got group property declaration"
 parseValueProperty (S.GenPropertyRecord val) = parseValue val
+parseValueProperty (S.GenPropertyGroup grp)
+  = mkFail $ parseError (getAnn grp) "expected value, got group"
 
 parseRecord :: S.Record Range -> I.PropSessionRes (Record Range)
-parseRecord (S.Record rng isFunc (S.Symbol _ head') props)
-  = Record rng (RecordHead isFunc head') <$> traverseDropFatals parseValueProperty props
+parseRecord (S.Record rng (S.Symbol _ head') props)
+  = Record rng head' <$> traverseDropFatals parseValueProperty props
 
 parseBind :: S.Bind Range -> I.PropSessionRes (Bind Range)
 parseBind (S.Bind rng tgt)
@@ -178,65 +177,44 @@ parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
 parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code) = parseSpliceCode code
 parseValue (S.ValueHole (S.Hole ann (S.HoleIdx idxAnn idx))) = pure $ hole ann idxAnn idx
-parseValue (S.ValueGroup group)
-  = mkFail $ parseError (getAnn group) "expected value, got group"
 
-parseGroupHead1 :: Bool -> S.Symbol Range -> I.PropSessionRes (I.GroupHead Range)
-parseGroupHead1 False head' = pure $ I.GroupHeadGlobal head'
-parseGroupHead1 True (S.Symbol rng txt) = do
+parseGroupHead1 :: S.GroupLoc Range -> S.Symbol Range -> I.PropSessionRes (I.GroupLoc Range)
+parseGroupHead1 (S.GroupLocGlobal _) head' = pure $ I.GroupLocGlobal head'
+parseGroupHead1 (S.GroupLocLocal _) (S.Symbol rng txt) = do
   env <- get
   let (idx, newEnv) = I.bindEnvLookup txt $ I.groupValEnvGroup env
   put env{ I.groupValEnvGroup = newEnv }
-  pure $ I.GroupHeadProp $ Bind rng idx
+  pure $ I.GroupLocLocal $ Bind rng idx
+parseGroupHead1 (S.GroupLocFunction _) head' = pure $ I.GroupLocFunction head'
 
 parseGroupProperty1 :: S.GenProperty Range -> I.PropSessionRes (I.GroupRef Range)
 parseGroupProperty1 (S.GenPropertyDecl key)
   = mkFail $ parseError (getAnn key) "expected group, got lowercase symbol"
 parseGroupProperty1 (S.GenPropertySubGroup prop)
   = mkFail $ parseError (getAnn prop) "expected group, got group property declaration"
-parseGroupProperty1 (S.GenPropertyRecord val) = parseGroupRef1 val
+parseGroupProperty1 (S.GenPropertyRecord val)
+  = mkFail $ parseError (getAnn val) "expected group, got value"
+parseGroupProperty1 (S.GenPropertyGroup grp)
+  = parseGroupRef1 grp
 
-parseGroupRefFromGroup1 :: S.Group Range -> I.PropSessionRes (I.GroupRef Range)
-parseGroupRefFromGroup1 (S.Group rng isProp head' gprops vprops)
+parseGroupRef1 :: S.Group Range -> I.PropSessionRes (I.GroupRef Range)
+parseGroupRef1 (S.Group rng isProp head' props)
     = I.GroupRef rng
   <$> parseGroupHead1 isProp head'
-  <*> traverseDropFatals parseGroupProperty1 gprops
-  <*> traverseDropFatals parseValueProperty vprops
+  <*> traverseDropFatals parseGroupProperty1 props
 
-parseGroupRef1 :: S.Value Range -> I.PropSessionRes (I.GroupRef Range)
-parseGroupRef1 (S.ValueRecord (S.Record _ False (S.Symbol headAnn _) [S.GenPropertyRecord (S.ValueGroup _)]))
-  = mkFail $ parseError headAnn $ "can't specify reduce type of group not used as a statement"
-parseGroupRef1 (S.ValueGroup group)
-  = parseGroupRefFromGroup1 group
-parseGroupRef1 val
-  = mkFail $ parseError (getAnn val) "expected group (not statement), got value"
-
-parseGroupStmt1 :: S.Value Range -> I.PropSessionRes (I.GroupStmt Range)
-parseGroupStmt1 (S.ValueRecord (S.Record _ False (S.Symbol headAnn headSpec) [S.GenPropertyRecord (S.ValueGroup group)]))
-  | headSpec == "E"
-  = I.GroupStmt (getAnn group) ReduceTypeEvalCtx <$> parseGroupRefFromGroup1 group
-  | otherwise
-  = mkFail $ parseError headAnn $ "invalid reduce type specifier: " <> headSpec
-parseGroupStmt1 (S.ValueGroup group)
-  = I.GroupStmt (getAnn group) ReduceTypeRegular <$> parseGroupRefFromGroup1 group
-parseGroupStmt1 val
-  = mkFail $ parseError (getAnn val) "expected group statement, got value"
-
-parseGuard1 :: S.Statement Range -> I.PropSessionRes (I.Guard Range)
-parseGuard1 (S.StatementGroup group) = I.GuardGroup <$> parseGroupRef1 group
-parseGuard1 (S.StatementReducer red) = I.GuardReducer <$> parseReducer1 red
-
-parseReducer1 :: S.Reducer Range -> I.PropSessionRes (I.Reducer Range)
-parseReducer1 (S.Reducer rng input output nexts guards)
-    = I.Reducer rng
+parseGuard1 :: S.Guard Range -> I.PropSessionRes (I.Guard Range)
+parseGuard1 (S.Guard rng input output nexts)
+    = I.Guard rng
   <$> parseValue input
   <*> parseValue output
-  <*> traverse parseGroupRefFromGroup1 nexts
-  <*> traverse parseGuard1 guards
+  <*> traverse parseGroupRef1 nexts
 
-parseStatement1 :: S.Statement Range -> I.PropSessionRes (I.Statement Range)
-parseStatement1 (S.StatementGroup group) = I.StatementGroup <$> parseGroupStmt1 group
-parseStatement1 (S.StatementReducer red) = I.StatementReducer <$> parseReducer1 red
+parseReducer1 :: S.Reducer Range -> I.PropSessionRes (I.Reducer Range)
+parseReducer1 (S.Reducer rng main guards)
+    = I.Reducer rng
+  <$> parseGuard1 main
+  <*> traverse parseGuard1 guards
 
 parseSubGroupPropDecl1 :: S.GenProperty Range -> I.BindSessionRes (T.Text, Bind Range)
 parseSubGroupPropDecl1 (S.GenPropertyDecl prop) = do
@@ -248,55 +226,43 @@ parseSubGroupPropDecl1 (S.GenPropertySubGroup (S.SubGroupProperty rng (S.Symbol 
   pure (txt, Bind rng idx)
 parseSubGroupPropDecl1 (S.GenPropertyRecord val) = do
   mkFail $ parseError (getAnn val) "expected group property declaration, got value"
-
-parseGroupValPropDecl1 :: S.GenProperty Range -> I.BindSessionRes (T.Text, Bind Range)
-parseGroupValPropDecl1 (S.GenPropertyDecl (S.Symbol rng txt)) = do
-  env <- get
-  let (idx, newEnv) = I.bindEnvLookup txt env
-  put newEnv
-  pure (txt, Bind rng idx)
-parseGroupValPropDecl1 (S.GenPropertySubGroup prop) = do
-  mkFail $ parseError (getAnn prop) "expected lowercase symbol, got group property declaration"
-parseGroupValPropDecl1 (S.GenPropertyRecord val) = do
-  mkFail $ parseError (getAnn val) "expected lowercase symbol, got value"
+parseSubGroupPropDecl1 (S.GenPropertyGroup grp)
+  = mkFail $ parseError (getAnn grp) "expected group property declaration, got group"
 
 parseEmptyGroupDef1 :: S.GroupDecl Range -> I.FreeSessionRes (I.GroupDef Range)
-parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ isProp (S.Symbol headRng head') gprops vprops))
-  | isProp = mkFail $ parseError headRng "can't declare a lowercase group - lowercase groups are group properties"
-  | otherwise = do
-    (gprops', gbindEnv)
-      <- lift
-        $ (`runStateT` I.emptyBindEnv)
-        $ traverseDropFatals parseSubGroupPropDecl1 gprops
-    (vprops', vbindEnv)
-      <- lift
-        $ (`runStateT` I.emptyBindEnv)
-        $ traverseDropFatals parseGroupValPropDecl1 vprops
-    let propEnv = I.GroupValEnv
-          { I.groupValEnvGroup = gbindEnv
-          , I.groupValEnvValue = vbindEnv
+parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') props))
+  = case loc of
+      S.GroupLocGlobal _ -> do
+        (props', gbindEnv)
+          <- lift
+            $ (`runStateT` I.emptyBindEnv)
+            $ traverseDropFatals parseSubGroupPropDecl1 props
+        let propEnv = I.GroupValEnv
+              { I.groupValEnvGroup = gbindEnv
+              , I.groupValEnvValue = I.emptyBindEnv
+              }
+        put $ I.bindEnvNextFree <$> propEnv
+        pure I.GroupDef
+          { I.groupDefAnn = rng
+          , I.groupDefHead = head'
+          , I.groupDefProps = props'
+          , I.groupDefReducers = []
+          , I.groupDefPropEnv = propEnv
           }
-    put $ I.bindEnvNextFree <$> propEnv
-    pure I.GroupDef
-      { I.groupDefAnn = rng
-      , I.groupDefHead = head'
-      , I.groupDefGroupProps = gprops'
-      , I.groupDefValueProps = vprops'
-      , I.groupDefStatements = []
-      , I.groupDefPropEnv = propEnv
-      }
+      S.GroupLocLocal _ -> mkFail $ parseError headRng "can't declare a lowercase group, lowercase groups are group properties"
+      S.GroupLocFunction _ -> mkFail $ parseError headRng "can't declare a function, functions are provided by libraries"
 
 parseRestGroupDefs1 :: S.GroupDecl Range -> [S.TopLevel Range] -> I.FreeSessionRes (N.NonEmpty (I.GroupDef Range))
 parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
 parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
-parseRestGroupDefs1 decl (S.TopLevelStatement stmt : xs) = do
-  I.GroupDef yRng yHead yGProps yVProps yStmts yPropEnv N.:| ys <- parseRestGroupDefs1 decl xs
+parseRestGroupDefs1 decl (S.TopLevelReducer red : xs) = do
+  I.GroupDef yRng yHead yProps yReds yPropEnv N.:| ys <- parseRestGroupDefs1 decl xs
   nextFree <- get
   let yPropEnv' = I.zipGroupValEnvWith (\bindEnv nextFree' -> bindEnv{ I.bindEnvNextFree = nextFree' }) yPropEnv nextFree
-  (stmt', yPropEnv'') <- lift $ runStateT (parseStatement1 stmt) yPropEnv'
+  (red', yPropEnv'') <- lift $ runStateT (parseReducer1 red) yPropEnv'
   put $ I.bindEnvNextFree <$> yPropEnv''
-  let yStmts' = stmt' : yStmts
-  pure $ I.GroupDef (getAnn stmt <> yRng) yHead yGProps yVProps yStmts' yPropEnv'' N.:| ys
+  let yReds' = red' : yReds
+  pure $ I.GroupDef (getAnn red <> yRng) yHead yProps yReds' yPropEnv'' N.:| ys
 parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
 
@@ -307,65 +273,44 @@ parseAllGroupDefs1 (S.TopLevelGroupDecl x : xs)
 parseAllGroupDefs1 (_ : _) = error "expected group declaration when parsing group definitions"
 
 parseGroupRef2 :: I.GroupRef Range -> I.GroupSessionRes (GroupRef Range)
-parseGroupRef2 (I.GroupRef rng head' gprops vprops) = do
+parseGroupRef2 (I.GroupRef rng loc props) = do
   groupEnv <- ask
-  (isProp, groupIdx) <-
-    case head' of
-      I.GroupHeadGlobal (S.Symbol headRng headSym) ->
+  loc' <-
+    case loc of
+      I.GroupLocGlobal (S.Symbol headRng headSym) ->
         case groupEnv M.!? headSym of
           Nothing -> mkFail $ parseError headRng $ "undefined group: " <> headSym
-          Just idx -> pure (False, idx)
-      I.GroupHeadProp (Bind _ idx) -> pure (True, idx)
-  gprops' <- traverse parseGroupRef2 gprops
+          Just idx -> pure $ GroupLocGlobal headRng idx
+      I.GroupLocLocal (Bind headRng idx) -> pure $ GroupLocLocal headRng idx
+      I.GroupLocFunction (S.Symbol headRng headSym) -> pure $ GroupLocFunction headRng headSym
+  props' <- traverse parseGroupRef2 props
   pure GroupRef
     { groupRefAnn = rng
-    , groupRefIsProp = isProp
-    , groupRefIdx = groupIdx
-    , groupRefGroupProps = gprops'
-    , groupRefValueProps = vprops
+    , groupRefLoc = loc'
+    , groupRefProps = props'
     }
 
+parseGuard2 :: I.Guard Range -> I.GroupSessionRes (Guard Range)
+parseGuard2 (I.Guard rng input output nexts)
+  = Guard rng input output <$> traverse parseGroupRef2 nexts
+
 parseReducer2 :: I.Reducer Range -> I.GroupSessionRes (Reducer Range)
-parseReducer2 (I.Reducer rng input output nexts guards)
-    = Reducer rng input output
-  <$> traverse parseGroupRef2 nexts
+parseReducer2 (I.Reducer rng main guards)
+    = Reducer rng
+  <$> parseGuard2 main
   <*> traverse parseGuard2 guards
 
-parseGuard2 :: I.Guard Range -> I.GroupSessionRes (Statement Range)
-parseGuard2 (I.GuardGroup group)
-  = StatementGroup <$> parseGroupRef2 group
-parseGuard2 (I.GuardReducer red)
-  = StatementReducer <$> parseReducer2 red
-
-parseStatement2 :: I.Statement Range -> I.GroupSessionRes (Statement Range)
-parseStatement2 (I.StatementGroup group)
-  = StatementGroup <$> parseGroupRef2 (I.groupStmtRef group)
-parseStatement2 (I.StatementReducer red)
-  = StatementReducer <$> parseReducer2 red
-
-statementReduceType :: I.Statement Range -> ReduceType
-statementReduceType (I.StatementGroup group) = I.groupStmtReduceType group
-statementReduceType (I.StatementReducer reducer)
-  = case I.reducerInput reducer of
-      ValuePrimitive _ -> ReduceTypeRegular
-      ValueRecord (Record _ (RecordHead isFunc head') _)
-        | not isFunc && head' == "E" -> ReduceTypeEvalCtx
-        | otherwise -> ReduceTypeRegular
-      ValueBind _ -> ReduceTypeRegular
-
-groupStmtsByReduceType :: [I.Statement Range] -> A.Array ReduceType [I.Statement Range]
-groupStmtsByReduceType
-  = fmap reverse
-  . A.accumArray (flip (:)) [] (minBound, maxBound)
-  . map (\stmt -> (statementReduceType stmt, stmt))
-
 parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
-parseGroupDef2 (I.GroupDef rng _ gprops vprops stmts _)
-    = GroupDef rng (map (\(_, bind) -> bind) gprops) (map (\(_, bind) -> bind) vprops)
-  <$> traverse (traverseDropFatals parseStatement2) (groupStmtsByReduceType stmts)
+parseGroupDef2 (I.GroupDef rng _ props reds _)
+    = GroupDef rng (map (\(_, bind) -> bind) props)
+  <$> traverseDropFatals parseReducer2 reds
 
 parseGroupDefEnv :: I.GroupDef Range -> Int -> (T.Text, Int)
 parseGroupDefEnv group idx = (I.groupDefHead group, idx)
+
+notGroupedReducerError :: Reducer Range -> Error
+notGroupedReducerError red
+  = parseError (getAnn red) "reducer not in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
 parseRaw :: S.Program Range -> SessionRes (Program Range)
@@ -373,66 +318,66 @@ parseRaw (S.Program rng topLevels) = do
   let (topLevelsOutGroups, topLevelsInGroups)
         = break (\case S.TopLevelGroupDecl _ -> True; _ -> False) topLevels
       decls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
-      stmts = mapMaybe (\case S.TopLevelStatement x -> Just x; _ -> Nothing) topLevelsOutGroups
+      reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevelsOutGroups
   decls' <- traverse parseRecordDecl decls
-  stmts1 <- evalStateT (traverseDropFatals parseStatement1 stmts) I.emptyPropEnv
+  reds1 <- evalStateT (traverseDropFatals parseReducer1 reds) I.emptyPropEnv
   groups1 <- parseAllGroupDefs1 topLevelsInGroups
   let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
-  stmts' <- runReaderT (traverseDropFatals parseStatement2 stmts1) groupEnv
+  reds' <- runReaderT (traverseDropFatals parseReducer2 reds1) groupEnv
   groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
+  -- TODO Syntax sugar a main group
+  tellErrors $ map notGroupedReducerError reds'
   pure Program
     { programAnn = rng
     , programRecordDecls = decls'
-    , programMainStatements = stmts'
     , programGroups = groups'
     }
 
 -- == Validation
 
-duplicateDeclErrs :: [RecordDeclCompact] -> [RecordDecl Range] -> [Error]
+duplicateDeclErrs :: S.Set DeclCompact -> [RecordDecl Range] -> [Error]
 duplicateDeclErrs imported decls
   = catMaybes $ zipWith duplicateDeclErr decls (inits decls)
+  -- TODO: Optimize with a map of names (should fold decls in too)
   where duplicateDeclErr (RecordDecl rng head' _) prevs
-          | any (\other -> recordDeclCompactHead other == RecordHead False head') others
+          | any (\other -> declCompactHead other == head') others
           = Just $ parseError rng $ "duplicate record declaration: " <> head'
           | otherwise = Nothing
-          where others = map compactRecordDecl prevs ++ imported
+          where others = map compactRecordDecl prevs ++ S.toList imported
 
-invalidRecordErrs :: [RecordDeclCompact] -> [Reducer Range] -> [Error]
+invalidRecordErrs :: DeclSet -> [Reducer Range] -> [Error]
 invalidRecordErrs decls reds
-  = concatMap (foldValuesInReducer invalidRecordErrorsValue1 True) reds
+  = concatMap (foldValuesInReducer invalidRecordErrorsValue1) reds
   where invalidRecordErrorsValue1 (ValuePrimitive _) = []
         invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
-          = case find (\decl -> recordDeclCompactHead decl == head') decls of
-              Nothing -> [parseError rng $ "undeclared record: " <> pprint head']
+          -- TODO: Use a map of names to prop info instead
+          = case find (\decl -> declCompactHead decl == head') $ S.toList $ declSetRecords decls of
+              Nothing -> [parseError rng $ "undeclared record: " <> head']
               Just decl
-                | numDeclProps /= numProps -> [ parseError rng
+                | numDeclProps /= numProps && numDeclProps /= varNumProps -> [ parseError rng
                  $ "record has wrong number of properties: expected "
                 <> pprint numDeclProps
                 <> ", got "
                 <> pprint numProps ]
                 | otherwise -> []
-                where numDeclProps = recordDeclCompactNumProps decl
+                where numDeclProps = declCompactNumProps decl
                       numProps = length props
         invalidRecordErrorsValue1 (ValueBind _) = []
 
 unboundOutputErrsValue :: I.Variance -> Value Range -> [Error]
 unboundOutputErrsValue _ (ValuePrimitive _) = []
-unboundOutputErrsValue I.VarianceContravariant (ValueRecord (Record _ head' props))
-  | head' == flushRecordHead = []
-  | recordHeadIsFunc head' = concatMap (unboundOutputErrsValue $ I.VarianceCovariant S.empty) props
-  | otherwise = concatMap (unboundOutputErrsValue I.VarianceContravariant) props
+unboundOutputErrsValue I.VarianceContravariant (ValueRecord record)
+  = concatMap (unboundOutputErrsValue I.VarianceContravariant) $ recordProps record
 unboundOutputErrsValue I.VarianceContravariant (ValueBind _) = []
-unboundOutputErrsValue (I.VarianceCovariant binds) (ValueRecord (Record _ head' props))
-  | head' == flushRecordHead = []
-  | otherwise = foldMap (unboundOutputErrsValue $ I.VarianceCovariant binds) props
+unboundOutputErrsValue (I.VarianceCovariant binds) (ValueRecord record)
+  = foldMap (unboundOutputErrsValue $ I.VarianceCovariant binds) $ recordProps record
 unboundOutputErrsValue (I.VarianceCovariant binds) (ValueBind (Bind rng idx))
   | S.member idx binds = []
   | idx == 0 = [parseError rng "unlabeled bind in non-matching position"]
   | otherwise = [parseError rng "bind in non-matching position has unassigned label"]
 
 unboundOutputErrsGroup :: S.Set Int -> S.Set Int -> GroupRef Range -> State (V.Vector (GroupDef Range, Bool)) [Error]
-unboundOutputErrsGroup extraBinds stk (GroupRef _ False idx gprops vprops)
+unboundOutputErrsGroup extraBinds stk (GroupRef _ (GroupLocGlobal _ idx) props)
   | S.member idx stk = pure []
   | otherwise = do
     groups <- get
@@ -441,47 +386,53 @@ unboundOutputErrsGroup extraBinds stk (GroupRef _ False idx gprops vprops)
     if checked then
       pure []
     else do
-      let stmts = allGroupDefStatements gprops vprops group
-          stkStmts = map (stk', ) $ concat $ A.elems stmts
+      let reds = allGroupDefReducers props group
           newGroups = groups V.// [(idx, (group, True))]
       put newGroups
-      unboundOutputErrs extraBinds stkStmts
-unboundOutputErrsGroup _ _ (GroupRef _ True _ _ _)
+      unboundOutputErrs extraBinds stk' reds
+unboundOutputErrsGroup _ _ (GroupRef _ (GroupLocLocal _ _) _)
   = error "unboundOutputErrsGroup: expected group property to be resolved"
+unboundOutputErrsGroup _ _ (GroupRef _ (GroupLocFunction _ _) _) = pure []
 
-unboundOutputErrsReducer :: S.Set Int -> S.Set Int -> Reducer Range -> State (V.Vector (GroupDef Range, Bool)) [Error]
-unboundOutputErrsReducer extraBinds stk (Reducer _ input output nexts guards) = do
-    groups <- V.map fst <$> get
-    let binds
-           = extraBinds
-          <> bindsInValue input
-          <> foldMap (bindsInGuardInput groups) guards
-    concat <$> sequence
-      [ pure $ unboundOutputErrsValue I.VarianceContravariant input -- @pure@ = singleton
-      , pure $ unboundOutputErrsValue (I.VarianceCovariant binds) output -- @pure@ = singleton
-      , concat <$> traverse (unboundOutputErrsGroup binds stk) nexts
-      , concat <$> traverse (unboundOutputErrs1 binds stk) guards
-      ]
 
-unboundOutputErrs1 :: S.Set Int -> S.Set Int -> Statement Range -> State (V.Vector (GroupDef Range, Bool)) [Error]
-unboundOutputErrs1 extraBinds stk (StatementGroup group) = unboundOutputErrsGroup extraBinds stk group
-unboundOutputErrs1 extraBinds stk (StatementReducer red) = unboundOutputErrsReducer extraBinds stk red
+unboundOutputErrsGuard :: S.Set Int -> S.Set Int -> Guard Range -> State (V.Vector (GroupDef Range, Bool)) [Error]
+unboundOutputErrsGuard binds stk (Guard _ input output nexts)
+  = concat <$> sequence
+  [ pure $ unboundOutputErrsValue I.VarianceContravariant input -- @pure@ = singleton
+  , pure $ unboundOutputErrsValue (I.VarianceCovariant binds) output -- @pure@ = singleton
+  , concat <$> traverse (unboundOutputErrsGroup binds stk) nexts
+  ]
 
-unboundOutputErrs :: S.Set Int -> [(S.Set Int, Statement Range)] -> State (V.Vector (GroupDef Range, Bool)) [Error]
-unboundOutputErrs extraBinds stmts
-  = concat <$> traverse (uncurry $ unboundOutputErrs1 extraBinds) stmts
+unboundOutputErrs1 :: S.Set Int -> S.Set Int -> Reducer Range -> State (V.Vector (GroupDef Range, Bool)) [Error]
+unboundOutputErrs1 extraBinds stk red@(Reducer _ main guards)
+  = concat <$> sequence
+  [ unboundOutputErrsGuard binds stk main -- @pure@ = singleton
+  , concat <$> traverse (unboundOutputErrsGuard binds stk) guards
+  ]
+  where binds = extraBinds <> bindsInReducerInput red
 
--- TODO: Unbound group errors
+
+unboundOutputErrs :: S.Set Int -> S.Set Int -> [Reducer Range] -> State (V.Vector (GroupDef Range, Bool)) [Error]
+unboundOutputErrs extraBinds stk reds
+  = concat <$> traverse (unboundOutputErrs1 extraBinds stk) reds
+
+-- TODO: Undeclared function, unbound group errors
 
 validationErrs :: SessionEnv -> Program Range -> [Error]
-validationErrs env (Program _ decls stmts groups)
-   = duplicateDeclErrs importedDecls decls
+validationErrs env (Program _ decls groups)
+   = duplicateDeclErrs (declSetRecords importedDecls) decls
   ++ invalidRecordErrs allDecls allReds
-  ++ evalState (unboundOutputErrs S.empty $ map (S.empty, ) stmts) groupsVec
+  ++ evalState (unboundOutputErrs S.empty S.empty mainReds) groupsVec
   where importedDecls = allImportedDecls env
-        allDecls = map compactRecordDecl decls ++ importedDecls
-        allStmts = stmts ++ concatMap groupDefStatementList groups
-        allReds = mapMaybe (\case StatementReducer x -> Just x; _ -> Nothing) allStmts
+        localDecls
+          = DeclSet
+          { declSetRecords = S.fromList $ map compactRecordDecl decls
+          , declSetFunctions = S.empty
+          }
+        allDecls = localDecls <> importedDecls
+        allReds = concatMap groupDefReducers groups
+        mainGroup = headOpt groups
+        mainReds = foldMap groupDefReducers mainGroup
         groupsVec = V.fromList $ map (, False) groups
 
 -- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.

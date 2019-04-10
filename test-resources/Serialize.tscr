@@ -1,7 +1,13 @@
 Foo[foo].
+Bar[].
 
-&Foo["foo"];
+&Main[].
+\x -> \x &Foo[&Bar[]];
 
-&Foo[foo]
----
-"bar": Foo[\foo];
+&Foo[&foo].
+"bar" -> Foo[\foo],
+  \foo <- 5 &foo[];
+Foo[Bar[]] -> Bar[];
+
+
+&Bar[].

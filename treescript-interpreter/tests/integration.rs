@@ -1,4 +1,3 @@
-extern crate enum_map;
 extern crate serde;
 extern crate treescript_interpreter;
 use std::fs;

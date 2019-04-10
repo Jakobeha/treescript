@@ -1,10 +1,9 @@
-extern crate tempfile;
+use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
 use std::io;
 use std::ops::{Generator, GeneratorState};
 use std::path::PathBuf;
-use tempfile::NamedTempFile;
 
 #[allow(dead_code)]
 pub struct AtomicFileCommit {
@@ -23,21 +22,43 @@ pub struct GeneratorIterator<G: Generator>(pub G);
 #[allow(dead_code)]
 impl AtomicFileCommit {
   /// Temporary file can't be used anymore afterward
-  pub fn run(&self) -> io::Result<()> {
-    return fs::rename(&self.temp_path, &self.dst_path);
+  pub fn run(self) -> io::Result<()> {
+    return fs::rename(&self.temp_path, &self.dst_path).map(|_| ());
+  }
+}
+
+impl Drop for AtomicFileCommit {
+  fn drop(&mut self) {
+    //Ignore if file can't be removed - will happen if it got moved
+    let _ = fs::remove_file(&self.temp_path);
   }
 }
 
 #[allow(dead_code)]
 impl AtomicFile {
+  fn temp_path(path: &PathBuf) -> PathBuf {
+    let mut temp_base = OsString::from(path.as_os_str());
+    temp_base.push(".temp");
+    let mut counter = 0;
+    let mut temp_path = PathBuf::from(&temp_base);
+    while temp_path.exists() {
+      let mut temp_path_os = temp_base.clone();
+      temp_path_os.push(counter.to_string());
+      temp_path = PathBuf::from(temp_path_os);
+      counter += 1;
+    }
+    return temp_path;
+  }
+
   pub fn create(path: PathBuf) -> io::Result<AtomicFile> {
-    let temp = NamedTempFile::new()?;
+    let temp_path = AtomicFile::temp_path(&path);
+    let temp_file = File::create(&temp_path)?;
     return Ok(AtomicFile {
       commit: AtomicFileCommit {
         dst_path: path,
-        temp_path: PathBuf::from(temp.path()),
+        temp_path: temp_path,
       },
-      temp_file: temp.into_file(),
+      temp_file: temp_file,
     });
   }
 }

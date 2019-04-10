@@ -1,3 +1,3 @@
-foo'while (true) { \expr }': foo'forever { \expr }'; //Unknown language
-scm'(foo . bar . baz)': scm'qux)'; //Bad syntax in known language
-scm'while (true) { \expr }': scm'forever { \expr }'; //Valid syntax, but has multiple values
+foo'while (true) { \expr }' -> foo'forever { \expr }'; //Unknown language
+scm'(foo . bar . baz)' -> scm'qux)'; //Bad syntax in known language
+scm'while (true) { \expr }' -> scm'forever { \expr }'; //Valid syntax, but has multiple values

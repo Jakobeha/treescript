@@ -16,17 +16,30 @@ impl<'a, R: Read> Iterator for Parser<'a, R> {
 }
 
 impl<'a, R: Read> Parser<'a, R> {
+  pub fn scan_value_end(&mut self) -> bool {
+    for next_res in CodePoints::from(self.input.by_ref()) {
+      let next = next_res.unwrap();
+      if next == ' ' {
+        continue;
+      } else if next == '\n' {
+        break;
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
   pub fn scan_word(&mut self) -> String {
     let mut word = String::new();
     let mut is_empty = true;
     for next_res in CodePoints::from(self.input.by_ref()) {
       let next = next_res.unwrap();
+      if is_empty && next == ' ' {
+        continue;
+      }
       if next == ' ' || next == '\n' {
-        if is_empty {
-          continue;
-        } else {
-          break;
-        }
+        break;
       }
       is_empty = false;
       word.push(next);
@@ -88,7 +101,7 @@ impl<'a, R: Read> Parser<'a, R> {
     return word;
   }
 
-  pub fn scan_value(&mut self) -> Option<Value> {
+  fn scan_sub_value(&mut self) -> Option<Value> {
     let word = self.scan_word();
     if word.is_empty() {
       return Option::None;
@@ -103,7 +116,7 @@ impl<'a, R: Read> Parser<'a, R> {
           let num_props = self.scan_usize();
           let mut props = Vec::with_capacity(num_props);
           for _ in 0..num_props {
-            props.push(self.scan_value().unwrap());
+            props.push(self.scan_sub_value().unwrap());
           }
           return Option::Some(Value::Record {
             head: word,
@@ -114,5 +127,17 @@ impl<'a, R: Read> Parser<'a, R> {
         }
       }
     }
+  }
+
+  pub fn scan_value(&mut self) -> Option<Value> {
+    match self.scan_sub_value() {
+      None => return None,
+      Some(val) => {
+        if !self.scan_value_end() {
+          panic!("extra data after value");
+        }
+        return Some(val);
+      }
+    };
   }
 }

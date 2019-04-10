@@ -1,48 +1,33 @@
-extern crate enum_map;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceType, Statement};
+use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceResult};
 use crate::session::{LibrarySpec, Session};
 use crate::value::Value;
-use enum_map::enum_map;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::iter;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
   pub libraries: Vec<LibrarySpec>,
-  pub main_statements: Vec<Statement>,
-  pub sub_groups: Vec<GroupDefSerial>,
+  pub groups: Vec<GroupDefSerial>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Program {
   pub libraries: Vec<LibrarySpec>,
-  pub main_group: GroupDef,
-  pub sub_groups: Rc<Vec<GroupDef>>,
+  pub groups: Rc<Vec<GroupDef>>,
 }
 
 impl From<ProgramSerial> for Program {
   fn from(serial: ProgramSerial) -> Program {
-    let main_statements = serial.main_statements;
     let mut program = Program {
       libraries: serial.libraries,
-      main_group: GroupDef {
-        group_props: vec![],
-        value_props: vec![],
-        statements: enum_map![
-          ReduceType::Regular => main_statements.clone(),
-          ReduceType::EvalCtx => vec![],
-        ],
-        env: Weak::new(),
-      },
-      sub_groups: Rc::new(
+      groups: Rc::new(
         serial
-          .sub_groups
+          .groups
           .into_iter()
           .map(|sub_group| GroupDef::from_no_env(sub_group))
           .collect(),
@@ -50,13 +35,12 @@ impl From<ProgramSerial> for Program {
     };
 
     unsafe {
-      let sub_groups = Rc::into_raw(program.sub_groups);
-      let sub_groups = sub_groups as *mut Vec<GroupDef>;
-      let sub_groups_iter = (&mut *sub_groups).iter_mut();
-      program.sub_groups = Rc::from_raw(sub_groups);
-      program.main_group.env = Rc::downgrade(&program.sub_groups);
-      for sub_group in sub_groups_iter {
-        sub_group.env = Rc::downgrade(&program.sub_groups);
+      let groups = Rc::into_raw(program.groups);
+      let groups = groups as *mut Vec<GroupDef>;
+      let groups_iter = (&mut *groups).iter_mut();
+      program.groups = Rc::from_raw(groups);
+      for group in groups_iter {
+        group.env = Rc::downgrade(&program.groups);
       }
     }
     return program;
@@ -77,19 +61,12 @@ impl Program {
     return Session::new(self.libraries.clone());
   }
 
-  fn groups(&self) -> impl Iterator<Item = &GroupDef> {
-    return iter::once(&self.main_group).chain(self.sub_groups.iter());
-  }
-
   pub fn inferred_lang(&self) -> Option<String> {
     return self
-      .groups()
-      .flat_map(|group| group.statements[ReduceType::Regular].iter())
-      .filter_map(|statement| match statement {
-        Statement::Reducer(reducer) => Some(reducer),
-        Statement::Group(_) => None,
-      })
-      .flat_map(|reducer| reducer.input.iter())
+      .groups
+      .iter()
+      .flat_map(|group| group.reducers.iter())
+      .flat_map(|reducer| reducer.main.input.iter())
       .filter_map(|consume| match consume {
         Consume::Record(head) => Some(head),
         _ => None,
@@ -97,6 +74,14 @@ impl Program {
       .filter_map(|head| Value::record_head_to_fun(head))
       .map(|(lib, _)| lib)
       .next();
+  }
+
+  fn main_group(&self) -> &GroupDef {
+    return self
+      .groups
+      .iter()
+      .next()
+      .expect("program ill-formed - needs at least 1 group");
   }
 
   pub fn run<R: Read, W: Write>(
@@ -110,9 +95,11 @@ impl Program {
     let mut printer = Printer { output: output };
 
     session.start(in_path);
-    while let Option::Some(mut next) = parser.scan_value() {
-      self.main_group.reduce(session, &mut next);
-      printer.print_value(next).unwrap();
+    while let Option::Some(next) = parser.scan_value() {
+      match self.main_group().transform(session, &next) {
+        ReduceResult::Fail => panic!("couldn't reduce {}", next),
+        ReduceResult::Success(next) => printer.print_value(next).unwrap(),
+      };
     }
     session.stop();
   }

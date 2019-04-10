@@ -1,63 +1,55 @@
-Subst[body; old; new].
-AndMap[f; xs].
-Apply[f; x].
-IsEqual[x; y].
+Subst[body, old, new].
+AndMap[f, xs].
+Apply[f, x].
+IsEqual[x, y].
 IsSymbol[].
 
-&Curry[];
-&Apply[];
+&Main[].
+\x -> \x &Curry[] &Main[];
+\x -> \x &Curry[] &Apply[];
 
-&Curry[]
----
-scm'(lambda (\x \x2 . \xs) \body)': scm'(lambda (\x) (lambda (\x2 . \xs) \body))';
-scm'(\f \arg . \args)' &NonEmpty[\args] &IsFalse[IsEqual[\f; scm'lambda']]: scm'((\f \arg) . \args)';
+&Curry[].
+scm'(lambda (\x \x2 . \xs) \body)' -> scm'(lambda (\x) (lambda (\x2 . \xs) \body))';
+scm'(\f \arg . \args)' &NonEmpty[\args] &IsFalse[IsEqual[\f, scm'lambda']] -> scm'((\f \arg) . \args)';
 E[&Recurse[]];
 
 
-&Apply[]
----
-scm'((lambda (\x) \body) \arg)' &Env[\x, \_, \_]: Subst[\body; \x; \arg] &Subst[];
-E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
+&Apply[].
+scm'((lambda (\x) \body) \arg)' &Env[\x, \_, \_] -> Subst[\body, \x, \arg] &Subst[];
+E[scm'(\x \y)'] -> scm'(\x2 \y2)', \x2 -> E[\x], \y2 -> E[\y];
 
-&Subst[]
----
-Subst[\old; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \_] &Env[\old, \_, \_]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new] &Env[\x, \_, \_]: scm'(lambda (\x) \body2)', \body2: Subst[\body; \old; \new];
-Subst[scm'(\f \x)'; \old; \new]: scm'(\f2 \x2)', \f2: Subst[\f; \old; \new], \x2: Subst[\x; \old; \new];
-Subst[\body; \_; \_]: \body;
+&Subst[].
+Subst[\old, \old, \new] -> \new;
+Subst[scm'(lambda (\old) \body)', \old, \_] &Env[\old, \_, \_] -> scm'(lambda (\old) \body)';
+Subst[scm'(lambda (\x) \body)', \old, \new] &Env[\x, \_, \_] -> scm'(lambda (\x) \body2)', \body2 -> Subst[\body, \old, \new];
+Subst[scm'(\f \x)', \old, \new] -> scm'(\f2 \x2)', \f2 -> Subst[\f, \old, \new], \x2 -> Subst[\x, \old, \new];
+Subst[\body, \_, \_] -> \body;
 E[&Recurse[]];
 
-&Env[x; x2; xs]
----
-\x: Scheme_Symbol[\];
-Apply[IsSymbol[]; \x2] &Helpers[]: True[];
-AndMap[IsSymbol[]; \xs] &Helpers[]: True[];
+&Env[x, x2, xs].
+\x -> Scheme_Symbol[\];
+Apply[IsSymbol[], \x2] &Helpers[] -> True[];
+AndMap[IsSymbol[], \xs] &Helpers[] -> True[];
 &NonEmpty[];
 
-&IsTrue[x]
----
-\x &Helpers[]: True[];
+&IsTrue[x].
+\x &Helpers[] -> True[];
 
-&IsFalse[x]
----
-\x &Helpers[]: False[];
+&IsFalse[x].
+\x &Helpers[] -> False[];
 
-&NonEmpty[xs]
----
-\xs: Scheme_Cons[\; \];
+&NonEmpty[xs].
+\xs -> Scheme_Cons[\, \];
 
-&Helpers[]
----
-AndMap[\f; Scheme_Nil[]]: Scheme_Nil[];
-AndMap[\f; Scheme_Cons[\x; \xs]] &IsTrue[x: Apply[\f; \x]]: AndMap[\f; \xs];
-AndMap[\; Scheme_Cons[\; \]]: False[];
-Apply[IsSymbol[]; Scheme_Symbol[\]]: True[];
-Apply[IsSymbol[]; \]: False[];
-IsEqual[\x; \x]: True[];
-IsEqual[\; \]: False[];
+&Helpers[].
+AndMap[\f, Scheme_Nil[]] -> Scheme_Nil[];
+AndMap[\f, Scheme_Cons[\x, \xs]] &IsTrue[x -> Apply[\f, \x]] -> AndMap[\f, \xs];
+AndMap[\, Scheme_Cons[\, \]] -> False[];
+Apply[IsSymbol[], Scheme_Symbol[\]] -> True[];
+Apply[IsSymbol[], \] -> False[];
+IsEqual[\x, \x] -> True[];
+IsEqual[\, \] -> False[];
 
-&Recurse[]
----
-E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
-E[scm'(lambda (\x) \body)']: scm'(lambda (\x) \body2)', \body2: E[\body];
+&Recurse[].
+E[scm'(\x \y)'] -> scm'(\x2 \y2)', \x2 -> E[\x], \y2 -> E[\y];
+E[scm'(lambda (\x) \body)'] -> scm'(lambda (\x) \body2)', \body2 -> E[\body];
