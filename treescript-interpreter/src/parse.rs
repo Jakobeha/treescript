@@ -134,7 +134,9 @@ impl<'a, R: Read> Parser<'a, R> {
       None => return None,
       Some(val) => {
         if !self.scan_value_end() {
-          panic!("extra data after value");
+          let mut rest = String::new();
+          let _ = self.input.read_to_string(&mut rest);
+          panic!("extra data after value: {}", rest);
         }
         return Some(val);
       }

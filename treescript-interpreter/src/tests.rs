@@ -23,8 +23,8 @@ fn test_serialize_prog() {
         props: vec![],
         reducers: vec![Reducer {
           main: Guard {
-            input: vec![Consume::Bind(2)],
-            output: Value::Splice(2),
+            input: vec![Consume::Bind(1)],
+            output: Value::Splice(1),
             nexts: vec![GroupRef {
               loc: GroupLoc::Global(1),
               props: vec![GroupRef {

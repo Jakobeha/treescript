@@ -23,10 +23,17 @@ raiseSyntax <- function(msg) {
   quit(save="no", status=1, runLast=FALSE)
 }
 
+started <- FALSE
 for (line in readLines(stdin, warn=FALSE)) {
   for (token in str_extract_all(line, "\"(\\\\\"|[^\"])*\"|[\\(\\[\\{\\}\\]\\)]|[^ \\(\\[\\{\\}\\]\\)\"]+")[[1]]) {
-    if (!(token %in% c(")", "]", "}", ".")) && level != 0 && !didCons) {
-      writeRecord("Scheme_Cons", 2)
+    if (!(token %in% c(")", "]", "}", "."))) {
+      if (level == 0) {
+        if (started)
+          writeSeparator()
+        else
+          started <- TRUE
+      } else if (!didCons)
+        writeRecord("Scheme_Cons", 2)
     }
 
     if (grepl("^\\\\[0-9]+$", token)) {
@@ -76,10 +83,6 @@ for (line in readLines(stdin, warn=FALSE)) {
       writeRecord("Scheme_Symbol", 1)
       writeWord("string")
       writeWord(dQuote(token))
-    }
-
-    if (!(token %in% c(")", "]", "}", ".")) && level == 0) {
-      writeSeparator()
     }
   }
 }

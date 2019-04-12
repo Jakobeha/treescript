@@ -27,7 +27,10 @@ macro_rules! dprint(
 );
 
 macro_rules! dprintln(
-    ($var:expr, $($arg:tt)*) => {dprintq!(true, $var, $($arg)*)}
+    ($var:expr, $($arg:tt)*) => {
+      dprintq!(false, $var, $($arg)*);
+      dprintq!(true, $var, "\n");
+    }
 );
 
 macro_rules! dprint_begin_indent(

@@ -186,7 +186,7 @@ impl Value {
         return props.clone();
       }
     }
-    return vec![self.clone()];
+    panic!("to_args: expected tuple, got: {}", self)
   }
 
   pub fn is_splice(&self) -> bool {

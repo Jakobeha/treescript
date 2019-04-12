@@ -1,23 +1,23 @@
-Subst[body; old; new].
+Subst[body, old, new].
 
-//Function application
+&Main[].
 Scheme_Cons[
-  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x], Scheme_Nil[]], \body]];
+  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x], Scheme_Nil[]], \body]],
   Scheme_Cons[\arg, Scheme_Nil[]]
 ] -> Subst[\body, \x, \arg];
 Subst[\old, \old, \new] -> \new;
 Subst[
-  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old], Scheme_Nil[]], \body]];
+  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old], Scheme_Nil[]], \body]],
   \old,
   \_
 ] -> Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\old], Scheme_Nil[]], \body]];
 Subst[
-  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x], Scheme_Nil[]], \body]];
+  Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x], Scheme_Nil[]], \body]],
   \old,
   \new
 ] -> Scheme_Cons["lambda", Scheme_Cons[Scheme_Cons[Scheme_Symbol[\x], Scheme_Nil[]], Subst[\body, \old, \new]]];
 Subst[
-  Scheme_Cons[\f, Scheme_Cons[\x, Scheme_Nil[]]];
+  Scheme_Cons[\f, Scheme_Cons[\x, Scheme_Nil[]]],
   \old,
   \new
 ] -> Scheme_Cons[Subst[\f, \old, \new], Scheme_Cons[Subst[\x, \old, \new], Scheme_Nil[]]];

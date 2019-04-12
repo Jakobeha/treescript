@@ -1,44 +1,95 @@
 Add[lhs].
 LT[lhs].
-Subst[body; old; new].
+Subst[body, old, new].
 
-&Apply[];
+&Main[].
+\x -> \x &Recurse[&All[]] &Main[];
+\x -> \x;
 
-&Apply[]
----
-//Lambda application
-scm'((lambda (\x) \body) \arg)': Subst[\body; \x; \arg] &Subst[];
-//Addition
-scm'(+ \xAt)': Add[\x], Scheme_Atom[\x]: \xAt;
-scm'(\xAdd \yAt)': Scheme_Atom[#Num_Add[\x; \y]], Add[\x]: \xAdd, Scheme_Atom[\y]: \yAt;
-//Less than
-scm'(< \xAt)': LT[\x], Scheme_Atom[\x]: \xAt;
-scm'(\xLt \yAdd)': Scheme_Atom[#Num_LessThan[\x; \y]], LT[\x]: \xLt, Scheme_Atom[\y]: \yAt;
-//If
-scm'(if #true \true \false)': \true;
-scm'(if #false \true \false)': \false;
-E[scm'(\x \y)']: scm'(\x2 \y2)', \x2: E[\x], \y2: E[\y];
-E[scm'(if \cond \true \false)']: scm'(if \cond2 \true \false)', \cond2: E[\cond];
-E[scm'(list \x \y \z)']: scm'(list \x2 \y2 \z2)',
-  \x2: E[\x],
-  \y2: E[\y],
-  \z2: E[\z];
+&All[].
+\x -> \x &Add[];
+\x -> \x &LT[];
+\x -> \x &If[];
+\x -> \x &Apply[];
 
-&Subst[]
----
-Subst[\old; \old; \new]: \new;
-Subst[scm'(lambda (\old) \body)'; \old; \_]: scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)'; \old; \new]: scm'(lambda (\x) \body2)',
-  \body2: Subst[\body; \old; \new] &Subst[];
-Subst[scm'(\f \x)'; \old; \new]: scm'(\f2 \x2)',
-  \f2: Subst[\f; \old; \new] &Subst[],
-  \x2: Subst[\x; \old; \new] &Subst[];
-Subst[scm'(if \cond \true \false)'; \old; \new]: scm'(if \cond2 \true2 \false2)',
-  \cond2: Subst[\cond; \old; \new] &Subst[],
-  \true2: Subst[\true; \old; \new] &Subst[],
-  \false2: Subst[\false; \old; \new] &Subst[];
-Subst[scm'(list \x \y \z)'; \old; \new]: scm'(list \x2 \y2 \z2)',
-  \x2: Subst[\x; \old; \new] &Subst[],
-  \y2: Subst[\y; \old; \new] &Subst[],
-  \z2: Subst[\z; \old; \new] &Subst[];
-Subst[\body; \_; \_]: \body;
+&Add[].
+scm'(+ \xAt)' -> Add[\x],
+ //Makes recursion easier because we don't need to evaluate \x anymore
+  Scheme_Atom[\x] <- \xAt;
+scm'(\xAdd \yAt)' -> Scheme_Atom[\xpy],
+  Add[\x] <- \xAdd,
+  Scheme_Atom[\y] <- \yAt,
+  \xpy <- T[\x, \y] #Num_Add;
+
+&LT[].
+scm'(< \xAt)' -> LT[\x],
+ //Makes recursion easier because we don't need to evaluate \x anymore
+  Scheme_Atom[\x] <- \xAt;
+scm'(\xLt \yAt)' -> Scheme_Atom[\xpy],
+  LT[\x] <- \xLt,
+  Scheme_Atom[\y] <- \yAt,
+  \xpy <- T[\x, \y] #Num_LessThan;
+
+&If[].
+scm'(if #true \true \false)' -> \true;
+scm'(if #false \true \false)' -> \false;
+
+&Apply[].
+scm'((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[],
+  Scheme_Symbol[\_] <- \x;
+
+&Subst[].
+Subst[\old, \old, \new] -> \new;
+Subst[scm'(lambda (\old) \body)', \old, \_] -> scm'(lambda (\old) \body)',
+  Scheme_Symbol[\_] <- \old;
+Subst[scm'(lambda (\x) \body)', \old, \new] -> scm'(lambda (\x) \body2)',
+  Scheme_Symbol[\_] <- \x,
+  \body2 <- Subst[\body, \old, \new] &Subst[];
+Subst[scm'(\f \x)', \old, \new] -> scm'(\f2 \x2)',
+  \f2 <- Subst[\f, \old, \new] &Subst[],
+  \x2 <- Subst[\x, \old, \new] &Subst[];
+Subst[scm'(\a \x \y \z)', \old, \new] -> scm'(\a \x2 \y2 \z2)',
+  \x2 <- Subst[\x, \old, \new] &Subst[],
+  \y2 <- Subst[\y, \old, \new] &Subst[],
+  \z2 <- Subst[\z, \old, \new] &Subst[];
+Subst[\body, \_, \_] -> \body;
+
+&NonEmpty[].
+Scheme_Cons[\_, \_] -> T[];
+
+&IsEqual[].
+T[\x, \x] -> True[];
+T[\_, \_] -> False[];
+
+&Recurse[&x].
+\x -> \x &x[];
+scm'(\x \y)' -> scm'(\x2 \y2)',
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
+  T[\y2, \yr] <- \y &Try[&Recurse[&x[]]],
+  True[] <- T[\xr, \yr] &Or[];
+scm'(list \x \y \z)' -> scm'(list \x2 \y2 \z2)',
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
+  T[\y2, \yr] <- \y &Try[&Recurse[&x[]]],
+  T[\z2, \zr] <- \z &Try[&Recurse[&x[]]],
+  True[] <- T[T[\xr, \yr], \zr] &Or[];
+scm'(if \x \y \z)' -> scm'(if \x2 \y \z)',
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
+  True[] <- \xr;
+scm'(lambda (\x) \body)' -> scm'(lambda (\x) \body2)',
+  \body2 <- \body &Recurse[&x[]];
+
+&Try[&x].
+\x -> T[\y, True[]],
+  \y <- \x &x[];
+\x -> T[\x, False[]];
+
+&Or[].
+T[True[], True[]] -> True[];
+T[True[], False[]] -> True[];
+T[False[], True[]] -> True[];
+T[False[], False[]] -> False[];
+T[T[\x, \y], \z] -> T[\xy, \z] &Or[],
+  \xy <- T[\x, \y] &Or[];
+T[\x, \yzu] -> T[\x, \yz] &Or[],
+  T[\_, \_] <- \yzu,
+  \yz <- \yzu &Or[];

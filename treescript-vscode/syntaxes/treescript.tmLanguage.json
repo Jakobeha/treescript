@@ -14,7 +14,7 @@
 		"symbols": {
 			"patterns": [
 				{
-					"include": "#specialRecordHead"
+					"include": "#tupleRecordHead"
 				},
 				{
 					"include": "#recordHead"
@@ -33,15 +33,12 @@
 				}
 			]
 		},
-		"specialRecordHead": {
-			"name": "meta.record-head.special.treescript",
-			"match": "(?:(A)|(E))\\[",
+		"tupleRecordHead": {
+			"name": "meta.record-head.tuple.treescript",
+			"match": "(T)\\[",
 			"captures": {
 				"1": {
-					"name": "keyword.control.record-head.special.annotate.treescript"
-				},
-				"2": {
-					"name": "support.class.record-head.special.eval.treescript"
+					"name": "keyword.control.record-head.tuple.treescript"
 				}
 			}
 		},
@@ -63,12 +60,12 @@
 			}
 		},
 		"function": {
-			"name": "keyword.control.function.treescript",
-			"match": "#([A-Z]\\w*)"
+			"name": "support.class.group.function.treescript",
+			"match": "#([A-Za-z]?\\w*)"
 		},
 		"group": {
-			"name": "support.class.group.treescript",
-			"match": "&([A-Za-z]\\w*)"
+			"name": "support.class.group.regular.treescript",
+			"match": "&([A-Za-z]?\\w*)"
 		},
 		"general": {
 			"patterns": [
@@ -253,7 +250,7 @@
 		},
 		"punctuation": {
 			"name": "keyword.operator.treescript",
-			"match": "---|===|[?:=.;|]"
+			"match": "->|<-|=>|[?.,;]"
 		}
 	}
 }

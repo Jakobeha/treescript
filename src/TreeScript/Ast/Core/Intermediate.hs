@@ -32,19 +32,17 @@ data BindEnv
   , bindEnvNextFree :: Int
   } deriving (Eq, Ord, Read, Show)
 
-data GroupValEnv a
-  = GroupValEnv
-  { groupValEnvGroup :: a
-  , groupValEnvValue :: a
+data GVEnv a
+  = GVEnv
+  { gvEnvGroup :: a
+  , gvEnvValue :: a
   } deriving (Eq, Ord, Read, Show, Functor)
 
 type GroupSessionRes a = ReaderT GroupEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
-type PropSessionRes a = StateT (GroupValEnv BindEnv) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
-
-type FreeSessionRes a = StateT (GroupValEnv Int) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type GVBindSessionRes a = StateT (GVEnv BindEnv) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 data Variance
   = VarianceContravariant
@@ -91,7 +89,7 @@ data GroupDef an
   , groupDefHead :: T.Text
   , groupDefProps :: [(T.Text, C.Bind an)]
   , groupDefReducers :: [Reducer an]
-  , groupDefPropEnv :: GroupValEnv BindEnv
+  , groupDefPropEnv :: BindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 emptyBindEnv :: BindEnv
@@ -99,20 +97,6 @@ emptyBindEnv
   = BindEnv
   { bindEnvBinds = M.empty
   , bindEnvNextFree = 1
-  }
-
-emptyPropEnv :: GroupValEnv BindEnv
-emptyPropEnv
-  = GroupValEnv
-  { groupValEnvGroup = emptyBindEnv
-  , groupValEnvValue = emptyBindEnv
-  }
-
-emptyFreeEnv :: GroupValEnv Int
-emptyFreeEnv
-  = GroupValEnv
-  { groupValEnvGroup = 0
-  , groupValEnvValue = 0
   }
 
 bindEnvLookup :: T.Text -> BindEnv -> (Int, BindEnv)
@@ -126,10 +110,3 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
           }
         )
       Just idx -> (idx, env)
-
-zipGroupValEnvWith :: (a -> b -> c) -> GroupValEnv a -> GroupValEnv b -> GroupValEnv c
-zipGroupValEnvWith f (GroupValEnv xg xv) (GroupValEnv yg yv)
-  = GroupValEnv
-  { groupValEnvGroup = f xg yg
-  , groupValEnvValue = f xv yv
-  }
