@@ -52,7 +52,7 @@
 		},
 		"bind": {
 			"name": "keyword.operator.bind.treescript",
-			"match": "\\\\(_|[a-z]\\w*)",
+			"match": "\\\\(_|[0-9]+|[a-z]\\w*)",
 			"captures": {
 				"1": {
 					"name": "entity.name.tag.treescript"

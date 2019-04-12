@@ -1,7 +1,3 @@
-Program[xs].
-
-&Main[];
-
 &Main[].
----
-js'function \name() { \body; }': js'var \name = () => { \body; }';
+js'function \name() { \body; }' -> js'var \name = () => { \body; }';
+\x -> \x
