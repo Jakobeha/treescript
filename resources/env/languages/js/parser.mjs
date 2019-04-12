@@ -115,5 +115,8 @@ getStdin().then(str => {
   }
   str = str.replace(/\\([0-9]+)/g, "_splice_$1");
   var ast = esprima.parseScript(str, { tolerant: true });
-  ast.body.forEach(astElem => writeAst(process.stdout, astElem));
+  ast.body.forEach(astElem => {
+    writeAst(process.stdout, astElem);
+    process.stdout.write("\n");
+  });
 });
