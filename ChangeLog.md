@@ -123,4 +123,8 @@ Wrote interpreter in Rust, instead of directly compiling into C
 - Currently slower than C version
 - But should be faster to debug and improve
 
+## 4/13/19
+
+Modified syntax and semantics, still need to update docs
+
 ## Unreleased changes

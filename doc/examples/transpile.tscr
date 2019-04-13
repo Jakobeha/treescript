@@ -6,24 +6,24 @@ md'\...xs' -> json'{\...ys}',
 md'
 ## \head
 \...xs' -> json'\lhead: [ \...ys ]',
-  \lhead <- #String_ToLower[\head],
+  \lhead <- T[\head] #String_ToLower,
   \ys <- \xs &Map[&Item[]];
 
 &Item[].
 md'
 ### \head
 \...xs' -> json'{ "name": \lhead, \...ys }',
-  \lhead <- #String_ToLower[\head],
+  \lhead <- T[\head] #String_ToLower,
   \ys <- \xs &Map[&Detail[]];
 
 &Detail[].
 md'- \x' -> json'\lhead: \content',
-  Cons[\head; Cons[": "; Cons[\content; Nil[]]]] <- #String_Split[\x; ": "],
-  \lhead <- #String_ToLower[\head];
+  Cons[\head; Cons[": "; Cons[\content; Nil[]]]] <- T[\x, ": "] #String_Split,
+  \lhead <- T[\head] #String_ToLower;
 md'
 - \head
   \...blt1s' -> json'\lhead: [ \...blt2s ]',
-  \lhead <- #String_ToLower[\head],
+  \lhead <- T[\head] #String_ToLower,
   \blt2s <- \blt1s &Map[&Bullet[]];
 
 &Bullet[].
@@ -32,5 +32,5 @@ md'- \x' -> \x;
 &Map[&x].
 Nil[] -> Nil[];
 Cons[\x; \xs] -> Cons[\y; \ys],
-  \y <- \x &X[],
+  \y <- \x &x[],
   \ys <- \xs &Map[&x[]];
