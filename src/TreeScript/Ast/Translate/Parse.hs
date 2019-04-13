@@ -45,9 +45,11 @@ parseGroupLoc (C.GroupLocLocal _ idx) = GroupLocLocal idx
 parseGroupLoc (C.GroupLocFunction _ txt) = GroupLocFunction txt
 
 parseGroupRef :: C.GroupRef an -> GroupRef
-parseGroupRef (C.GroupRef _ loc props) = GroupRef
+parseGroupRef (C.GroupRef _ loc vprops gprops)
+  = GroupRef
   { groupRefLoc = parseGroupLoc loc
-  , groupRefProps = map parseGroupRef props
+  , groupRefValueProps = map parseValue vprops
+  , groupRefGroupProps = map parseGroupRef gprops
   }
 
 parseGuard :: C.Guard an -> Guard
@@ -60,12 +62,13 @@ parseGuard (C.Guard _ input output nexts) = Guard
 parseReducer :: C.Reducer an -> Reducer
 parseReducer (C.Reducer _ main guards) = Reducer
   { reducerMain = parseGuard main
-  , reducerGuards = map parseGuard guards
+  , reducerGuards = reverse $ map parseGuard guards
   }
 
 parseGroupDef :: C.GroupDef an -> GroupDef
-parseGroupDef (C.GroupDef _ props reds) = GroupDef
-  { groupDefProps = map C.bindIdx props
+parseGroupDef (C.GroupDef _ vprops gprops reds) = GroupDef
+  { groupDefValueProps = map C.bindIdx vprops
+  , groupDefGroupProps = map C.bindIdx gprops
   , groupDefReducers = map parseReducer reds
   }
 

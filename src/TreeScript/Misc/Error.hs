@@ -43,11 +43,11 @@ data Stage
   | StageReadInput
   | StagePluginLoad
   | StagePluginUse
-  | StageLexing
-  | StageParsing
-  | StageExtracting
+  | StageLex
+  | StageParse
+  | StageDesugar
   | StageWriteCompiled
-  | StageRunning
+  | StageRun
   | StageWriteOutput
   deriving (Eq, Ord, Read, Show)
 
@@ -57,7 +57,7 @@ data Error
   { errorStage :: Stage -- ^ Compile stage the error occurred.
   , errorRange :: Maybe Range -- ^ Where the error occurred. A singleton range if it occurred at a location.
   , errorMsg :: T.Text -- ^ Text displayed to the user.
-  }
+  } deriving (Eq, Ord, Read, Show)
 
 -- | A value which can fail to be created because of a fatal error, or it can be created but have nonfatal errors.
 data Result a
@@ -87,11 +87,11 @@ instance Printable Stage where
   pprint StageReadInput = "reading input"
   pprint StagePluginLoad = "loading plugins"
   pprint StagePluginUse = "using a plugin"
-  pprint StageLexing = "lexing"
-  pprint StageParsing = "parsing"
-  pprint StageExtracting = "extracting"
-  pprint StageWriteCompiled = "writing compiled"
-  pprint StageRunning = "running"
+  pprint StageLex = "lexing"
+  pprint StageParse = "parsing"
+  pprint StageDesugar = "desugaring / validating"
+  pprint StageWriteCompiled = "exporting"
+  pprint StageRun = "running"
   pprint StageWriteOutput = "writing output"
 
 instance Printable Error where

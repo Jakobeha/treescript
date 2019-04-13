@@ -3,22 +3,26 @@
 -- | Functions to manipulate @Core@ ASTs.
 module TreeScript.Ast.Core.Analyze
   ( mapValue
+  , mapValuesInGroupRef
   , mapValuesInGuard
   , mapValuesInReducer
   , mapGroupsInGroupRef
   , mapGroupsInGuard
   , mapGroupsInReducer
   , foldValue
+  , foldValuesInGroupRef
   , foldValuesInGuard
   , foldValuesInReducer
+  , foldGroupsInGroupRef
+  , foldGroupsInGuard
+  , foldGroupsInReducer
   , traverseValue
+  , traverseValuesInGroupRef
   , traverseValuesInGuard
   , traverseValuesInReducer
   , allProgramReducers
   , maxNumBindsInProgram
   , bindsInValue
-  , bindsInReducerInput
-  , bindsInGuardInput
   , langSpecDecls
   , allImportedDecls
   , getAllProgramDecls
@@ -46,13 +50,22 @@ mapValue f (ValueRecord (Record ann head' props))
 mapValue f (ValueBind bind) = f $ ValueBind bind
 
 -- | Applies to each value, then combines all results.
+mapValuesInGroupRef :: (Value an -> Value an) -> GroupRef an -> GroupRef an
+mapValuesInGroupRef f (GroupRef ann loc vprops gprops)
+  = GroupRef
+  { groupRefAnn = ann
+  , groupRefLoc = loc
+  , groupRefValueProps = map (mapValue f) vprops
+  , groupRefGroupProps = map (mapValuesInGroupRef f) gprops}
+
+-- | Applies to each value, then combines all results.
 mapValuesInGuard :: (Value an -> Value an) -> Guard an -> Guard an
 mapValuesInGuard f (Guard ann input output nexts)
   = Guard
   { guardAnn = ann
   , guardInput = mapValue f input
   , guardOutput = mapValue f output
-  , guardNexts = nexts
+  , guardNexts = map (mapValuesInGroupRef f) nexts
   }
 
 -- | Applies to each value, then combines all results.
@@ -66,11 +79,12 @@ mapValuesInReducer f (Reducer ann main guards)
 
 -- | Applies to each group, then combines all results. Properties before parent groups.
 mapGroupsInGroupRef :: (GroupRef an -> GroupRef an) -> GroupRef an -> GroupRef an
-mapGroupsInGroupRef f (GroupRef ann loc props)
+mapGroupsInGroupRef f (GroupRef ann loc vprops gprops)
   = f $ GroupRef
   { groupRefAnn = ann
   , groupRefLoc = loc
-  , groupRefProps = map (mapGroupsInGroupRef f) props
+  , groupRefValueProps = vprops
+  , groupRefGroupProps = map (mapGroupsInGroupRef f) gprops
   }
 
 -- | Applies to each group, then combines all results. Properties before parent groups.
@@ -101,9 +115,17 @@ foldValue f (ValueRecord record)
 foldValue f (ValueBind bind) = f $ ValueBind bind
 
 -- | Applies to each value, then combines all results.
+foldValuesInGroupRef :: (Monoid r) => (Value an -> r) -> GroupRef an -> r
+foldValuesInGroupRef f (GroupRef _ _ vprops gprops)
+   = foldMap (foldValue f) vprops
+  <> foldMap (foldValuesInGroupRef f) gprops
+
+-- | Applies to each value, then combines all results.
 foldValuesInGuard :: (Monoid r) => (Value an -> r) -> Guard an -> r
-foldValuesInGuard f (Guard _ input output _)
-   = foldValue f input <> foldValue f output
+foldValuesInGuard f (Guard _ input output nexts)
+   = foldValue f input
+  <> foldValue f output
+  <> foldMap (foldValuesInGroupRef f) nexts
 
 -- | Applies to each value, then combines all results.
 foldValuesInReducer :: (Monoid r) => (Value an -> r) -> Reducer an -> r
@@ -114,7 +136,7 @@ foldValuesInReducer f (Reducer _ main guards)
 -- | Applies to each child group, then combines all results. Properties left of parent groups.
 foldGroupsInGroupRef :: (Monoid r) => (GroupRef an -> r) -> GroupRef an -> r
 foldGroupsInGroupRef f grp
-   = foldMap (foldGroupsInGroupRef f) (groupRefProps grp)
+   = foldMap (foldGroupsInGroupRef f) (groupRefGroupProps grp)
   <> f grp
 
 -- | Applies to each child group, then combines all results. Properties left of parent groups.
@@ -135,12 +157,19 @@ traverseValue f (ValueRecord (Record ann head' props)) = f =<< traverseInValue
 traverseValue f (ValueBind bind) = f $ ValueBind bind
 
 -- | Applies to each value, then combines all results.
+traverseValuesInGroupRef :: (Monad w) => (Value an -> w (Value an)) -> GroupRef an -> w (GroupRef an)
+traverseValuesInGroupRef f (GroupRef ann loc vprops gprops)
+    = GroupRef ann loc
+  <$> traverse (traverseValue f) vprops
+  <*> traverse (traverseValuesInGroupRef f) gprops
+
+-- | Applies to each value, then combines all results.
 traverseValuesInGuard :: (Monad w) => (Value an -> w (Value an)) -> Guard an -> w (Guard an)
 traverseValuesInGuard f (Guard ann input output nexts)
     = Guard ann
   <$> traverseValue f input
   <*> traverseValue f output
-  <*> pure nexts
+  <*> traverse (traverseValuesInGroupRef f) nexts
 
 -- | Applies to each value, then combines all results.
 traverseValuesInReducer :: (Monad w) => (Value an -> w (Value an)) -> Reducer an -> w (Reducer an)
@@ -163,7 +192,8 @@ substGroupProp1 substs x
                -> GroupRef
                 { groupRefAnn = getAnn new
                 , groupRefLoc = groupRefLoc new
-                , groupRefProps = groupRefProps x ++ groupRefProps new
+                , groupRefValueProps = groupRefValueProps x ++ groupRefValueProps new
+                , groupRefGroupProps = groupRefGroupProps x ++ groupRefGroupProps new
                 }
       _ -> x
 
@@ -197,13 +227,6 @@ bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 
 bindsInValue :: Value an -> S.Set Int
 bindsInValue = foldValue bindsInValue1
-
-bindsInGuardInput :: Guard an -> S.Set Int
-bindsInGuardInput = bindsInValue . guardInput
-
-bindsInReducerInput :: Reducer an -> S.Set Int
-bindsInReducerInput (Reducer _ main guards)
-   = bindsInGuardInput main <> foldMap bindsInGuardInput guards
 
 declSpecToCompactDecl :: T.Text -> DeclSpec -> DeclCompact
 declSpecToCompactDecl name (DeclSpec nodeName numArgs)
@@ -269,16 +292,16 @@ allProgramUsedLibNames
 -- | Gets all libraries used by the program.
 getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
 getAllProgramUsedLibraries
-  = traverse (libraryWithName StageExtracting) . allProgramUsedLibNames
+  = traverse (libraryWithName StageDesugar) . allProgramUsedLibNames
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
 allGroupDefReducers :: [GroupRef an] -> GroupDef an -> [Reducer an]
-allGroupDefReducers props (GroupDef _ propIdxs reds)
-    = map (mapGroupsInReducer (substGroupProp1 propSubsts)) reds
-  where propSubsts = zip (map bindIdx propIdxs) props
+allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds)
+    = map (mapGroupsInReducer (substGroupProp1 gpropSubsts)) reds
+  where gpropSubsts = zip (map bindIdx gpropIdxs) gprops
 
 -- | The reducers in the referenced group, substituting exported binds, and their mode.
 allGroupRefReducers :: V.Vector (GroupDef an) -> GroupRef an -> [Reducer an]
-allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ idx) props)
-  = allGroupDefReducers props $ groups V.! idx
-allGroupRefReducers _ (GroupRef _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
+allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ idx) _ gprops)
+  = allGroupDefReducers gprops $ groups V.! idx
+allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"

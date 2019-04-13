@@ -19,7 +19,7 @@ import System.IO.Temp
 runExec :: FilePath -> [T.Text] -> SessionRes ()
 runExec execPath args = () <$ runCmdProgramArgs execProg args T.empty
   where execProg = CmdProgram
-          { cmdProgramStage = StageRunning
+          { cmdProgramStage = StageRun
           , cmdProgramPath = execPath
           , cmdProgramEnv = []
           }
@@ -27,7 +27,7 @@ runExec execPath args = () <$ runCmdProgramArgs execProg args T.empty
 -- | Interpret the treescript source - compile it and run with the given arguments.
 run :: FilePath -> [T.Text] -> SessionRes ()
 run srcPath args = do
-  let liftRunIO = liftIOAndCatch StageRunning
+  let liftRunIO = liftIOAndCatch StageRun
   execPath <- liftRunIO $ emptySystemTempFile "treescript"
   compile srcPath execPath
   runExec execPath args

@@ -12,9 +12,17 @@ module TreeScript.Ast.Core.Types
 
 import TreeScript.Misc
 
-import qualified Data.Text as T
+import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import GHC.Generics
+
+-- | What reducers get from their parent group, or output values / groups from their reducer.
+data LocalEnv
+  = LocalEnv
+  { localEnvBinds :: S.Set Int
+  , localEnvGroups :: S.Set Int
+  } deriving (Eq, Ord, Read, Show)
 
 -- | Declares a type of record or function but doesn't specifify property values.
 data DeclCompact
@@ -79,7 +87,8 @@ data GroupRef an
   = GroupRef
   { groupRefAnn :: an
   , groupRefLoc :: GroupLoc an
-  , groupRefProps :: [GroupRef an]
+  , groupRefValueProps :: [Value an]
+  , groupRefGroupProps :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches a value against a different value. Like a "let" statement.
@@ -103,7 +112,8 @@ data Reducer an
 data GroupDef an
   = GroupDef
   { groupDefAnn :: an
-  , groupDefProps :: [Bind an]
+  , groupDefValueProps :: [Bind an]
+  , groupDefGroupProps :: [Bind an]
   , groupDefReducers :: [Reducer an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -147,7 +157,7 @@ instance (Monoid an) => Monoid (Program an) where
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
-    = head' <> "[" <> T.intercalate "; " props <> "]."
+    = head' <> printProps (map pprint props)
 
 instance Printable (Primitive an) where
   pprint (PrimInteger _ int) = pprint int
@@ -172,8 +182,8 @@ instance Printable (GroupLoc an) where
   pprint (GroupLocFunction _ txt) = "#" <> txt
 
 instance Printable (GroupRef an) where
-  pprint (GroupRef _ loc gprops)
-    = pprint loc <> printProps pprint gprops
+  pprint (GroupRef _ loc vprops gprops)
+    = pprint loc <> printProps (map pprint vprops ++ map pprint gprops)
 
 instance Printable (Guard an) where
   pprint (Guard _ input output nexts)
@@ -198,18 +208,29 @@ instance Printable (Program an) where
   pprint (Program _ decls groups)
     = T.unlines $ map pprint decls ++ [T.empty] ++ zipWith printGroupDef [0..] groups
 
-printProps :: (a -> T.Text) -> [a] -> T.Text
-printProps f props = "[" <> T.intercalate "; " (map f props) <> "]"
+printProps :: [T.Text] -> T.Text
+printProps props = "[" <> T.intercalate ", " props <> "]"
 
 printGroupDef :: Int -> GroupDef an -> T.Text
-printGroupDef head' (GroupDef _ gprops reds)
+printGroupDef head' (GroupDef _ vprops gprops reds)
   = T.unlines $ printDecl : map pprint reds
   where printDecl
            = "&"
           <> pprint head'
-          <> printProps printGroupDefProp gprops
+          <> printProps (map pprint vprops ++ map printGroupDefProp gprops)
           <> "."
         printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
+
+-- | Specifies that a record declaration can take any number of properties.
+varNumProps :: Int
+varNumProps = (-1)
+
+localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
+localEnvInsertBinds binds env
+  = LocalEnv
+  { localEnvBinds = binds <> localEnvBinds env
+  , localEnvGroups = localEnvGroups env
+  }
 
 mkBuiltinDecl :: T.Text -> Int -> DeclCompact
 mkBuiltinDecl head' numProps
@@ -218,9 +239,12 @@ mkBuiltinDecl head' numProps
   , declCompactNumProps = numProps
   }
 
--- | Specifies that a record declaration can take any number of properties.
-varNumProps :: Int
-varNumProps = (-1)
+compactRecordDecl :: RecordDecl an -> DeclCompact
+compactRecordDecl (RecordDecl _ head' props)
+  = DeclCompact
+  { declCompactHead = head'
+  , declCompactNumProps = length props
+  }
 
 builtinDecls :: DeclSet
 builtinDecls
@@ -240,12 +264,9 @@ builtinDecls
   , declSetFunctions = S.empty
   }
 
-compactRecordDecl :: RecordDecl an -> DeclCompact
-compactRecordDecl (RecordDecl _ head' props)
-  = DeclCompact
-  { declCompactHead = head'
-  , declCompactNumProps = length props
-  }
+declSetToMap :: S.Set DeclCompact -> M.Map T.Text Int
+declSetToMap = M.fromAscList . map declToTuple . S.toAscList
+  where declToTuple (DeclCompact head' numProps) = (head', numProps)
 
 hole :: an -> an -> Int -> Value an
 hole ann idxAnn idx
@@ -253,4 +274,12 @@ hole ann idxAnn idx
   { recordAnn = ann
   , recordHead = "Hole"
   , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
+  }
+
+desugarError :: Range -> T.Text -> Error
+desugarError rng msg
+  = addRangeToErr rng $ Error
+  { errorStage = StageDesugar
+  , errorRange = Nothing
+  , errorMsg = msg
   }

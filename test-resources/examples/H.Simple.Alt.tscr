@@ -1,22 +1,20 @@
-Subst[body, old, new].
-
 //Requires at least some interpretation
 &Main[].
-scm'((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[] &Try[&Main[]];
+scm'((lambda (\x) \body) \arg)' -> \body &Subst[\x, \arg] &Try[&Main[]];
 scm'(\x \y)' -> scm'(\x2 \y)' &Try[&Main[]],
   \x2 <- \x &Main[];
 scm'(\x \y)' -> scm'(\x \y2)' &Try[&Main[]],
   \y2 <- \y &Main[];
 
-&Subst[].
-Subst[\old, \old, \new] -> \new;
-Subst[scm'(lambda (\old) \body)', \old, \_] -> scm'(lambda (\old) \body)';
-Subst[scm'(lambda (\x) \body)', \old, \new] -> scm'(lambda (\x) \body2)',
-  \body2 <- Subst[\body, \old, \new] &Subst[];
-Subst[scm'(\f \x)', \old, \new] -> scm'(\f2 \x2)',
-  \f2 <- Subst[\f, \old, \new] &Subst[],
-  \x2 <- Subst[\x, \old, \new] &Subst[];
-Subst[\body, \_, \_] -> \body;
+&Subst[\old, \new].
+\old -> \new;
+scm'(lambda (\old) \body)' -> scm'(lambda (\old) \body)';
+scm'(lambda (\x) \body)' -> scm'(lambda (\x) \body2)',
+  \body2 <- \body &Subst[\old, \new];
+scm'(\f \x)' -> scm'(\f2 \x2)',
+  \f2 <- \f &Subst[\old, \new],
+  \x2 <- \x &Subst[\old, \new];
+\body -> \body;
 
 &Try[&x].
 \x -> \x &x[];

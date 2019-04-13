@@ -15,7 +15,7 @@ import Data.Semigroup
 }
 
 %name parseSequence
-%error { parseError }
+%error { desugarError }
 %monad { Result }
 %tokentype { L.Lexeme Range }
 %token
@@ -138,11 +138,11 @@ UpperSym : upperSym { Symbol (getAnn $1) (annd $1) }
 parse :: L.Program Range -> Result (Program Range)
 parse (L.Program lexemes) = parseSequence $ annd lexemes
 
-parseError :: [L.Lexeme Range] -> Result a
-parseError [] = error "unexpected parse error without leftover lexemes - should at least have EOF"
-parseError (nextLex : _)
+desugarError :: [L.Lexeme Range] -> Result a
+desugarError [] = error "unexpected parse error without leftover lexemes - should at least have EOF"
+desugarError (nextLex : _)
   = ResultFail Error
-  { errorStage = StageParsing
+  { errorStage = StageParse
   , errorRange = Just nextLexRange
   , errorMsg = "gave up at " <> locDesc
   }

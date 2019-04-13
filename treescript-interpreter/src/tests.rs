@@ -20,16 +20,19 @@ fn test_serialize_prog() {
     libraries: Default::default(),
     groups: vec![
       GroupDefSerial {
-        props: vec![],
+        vprops: vec![],
+        gprops: vec![],
         reducers: vec![Reducer {
           main: Guard {
             input: vec![Consume::Bind(1)],
             output: Value::Splice(1),
             nexts: vec![GroupRef {
               loc: GroupLoc::Global(1),
-              props: vec![GroupRef {
+              vprops: vec![],
+              gprops: vec![GroupRef {
                 loc: GroupLoc::Global(2),
-                props: vec![],
+                vprops: vec![],
+                gprops: vec![],
               }],
             }],
           },
@@ -37,7 +40,8 @@ fn test_serialize_prog() {
         }],
       },
       GroupDefSerial {
-        props: vec![1],
+        vprops: vec![],
+        gprops: vec![1],
         reducers: vec![
           Reducer {
             main: Guard {
@@ -53,7 +57,8 @@ fn test_serialize_prog() {
               output: Value::Prim(Prim::Integer(5)),
               nexts: vec![GroupRef {
                 loc: GroupLoc::Local(1),
-                props: vec![],
+                vprops: vec![],
+                gprops: vec![],
               }],
             }],
           },
@@ -74,7 +79,8 @@ fn test_serialize_prog() {
         ],
       },
       GroupDefSerial {
-        props: vec![],
+        vprops: vec![],
+        gprops: vec![],
         reducers: vec![],
       },
     ],

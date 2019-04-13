@@ -59,7 +59,8 @@ data GroupLoc
 data GroupRef
   = GroupRef
   { groupRefLoc :: GroupLoc
-  , groupRefProps :: [GroupRef]
+  , groupRefValueProps :: [Value]
+  , groupRefGroupProps :: [GroupRef]
   } deriving (Eq, Ord, Read, Show, Generic)
 
 -- | Matches an input value against an output value. Like a "let" statement.
@@ -80,7 +81,8 @@ data Reducer
 -- | Defines a group of statements, which can be referenced by other statements.
 data GroupDef
   = GroupDef
-  { groupDefProps :: [Int]
+  { groupDefValueProps :: [Int]
+  , groupDefGroupProps :: [Int]
   , groupDefReducers :: [Reducer]
   } deriving (Eq, Ord, Read, Show, Generic)
 
@@ -130,12 +132,13 @@ instance MessagePack GroupLoc where
   fromObject _ = fail "invalid encoding for GroupLoc"
 
 instance MessagePack GroupRef where
-  toObject (GroupRef loc props)
-    = ObjectArray [toObject loc, toObject props]
-  fromObject (ObjectArray [loc, props])
+  toObject (GroupRef loc vprops gprops)
+    = ObjectArray [toObject loc, toObject vprops, toObject gprops]
+  fromObject (ObjectArray [loc, vprops, gprops])
       = GroupRef
     <$> fromObject loc
-    <*> fromObject props
+    <*> fromObject vprops
+    <*> fromObject gprops
   fromObject _ = fail "invalid encoding for GroupRef"
 
 instance MessagePack Guard where
@@ -158,11 +161,12 @@ instance MessagePack Reducer where
   fromObject _ = fail "invalid encoding for Reducer"
 
 instance MessagePack GroupDef where
-  toObject (GroupDef props reds)
-    = ObjectArray [toObject props, toObject reds]
-  fromObject (ObjectArray [props, reds])
+  toObject (GroupDef vprops gprops reds)
+    = ObjectArray [toObject vprops, toObject gprops, toObject reds]
+  fromObject (ObjectArray [vprops, gprops, reds])
       = GroupDef
-    <$> fromObject props
+    <$> fromObject vprops
+    <*> fromObject gprops
     <*> fromObject reds
   fromObject _ = fail "invalid encoding for GroupDef"
 

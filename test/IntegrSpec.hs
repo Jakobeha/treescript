@@ -211,7 +211,7 @@ spec = do
             forM_ execTests $ \(ExecTest name inPath inTxt inExt outTxt outExt) -> unless (name `elem` testInfoSkipRun testInfo) $ denoteFailIn ("executable test " <> name) $ do
               let execProg
                     = CmdProgram
-                    { cmdProgramStage = StageRunning
+                    { cmdProgramStage = StageRun
                     , cmdProgramPath = execPath
                     , cmdProgramEnv = testInfoRunEnv testInfo
                     }

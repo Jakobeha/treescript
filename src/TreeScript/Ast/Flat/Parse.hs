@@ -22,7 +22,7 @@ import qualified Text.Megaparsec.Char.Lexer as P
 mkError :: T.Text -> Error
 mkError msg
   = Error
-  { errorStage = StageLexing
+  { errorStage = StageLex
   , errorRange = Nothing
   , errorMsg = msg
   }

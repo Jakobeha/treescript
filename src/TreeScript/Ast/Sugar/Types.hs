@@ -218,7 +218,7 @@ instance TreePrintable Group where
     = par loc <> par head' <> printProps loc sgs
     where printProps (GroupLocFunction _) [] = ""
           printProps (GroupLocFunction _) _ = error "functions with properties not valid"
-          printProps _ ps = "[" <> mintercalate "; " (map par ps) <> "]"
+          printProps _ ps = "[" <> mintercalate ", " (map par ps) <> "]"
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)

@@ -348,7 +348,7 @@ parse str
          Left locAndErrMsg
            -> case reads locAndErrMsg of
                 [(loc, errMsg)] -> ResultFail Error
-                  { errorStage = StageLexing
+                  { errorStage = StageLex
                   , errorRange = Just $ singletonRange loc
                   , errorMsg = T.pack errMsg
                   }

@@ -18,7 +18,6 @@ import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -34,19 +33,17 @@ data BindEnv
 
 data GVEnv a
   = GVEnv
-  { gvEnvGroup :: a
-  , gvEnvValue :: a
+  { gvEnvValue :: a
+  , gvEnvGroup :: a
   } deriving (Eq, Ord, Read, Show, Functor)
+
+type GVBindEnv = GVEnv BindEnv
 
 type GroupSessionRes a = ReaderT GroupEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type GVBindSessionRes a = StateT (GVEnv BindEnv) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
-
-data Variance
-  = VarianceContravariant
-  | VarianceCovariant (S.Set Int)
 
 -- = Intermediate AST
 
@@ -62,7 +59,8 @@ data GroupRef an
   = GroupRef
   { groupRefAnn :: an
   , groupRefLoc :: GroupLoc an
-  , groupRefProps :: [GroupRef an]
+  , groupRefValueProps :: [C.Value an]
+  , groupRefGroupProps :: [GroupRef an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches an input value against an output value. Like a "let" statement.
@@ -87,9 +85,10 @@ data GroupDef an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefProps :: [(T.Text, C.Bind an)]
+  , groupDefValueProps :: [(T.Text, C.Bind an)]
+  , groupDefGroupProps :: [(T.Text, C.Bind an)]
   , groupDefReducers :: [Reducer an]
-  , groupDefPropEnv :: BindEnv
+  , groupDefPropEnv :: GVBindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 emptyBindEnv :: BindEnv
@@ -97,6 +96,13 @@ emptyBindEnv
   = BindEnv
   { bindEnvBinds = M.empty
   , bindEnvNextFree = 1
+  }
+
+emptyGVBindEnv :: GVBindEnv
+emptyGVBindEnv
+  = GVEnv
+  { gvEnvValue = emptyBindEnv
+  , gvEnvGroup = emptyBindEnv
   }
 
 bindEnvLookup :: T.Text -> BindEnv -> (Int, BindEnv)
