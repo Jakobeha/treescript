@@ -66,8 +66,11 @@ treescript :-
 <0> \& { mkPunc PuncAnd }
 <0> \# { mkPunc PuncHash }
 <0> \\ { mkPunc PuncBackSlash }
+<0> \@ { mkPunc PuncAt }
 <0> \- \> { mkPunc PuncFwdArrow }
 <0> \< \- { mkPunc PuncBwdArrow }
+<0> \= \> { mkPunc PuncFwdEq }
+<0> \| { mkPunc PuncVerticalBar }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
 <0> \, { mkPunc PuncComma }

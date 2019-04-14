@@ -30,24 +30,29 @@ duplicateDeclErrs imported
           | otherwise = (nexts, Nothing)
           where nexts = S.insert head' prevs
 
-invalidRecordErrs :: M.Map T.Text Int -> [Reducer Range] -> [Error]
+-- Note: Doesn't typecheck, that's separate
+invalidRecordErrs :: M.Map T.Text [Type ()] -> [Reducer Range] -> [Error]
 invalidRecordErrs decls reds
   = concatMap (foldValuesInReducer invalidRecordErrorsValue1) reds
   where invalidRecordErrorsValue1 (ValuePrimitive _) = []
         invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
-          = case decls M.!? head' of
-              Nothing -> [desugarError rng $ "undeclared record: " <> head']
-              Just numDeclProps
-                 | numDeclProps /= numProps && numDeclProps /= varNumProps
-                -> [ desugarError rng
-                 $ "record has wrong number of properties: expected "
-                <> pprint numDeclProps
-                <> ", got "
-                <> pprint numProps ]
-                 | otherwise -> []
-                where numProps = length props
+          = case recordType head' of
+              RecordTypeTuple -> []
+              RecordTypeCons -> numPropMismatchErrs rng 2 (length props)
+              RecordTypeRegular _ ->
+                case decls M.!? head' of
+                  Nothing -> [desugarError rng $ "undeclared record: " <> head']
+                  Just declProps -> numPropMismatchErrs rng (length declProps) (length props)
         invalidRecordErrorsValue1 (ValueBind _) = []
+        numPropMismatchErrs rng numDeclProps numProps
+           | numDeclProps /= numProps = [ desugarError rng
+           $ "record has wrong number of properties: expected "
+          <> pprint numDeclProps
+          <> ", got "
+          <> pprint numProps ]
+           | otherwise = []
 
+-- Note: Doesn't typecheck, that's separate
 invalidFunctionErrs :: S.Set T.Text -> [Reducer Range] -> [Error]
 invalidFunctionErrs decls reds
   = concatMap (foldGroupsInReducer invalidFunctionErrorsGroup1) reds
@@ -107,19 +112,19 @@ unboundErrs (GroupDef _ vprops gprops reds)
 -- TODO: Undeclared function errors
 
 validationErrs :: SessionEnv -> Program Range -> [Error]
-validationErrs env (Program _ decls groups)
-   = duplicateDeclErrs (S.map declCompactHead $ declSetRecords importedDecls) decls
+validationErrs env (Program _ decls castReds groups)
+   = duplicateDeclErrs (S.map recordDeclHead $ declSetRecords importedDecls) decls
   ++ invalidRecordErrs (declSetToMap $ declSetRecords allDecls) allReds
-  ++ invalidFunctionErrs (S.map declCompactHead $ declSetFunctions allDecls) allReds
+  ++ invalidFunctionErrs (S.map (recordDeclHead . functionDeclInput) $ declSetFunctions allDecls) allReds
   ++ concatMap unboundErrs groups
   where importedDecls = allImportedDecls env
         localDecls
           = DeclSet
-          { declSetRecords = S.fromList $ map compactRecordDecl decls
+          { declSetRecords = S.fromList $ map remAnns decls
           , declSetFunctions = S.empty
           }
         allDecls = localDecls <> importedDecls
-        allReds = concatMap groupDefReducers groups
+        allReds = castReds ++ concatMap groupDefReducers groups
 
 -- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.
 validate :: SessionRes (Program Range) -> SessionRes (Program Range)

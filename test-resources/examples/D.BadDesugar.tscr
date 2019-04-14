@@ -1,10 +1,10 @@
 Zero[].
-Succ[prev].
-Succ[prev]. //Duplicate record
-Add[left, right].
-Add[lhs, Rhs[]]. //Declaration with value property. Duplicate record
+Succ[@Zero|@Succ].
+Succ[@prev]. //Duplicate record. Bad atom type
+Add[@Zero|@Succ, @Zero|@Succ].
+Add[@list[@any, @any], Rhs[]]. //List type with 2 args. Declaration with value property. Duplicate record
 
 &Main[].
 Zero[1] -> 0; //Wrong number of arguments
-Succ[x] -> Add[\x, 1]; //Unexpected lowercase symbol. Value with declaration property. Unbound output
+Succ[@any] -> Add[\x, 1]; //Unexpected type. Value with declaration property. Unbound output
 Add[\left, \right] -> Subtract[Neg[\left], Neg[\right]]; //Undeclared records

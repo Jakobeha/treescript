@@ -57,6 +57,20 @@ data Symbol an
   , symbol :: T.Text
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Part of a type which could be a union.
+data TypePart an
+  = TypePartAtom an (Symbol an)
+  | TypePartRecord an (Symbol an)
+  | TypePartTransparent an (Record an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | A type.
+data Type an
+  = Type
+  { typeAnn :: an
+  , typeParts :: [TypePart an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | A subgroup property.
 data SubGroupProperty an
   = SubGroupProperty
@@ -66,7 +80,7 @@ data SubGroupProperty an
 
 -- | Property of a record or group.
 data GenProperty an
-  = GenPropertyDecl (Symbol an) -- ^ Record  declaration property.
+  = GenPropertyDecl (Type an) -- ^ Record  declaration property.
   | GenPropertySubGroup (SubGroupProperty an) -- ^ Subgroup declaration property.
   | GenPropertyRecord (Value an) -- ^ Record property.
   | GenPropertyGroup (Group an) -- ^ Subgroup reference property.
@@ -148,10 +162,17 @@ data Guard an
   , guardNexts :: [Group an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Whether this is a regular reducer or type cast.
+data ReducerType an
+  = ReducerTypeReg an
+  | ReducerTypeCast an
+  deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Transforms a value into a different value.
 data Reducer an
   = Reducer
   { reducerAnn :: an
+  , reducerType :: ReducerType an
   , reducerMain :: Guard an
   , reducerGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
@@ -199,11 +220,19 @@ instance TreePrintable Primitive where
 instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
 
+instance TreePrintable TypePart where
+  treePrint par _ (TypePartAtom _ sym) = "@" <> par sym
+  treePrint par _ (TypePartRecord _ sym) = "@" <> par sym
+  treePrint par _ (TypePartTransparent _ x) = "@" <> par x
+
+instance TreePrintable Type where
+  treePrint par _ (Type _ parts) = mintercalate "|" $ map par parts
+
 instance TreePrintable SubGroupProperty where
   treePrint par _ (SubGroupProperty _ sym) = "&" <> par sym
 
 instance TreePrintable GenProperty where
-  treePrint par _ (GenPropertyDecl key) = par key
+  treePrint par _ (GenPropertyDecl prop) = par prop
   treePrint par _ (GenPropertySubGroup prop) = par prop
   treePrint par _ (GenPropertyRecord prop) = par prop
   treePrint par _ (GenPropertyGroup prop) = par prop
@@ -255,10 +284,16 @@ instance TreePrintable Guard where
     = par input <> " <- " <> par output <> foldMap printNext nexts
     where printNext next' = " " <> par next'
 
+instance TreePrintable ReducerType where
+  treePrint _ _ (ReducerTypeReg _) = "->"
+  treePrint _ _ (ReducerTypeCast _) = "=>"
+
 instance TreePrintable Reducer where
-  treePrint par _ (Reducer _ (Guard _ input output nexts) guards)
+  treePrint par _ (Reducer _ typ (Guard _ input output nexts) guards)
      = par input
-    <> " -> "
+    <> " "
+    <> par typ
+    <> " "
     <> par output
     <> foldMap printNext nexts
     <> foldMap printGuard guards

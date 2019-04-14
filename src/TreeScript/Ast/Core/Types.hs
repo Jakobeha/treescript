@@ -24,27 +24,51 @@ data LocalEnv
   , localEnvGroups :: S.Set Int
   } deriving (Eq, Ord, Read, Show)
 
--- | Declares a type of record or function but doesn't specifify property values.
-data DeclCompact
-  = DeclCompact
-  { declCompactHead :: T.Text
-  , declCompactNumProps :: Int
-  } deriving (Eq, Ord, Read, Show)
-
 -- | Declares what nodes a language or library enables.
 data DeclSet
   = DeclSet
-  { declSetRecords :: S.Set DeclCompact
-  , declSetFunctions :: S.Set DeclCompact
-  }
+  { declSetRecords :: S.Set (RecordDecl ())
+  , declSetFunctions :: S.Set (FunctionDecl ())
+  } deriving (Eq, Ord, Read, Show)
+
+-- | A non-record type part.
+data AtomType
+  = AtomTypeAny
+  | AtomTypeInteger
+  | AtomTypeFloat
+  | AtomTypeString
+  deriving (Eq, Ord, Read, Show)
+
+-- | Part of a value type (which is a union).
+data TypePart an
+  = TypePartAtom an AtomType
+  | TypePartRecord an T.Text
+  | TypePartTuple an [Type an]
+  | TypePartList an (Type an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | A value type.
+data Type an
+  = Type
+  { typeAnn :: an
+  , typeParts :: [TypePart an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
   = RecordDecl
   { recordDeclAnn :: an
   , recordDeclHead :: T.Text
-  , recordDeclProps :: [T.Text]
+  , recordDeclProps :: [Type an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Declares a function
+data FunctionDecl an
+  = FunctionDecl
+  { functionDeclAnn :: an
+  , functionDeclInput :: RecordDecl an
+  , functionDeclOutput :: Type an
+  } deriving (Eq, Ord, Read, Show)
 
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
 data Primitive an
@@ -52,6 +76,13 @@ data Primitive an
   | PrimFloat an Float
   | PrimString an T.Text
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Whether the record is a regular or special type.
+data RecordType
+  = RecordTypeTuple
+  | RecordTypeCons
+  | RecordTypeRegular T.Text
+  deriving (Eq, Ord, Read, Show)
 
 -- | Contains a head and properties. A parent in the AST.
 data Record an
@@ -122,6 +153,7 @@ data Program an
   = Program
   { programAnn :: an
   , programRecordDecls :: [RecordDecl an]
+  , programCastReducers :: [Reducer an]
   , programGroups :: [GroupDef an]
   }
 
@@ -140,10 +172,11 @@ instance Monoid DeclSet where
     }
 
 instance (Semigroup an) => Semigroup (Program an) where
-  Program xAnn xDecls xGroups <> Program yAnn yDecls yGroups
+  Program xAnn xDecls xCastReds xGroups <> Program yAnn yDecls yCastReds yGroups
     = Program
     { programAnn = xAnn <> yAnn
     , programRecordDecls = xDecls <> yDecls
+    , programCastReducers = xCastReds <> yCastReds
     , programGroups = xGroups <> yGroups
     }
 
@@ -152,8 +185,25 @@ instance (Monoid an) => Monoid (Program an) where
     = Program
     { programAnn = mempty
     , programRecordDecls = mempty
+    , programCastReducers = mempty
     , programGroups = mempty
     }
+
+instance Printable AtomType where
+  pprint AtomTypeAny = "any"
+  pprint AtomTypeInteger = "int"
+  pprint AtomTypeFloat = "float"
+  pprint AtomTypeString = "string"
+
+instance Printable (TypePart an) where
+  pprint (TypePartAtom _ x) = "@" <> pprint x
+  pprint (TypePartRecord _ name) = "@" <> name
+  pprint (TypePartTuple _ props) = "@t" <> printProps (map pprint props)
+  pprint (TypePartList _ prop) = "@list[" <> pprint prop <> "]"
+
+instance Printable (Type an) where
+  pprint (Type _ parts)
+    = T.intercalate "|" (map pprint parts)
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
@@ -194,22 +244,31 @@ instance Printable (Guard an) where
     where printNext next' = " " <> pprint next'
 
 instance Printable (Reducer an) where
-  pprint (Reducer _ (Guard _ input output nexts) guards)
-     = pprint input
-    <> " -> "
-    <> pprint output
-    <> foldMap printNext nexts
-    <> foldMap printGuard guards
-    <> ";"
-    where printNext next' = " " <> pprint next'
-          printGuard guard = ",\n  " <> pprint guard
+  pprint = printReducer "->"
 
 instance Printable (Program an) where
-  pprint (Program _ decls groups)
-    = T.unlines $ map pprint decls ++ [T.empty] ++ zipWith printGroupDef [0..] groups
+  pprint (Program _ decls castReds groups)
+     = T.unlines $ map pprint decls
+    ++ [T.empty]
+    ++ map (printReducer "=>") castReds
+    ++ [T.empty]
+    ++ zipWith printGroupDef [0..] groups
 
 printProps :: [T.Text] -> T.Text
 printProps props = "[" <> T.intercalate ", " props <> "]"
+
+printReducer :: T.Text -> Reducer an -> T.Text
+printReducer typ (Reducer _ (Guard _ input output nexts) guards)
+   = pprint input
+  <> " "
+  <> pprint typ
+  <> " "
+  <> pprint output
+  <> foldMap printNext nexts
+  <> foldMap printGuard guards
+  <> ";"
+  where printNext next' = " " <> pprint next'
+        printGuard guard = ",\n  " <> pprint guard
 
 printGroupDef :: Int -> GroupDef an -> T.Text
 printGroupDef head' (GroupDef _ vprops gprops reds)
@@ -221,10 +280,6 @@ printGroupDef head' (GroupDef _ vprops gprops reds)
           <> "."
         printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
 
--- | Specifies that a record declaration can take any number of properties.
-varNumProps :: Int
-varNumProps = (-1)
-
 localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
 localEnvInsertBinds binds env
   = LocalEnv
@@ -232,18 +287,12 @@ localEnvInsertBinds binds env
   , localEnvGroups = localEnvGroups env
   }
 
-mkBuiltinDecl :: T.Text -> Int -> DeclCompact
-mkBuiltinDecl head' numProps
-  = DeclCompact
-  { declCompactHead = head'
-  , declCompactNumProps = numProps
-  }
-
-compactRecordDecl :: RecordDecl an -> DeclCompact
-compactRecordDecl (RecordDecl _ head' props)
-  = DeclCompact
-  { declCompactHead = head'
-  , declCompactNumProps = length props
+mkBuiltinDecl :: T.Text -> [Type ()] -> RecordDecl ()
+mkBuiltinDecl head' props
+  = RecordDecl
+  { recordDeclAnn = ()
+  , recordDeclHead = head'
+  , recordDeclProps = props
   }
 
 builtinDecls :: DeclSet
@@ -251,22 +300,29 @@ builtinDecls
   = DeclSet
   { declSetRecords
       = S.fromList
-      [ mkBuiltinDecl "T" varNumProps
-      , mkBuiltinDecl "Unit" 0
-      , mkBuiltinDecl "True" 0
-      , mkBuiltinDecl "False" 0
-      , mkBuiltinDecl "Nil" 0
-      , mkBuiltinDecl "None" 0
-      , mkBuiltinDecl "Some" 1
-      , mkBuiltinDecl "Cons" 2
-      , mkBuiltinDecl "Hole" 1
+      [ mkBuiltinDecl "Unit" []
+      , mkBuiltinDecl "True" []
+      , mkBuiltinDecl "False" []
+      , mkBuiltinDecl "None" []
+      , mkBuiltinDecl "Nil" []
+      , mkBuiltinDecl "Hole" [Type () [TypePartAtom () AtomTypeInteger]]
       ]
   , declSetFunctions = S.empty
   }
 
-declSetToMap :: S.Set DeclCompact -> M.Map T.Text Int
+transparentDecls :: S.Set T.Text
+transparentDecls = S.fromList ["T", "Cons"]
+
+-- | Whether the record is regular or a special type.
+recordType :: T.Text -> RecordType
+recordType head'
+  | head' == "T" = RecordTypeTuple
+  | head' == "Cons" = RecordTypeCons
+  | otherwise = RecordTypeRegular head'
+
+declSetToMap :: S.Set (RecordDecl ()) -> M.Map T.Text [Type ()]
 declSetToMap = M.fromAscList . map declToTuple . S.toAscList
-  where declToTuple (DeclCompact head' numProps) = (head', numProps)
+  where declToTuple (RecordDecl () head' props) = (head', props)
 
 hole :: an -> an -> Int -> Value an
 hole ann idxAnn idx

@@ -24,8 +24,11 @@ import Data.Semigroup
   '&' { L.LexemePunc (L.PuncAnd $$) }
   '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
+  '@' { L.LexemePunc (L.PuncAt $$) }
   '->' { L.LexemePunc (L.PuncFwdArrow $$) }
   '<-' { L.LexemePunc (L.PuncBwdArrow $$) }
+  '=>' { L.LexemePunc (L.PuncFwdEq $$) }
+  '|' { L.LexemePunc (L.PuncVerticalBar $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }
   ',' { L.LexemePunc (L.PuncComma $$) }
@@ -57,10 +60,14 @@ TopLevel : RecordDecl { TopLevelRecordDecl $1 }
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
 Reducer : ReducerBase Guards ';'
-        { Reducer (sconcat $ getAnn $1 N.<| $3 N.:| map getAnn $2) $1 (reverse $2) }
+        { Reducer (sconcat $ getAnn (snd $1) N.<| $3 N.:| map getAnn $2) (fst $1) (snd $1) (reverse $2) }
         ;
-ReducerBase : Value '->' Value Groups
-            { Guard (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)}
+ReducerBase : Value ReducerType Value Groups
+            { ($2, Guard (sconcat $ getAnn $1 N.<| getAnn $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)) }
+            ;
+ReducerType : '->' { ReducerTypeReg $1 }
+            | '=>' { ReducerTypeCast $1 }
+            ;
 GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
 Guards : { [] }
        | NonEmptyGuards { $1 }
@@ -98,11 +105,22 @@ GenProperties : '[' ']' { Annd ($1 <> $2) [] }
 NonEmptyGenProperties : GenProperty { [$1] }
                       | NonEmptyGenProperties ',' GenProperty { $3 : $1 }
                       ;
-GenProperty : LowerSym { GenPropertyDecl $1 }
+GenProperty : Type { GenPropertyDecl $1 }
             | SubGroupProperty { GenPropertySubGroup $1 }
             | Value { GenPropertyRecord $1 }
             | Group { GenPropertyGroup $1 }
             ;
+Type : TypeParts { Type (sconcat $ N.map getAnn $1) (reverse $ N.toList $1) }
+     ;
+TypeParts : TypePart { $1 N.:| [] }
+          | TypeParts '|' TypePart { $3 N.<| $1 }
+          ;
+TypePart : '@' LowerSym { TypePartAtom ($1 <> getAnn $2) $2 }
+         | '@' UpperSym { TypePartRecord ($1 <> getAnn $2) $2 }
+         | '@' TransparentTypePart { TypePartTransparent ($1 <> getAnn $2) $2 }
+         ;
+TransparentTypePart : LowerSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
+                    ;
 SubGroupProperty : '&' LowerSym { SubGroupProperty ($1 <> getAnn $2) $2 }
                  ;
 Bind : '\\' BindTarget { Bind ($1 <> getAnn $2) $2 }

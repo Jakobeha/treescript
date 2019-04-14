@@ -20,7 +20,13 @@
 					"include": "#recordHead"
 				},
 				{
-					"include": "#propKey"
+					"include": "#recordType"
+				},
+				{
+					"include": "#transparentRecordType"
+				},
+				{
+					"include": "#atomType"
 				},
 				{
 					"include": "#bind"
@@ -46,16 +52,24 @@
 			"name": "entity.name.function.record-head.treescript",
 			"match": "[A-Z]\\w*"
 		},
-		"propKey": {
-			"name": "variable.parameter.prop-key.treescript",
-			"match": "[a-z]\\w*(?!\\w|')"
+		"recordType": {
+			"name": "entity.name.type.record.treescript",
+			"match": "@[A-Z]\\w*"
+		},
+		"transparentRecordType": {
+			"name": "keyword.control.type.transparent-record.treescript",
+			"match": "@[a-z]\\w*(?=\\[)"
+		},
+		"atomType": {
+			"name": "variable.parameter.type.atom.treescript",
+			"match": "@[a-z]\\w*"
 		},
 		"bind": {
 			"name": "keyword.operator.bind.treescript",
 			"match": "\\\\(_|[0-9]+|[a-z]\\w*)",
 			"captures": {
 				"1": {
-					"name": "entity.name.tag.treescript"
+					"name": "entity.name.tag.bind.treescript"
 				}
 			}
 		},
@@ -100,7 +114,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -132,7 +146,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -156,7 +170,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -184,7 +198,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -208,7 +222,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},

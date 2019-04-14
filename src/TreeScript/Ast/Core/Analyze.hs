@@ -228,17 +228,27 @@ bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 bindsInValue :: Value an -> S.Set Int
 bindsInValue = foldValue bindsInValue1
 
-declSpecToCompactDecl :: T.Text -> DeclSpec -> DeclCompact
-declSpecToCompactDecl name (DeclSpec nodeName numArgs)
-  = DeclCompact
-  { declCompactHead = name <> "_" <> nodeName
-  , declCompactNumProps = numArgs
+-- TODO: Replace spec with imported TreeScript.
+declSpecToRecordDecl :: T.Text -> DeclSpec -> RecordDecl ()
+declSpecToRecordDecl name (DeclSpec nodeName numArgs)
+  = RecordDecl
+  { recordDeclAnn = ()
+  , recordDeclHead = name <> "_" <> nodeName
+  , recordDeclProps = replicate numArgs $ Type () [TypePartAtom () AtomTypeAny]
+  }
+
+declSpecToFunctionDecl :: T.Text -> DeclSpec -> FunctionDecl ()
+declSpecToFunctionDecl name spec
+  = FunctionDecl
+  { functionDeclAnn = ()
+  , functionDeclInput = declSpecToRecordDecl name spec
+  , functionDeclOutput = Type () [TypePartAtom () AtomTypeAny]
   }
 
 langSpecDecls :: LangSpec -> DeclSet
 langSpecDecls spec
   = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToCompactDecl langName) $ langSpecNodes spec
+  { declSetRecords = S.fromList $ map (declSpecToRecordDecl langName) $ langSpecNodes spec
   , declSetFunctions = S.empty
   }
   where langName = langSpecName spec
@@ -246,8 +256,8 @@ langSpecDecls spec
 librarySpecDecls :: LibrarySpec -> DeclSet
 librarySpecDecls spec
   = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToCompactDecl libraryName) $ librarySpecRecords spec
-  , declSetFunctions = S.fromList $ map (declSpecToCompactDecl libraryName) $ librarySpecFunctions spec
+  { declSetRecords = S.fromList $ map (declSpecToRecordDecl libraryName) $ librarySpecRecords spec
+  , declSetFunctions = S.fromList $ map (declSpecToFunctionDecl libraryName) $ librarySpecFunctions spec
   }
   where libraryName = librarySpecName spec
 
@@ -264,7 +274,7 @@ getAllProgramDecls prog = do
   env <- getSessionEnv
   let declaredDecls
         = DeclSet
-        { declSetRecords = S.fromList $ map compactRecordDecl $ programRecordDecls prog
+        { declSetRecords = S.fromList $ map remAnns $ programRecordDecls prog
         , declSetFunctions = S.empty
         }
       importedDecls = allImportedDecls env

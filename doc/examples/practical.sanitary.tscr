@@ -1,5 +1,3 @@
-Subst[body, old, new].
-
 &Main[].
 \x -> \x &Recurse[&OptimizeFor[]]; // Don't want to apply again
 \x -> \x;

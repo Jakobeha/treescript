@@ -23,8 +23,11 @@ data Punc an
   | PuncAnd an -- ^ @&@
   | PuncHash an -- ^ @#@
   | PuncBackSlash an -- ^ @\\@
+  | PuncAt an -- ^ @\@@
   | PuncFwdArrow an -- ^ @->@
   | PuncBwdArrow an -- ^ @<-@
+  | PuncFwdEq an -- ^ @=>@
+  | PuncVerticalBar an -- ^ @|@
   | PuncPeriod an -- ^ @.@
   | PuncSemicolon an -- ^ @;@
   | PuncComma an -- ^ @,@
@@ -100,8 +103,11 @@ instance Printable (Punc an) where
   pprint (PuncAnd _) = "&"
   pprint (PuncHash _) = "#"
   pprint (PuncBackSlash _) = "\\"
+  pprint (PuncAt _) = "@"
   pprint (PuncFwdArrow _) = "->"
   pprint (PuncBwdArrow _) = "<-"
+  pprint (PuncFwdEq _) = "=>"
+  pprint (PuncVerticalBar _) = "|"
   pprint (PuncPeriod _) = "."
   pprint (PuncSemicolon _) = ";"
   pprint (PuncComma _) = ","

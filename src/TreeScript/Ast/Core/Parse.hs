@@ -79,24 +79,52 @@ runLanguageParser lang txt splices = do
 
 -- = Parsing from Sugar
 
-undefinedSym :: T.Text
-undefinedSym = "<undefined>"
+parseAtomType :: S.Symbol Range -> SessionRes AtomType
+parseAtomType (S.Symbol rng txt)
+  | txt == "any" = pure AtomTypeAny
+  | txt == "int" = pure AtomTypeInteger
+  | txt == "float" = pure AtomTypeFloat
+  | txt == "string" = pure AtomTypeString
+  | otherwise = do
+    tellError $ desugarError rng $ "unknown atom type: " <> txt
+    pure AtomTypeAny
 
-parseValPropDecl :: S.GenProperty Range -> SessionRes T.Text
-parseValPropDecl (S.GenPropertyDecl (S.Symbol _ decl)) = pure decl
-parseValPropDecl (S.GenPropertySubGroup prop) = do
-  tellError $ desugarError (getAnn prop) "expected lowercase symbol, got group property declaration"
-  pure undefinedSym
-parseValPropDecl (S.GenPropertyRecord val) = do
-  tellError $ desugarError (getAnn val) "expected lowercase symbol, got value"
-  pure undefinedSym
-parseValPropDecl (S.GenPropertyGroup grp) = do
-  tellError $ desugarError (getAnn grp) "expected value, got group"
-  pure undefinedSym
+parseTypePart :: S.TypePart Range -> SessionRes (TypePart Range)
+parseTypePart (S.TypePartAtom rng atm) = TypePartAtom rng <$> parseAtomType atm
+parseTypePart (S.TypePartRecord rng (S.Symbol _ txt)) = pure $ TypePartRecord rng txt
+parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') props))
+  | head' == "t" = TypePartTuple rng <$> traverse parseTypeProp props
+  | head' == "list"
+  = case props of
+      [prop] -> TypePartList rng <$> parseTypeProp prop
+      _ -> do
+        tellError $ desugarError rng $ "list type must have 1 property, got " <> pprint (length props)
+        pure $ TypePartAtom rng AtomTypeAny
+  | otherwise = do
+    tellError $ desugarError headRng $ "unknown transparent record type: " <> head'
+    pure $ TypePartAtom rng AtomTypeAny
+
+parseType :: S.Type Range -> SessionRes (Type Range)
+parseType (S.Type rng parts) = Type rng <$> traverse parseTypePart parts
+
+parseTypeProp :: S.GenProperty Range -> SessionRes (Type Range)
+parseTypeProp (S.GenPropertyDecl typ) = parseType typ
+parseTypeProp (S.GenPropertySubGroup prop) = do
+  let rng = getAnn prop
+  tellError $ desugarError rng "expected type, got group property declaration"
+  pure $ Type rng [TypePartAtom rng AtomTypeAny]
+parseTypeProp (S.GenPropertyRecord val) = do
+  let rng = getAnn val
+  tellError $ desugarError rng "expected type, got value"
+  pure $ Type rng [TypePartAtom rng AtomTypeAny]
+parseTypeProp (S.GenPropertyGroup grp) = do
+  let rng = getAnn grp
+  tellError $ desugarError rng "expected value, got group"
+  pure $ Type rng [TypePartAtom rng AtomTypeAny]
 
 parseRecordDecl :: S.RecordDecl Range -> SessionRes (RecordDecl Range)
 parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props))
-  = RecordDecl rng head' <$> traverse parseValPropDecl props
+  = RecordDecl rng head' <$> traverse parseTypeProp props
 
 parsePrim :: S.Primitive Range -> I.GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
@@ -108,7 +136,7 @@ parsePrim (S.PrimString rng string)
 
 parseValueProperty :: S.GenProperty Range -> I.GVBindSessionRes (Value Range)
 parseValueProperty (S.GenPropertyDecl key)
-  = mkFail $ desugarError (getAnn key) "expected value, got lowercase symbol"
+  = mkFail $ desugarError (getAnn key) "expected value, got type"
 parseValueProperty (S.GenPropertySubGroup prop)
   = mkFail $ desugarError (getAnn prop) "expected value, got group property declaration"
 parseValueProperty (S.GenPropertyRecord val) = parseValue val
@@ -160,14 +188,14 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
 parseSplice :: S.Splice Range -> I.GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
   where bind = S.Bind (getAnn targ) targ
-parseSplice (S.SpliceHole (S.HoleIdx ann idx)) = pure $ hole ann ann idx
+parseSplice (S.SpliceHole (S.HoleIdx rng idx)) = pure $ hole rng rng idx
 
 parseValue :: S.Value Range -> I.GVBindSessionRes (Value Range)
 parseValue (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
 parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
 parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code) = parseSpliceCode code
-parseValue (S.ValueHole (S.Hole ann (S.HoleIdx idxAnn idx))) = pure $ hole ann idxAnn idx
+parseValue (S.ValueHole (S.Hole rng (S.HoleIdx idxAnn idx))) = pure $ hole rng idxAnn idx
 
 parseGroupHead1 :: S.GroupLoc Range -> S.Symbol Range -> I.GVBindSessionRes (I.GroupLoc Range)
 parseGroupHead1 (S.GroupLocGlobal _) head' = pure $ I.GroupLocGlobal head'
@@ -180,7 +208,7 @@ parseGroupHead1 (S.GroupLocFunction _) head' = pure $ I.GroupLocFunction head'
 
 parseGroupProperty1 :: S.GenProperty Range -> I.GVBindSessionRes (Either (Value Range) (I.GroupRef Range))
 parseGroupProperty1 (S.GenPropertyDecl key)
-  = mkFail $ desugarError (getAnn key) "expected group, got lowercase symbol"
+  = mkFail $ desugarError (getAnn key) "expected group, got type"
 parseGroupProperty1 (S.GenPropertySubGroup prop)
   = mkFail $ desugarError (getAnn prop) "expected group, got group property declaration"
 parseGroupProperty1 (S.GenPropertyRecord val)
@@ -201,9 +229,9 @@ parseGuard1 (S.Guard rng input output nexts)
   <*> parseValue output
   <*> traverse parseGroupRef1 nexts
 
-parseReducer1 :: I.GVBindEnv -> S.Reducer Range -> SessionRes (I.Reducer Range)
-parseReducer1 bindEnv (S.Reducer rng main guards)
-    = evalStateT
+parseReducer1 :: I.GVBindEnv -> S.Reducer Range -> SessionRes (S.ReducerType Range, I.Reducer Range)
+parseReducer1 bindEnv (S.Reducer rng typ main guards)
+    = (typ, ) <$> evalStateT
     ( I.Reducer rng
   <$> parseGuard1 main
   <*> traverse parseGuard1 guards
@@ -211,7 +239,7 @@ parseReducer1 bindEnv (S.Reducer rng main guards)
 
 parseGroupPropDecl1 :: S.GenProperty Range -> I.GVBindSessionRes (Maybe (Side, (T.Text, Bind Range)))
 parseGroupPropDecl1 (S.GenPropertyDecl prop)
-  = mkFail $ desugarError (getAnn prop) "expected group property declaration, got lowercase symbol"
+  = mkFail $ desugarError (getAnn prop) "expected group property declaration, got type"
 parseGroupPropDecl1 (S.GenPropertySubGroup (S.SubGroupProperty rng (S.Symbol _ txt))) = do
   env <- get
   let (idx, newEnv) = I.bindEnvLookup txt $ I.gvEnvGroup env
@@ -251,9 +279,14 @@ parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
 parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
 parseRestGroupDefs1 decl (S.TopLevelReducer red : xs) = do
   I.GroupDef yRng yHead yValueProps yGroupProps yReds yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
-  red' <- parseReducer1 yBindEnv red
+  (redType, red') <- parseReducer1 yBindEnv red
   let yRng' = getAnn red <> yRng
-      yReds' = red' : yReds
+  yReds' <-
+    case redType of
+      S.ReducerTypeReg _ -> pure $ red' : yReds
+      S.ReducerTypeCast redTypeAnn -> do
+        tellError $ desugarError redTypeAnn $ "cast reducer must be before all groups"
+        pure yReds -- Discard the cast reducer
   pure $ I.GroupDef yRng' yHead yValueProps yGroupProps yReds' yBindEnv N.:| ys
 parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
@@ -303,7 +336,7 @@ parseGroupDefEnv group idx = (I.groupDefHead group, idx)
 
 notGroupedReducerError :: Reducer Range -> Error
 notGroupedReducerError red
-  = desugarError (getAnn red) "reducer not in group"
+  = desugarError (getAnn red) "regular reducer must be in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
 parseRaw :: S.Program Range -> SessionRes (Program Range)
@@ -316,12 +349,15 @@ parseRaw (S.Program rng topLevels) = do
   reds1 <- traverseDropFatals (parseReducer1 I.emptyGVBindEnv) reds
   groups1 <- parseAllGroupDefs1 topLevelsInGroups
   let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
-  reds' <- runReaderT (traverseDropFatals parseReducer2 reds1) groupEnv
+  reds' <- runReaderT (traverseDropFatals (\(typ, red) -> (typ, ) <$> parseReducer2 red) reds1) groupEnv
   groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
+  let regReds = map snd $ filter ((== S.ReducerTypeReg ()) . remAnns . fst) reds'
+      castReds = map snd $ filter ((== S.ReducerTypeCast ()) . remAnns . fst) reds'
   -- TODO Syntax sugar a main group
-  tellErrors $ map notGroupedReducerError reds'
+  tellErrors $ map notGroupedReducerError regReds
   pure Program
     { programAnn = rng
+    , programCastReducers = castReds
     , programRecordDecls = decls'
     , programGroups = groups'
     }
