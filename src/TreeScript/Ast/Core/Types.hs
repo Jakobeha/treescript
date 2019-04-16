@@ -1,9 +1,11 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Types for the @Core@ AST.
 module TreeScript.Ast.Core.Types
@@ -16,6 +18,21 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import GHC.Generics
+
+-- | Name defines the next step
+data SubPhase
+  = Local -- ^ Index local binds
+  | Module -- ^ Resolve modules
+  | Combine -- ^ Combine with modules
+  | Final -- ^ Done, now can be translated
+
+data family Symbol (p :: SubPhpse) :: * -> *
+
+data family GroupDef (p :: SubPhase) :: * -> *
+
+class SubPhase a where
+  type GroupDef a :: * -> *
+  type Symbol a :: * -> *
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
