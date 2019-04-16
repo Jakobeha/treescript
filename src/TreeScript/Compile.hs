@@ -21,7 +21,7 @@ compile input output
   | otherwise
   = ( T.exportFile output
   <=< T.parse
-  <=< C.parse
+  <=< C.parse input
   <=< ResultT . pure . S.parse
   <=< ResultT . pure . L.parse
   <=< liftIOAndCatch StageReadInput . T.readFile
@@ -34,7 +34,7 @@ compileRaw input output
   | otherwise
   = ( T.exportRaw output
   <=< T.parse
-  <=< C.parse
+  <=< C.parse input
   <=< ResultT . pure . S.parse
   <=< ResultT . pure . L.parse
   <=< liftIOAndCatch StageReadInput . T.readFile

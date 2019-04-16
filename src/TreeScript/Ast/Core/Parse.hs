@@ -17,6 +17,7 @@ import TreeScript.Plugin
 
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Control.Exception
 import Data.Bifunctor
 import Data.Either
 import qualified Data.List.NonEmpty as N
@@ -24,6 +25,7 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import System.FilePath
 
 -- = Parsing from AST data
 
@@ -74,29 +76,97 @@ decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse 
 runLanguageParser :: Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 runLanguageParser lang txt splices = do
   let parser = languageParser lang
-  astData <- overErrors (prependMsgToErr $ "couldn't parse code") $ runCmdProgram parser txt
+  astData <- overErrors (prependMsgToErr "couldn't parse code") $ runCmdProgram parser txt
   overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData astData splices
 
 -- = Parsing from Sugar
 
-undefinedSym :: T.Text
-undefinedSym = "<undefined>"
+invalidTxt :: T.Text
+invalidTxt = "???"
 
-parseValPropDecl :: S.GenProperty Range -> SessionRes T.Text
+parseImportQual :: Maybe (S.Symbol Range) -> T.Text
+parseImportQual Nothing = ""
+parseImportQual (Just qual) = qual <> "_"
+
+getModuleType :: S.ModulePath Range -> SessionRes ModuleType
+getModuleType (S.ModulePath rng path) = do
+  let liftModIO
+        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't check " <> txt))
+        . liftIOAndCatch StageDesugar
+      scriptPath = path <> ".tscr"
+      progPath = path <> ".tprg"
+      langPath = path <> ".tlng"
+      libPath = path <> ".tlib"
+  pathFileExists <- doesFileExist path
+  dirExists <- doesDirectoryExist path
+  progExists <- doesFileExist progPath
+  sourceExists <- doesFileExist sourcePath
+  when (dirExists && (progExists || sourceExists)) $
+    tellError $ desugarError rng $ "both a directory and program exist for this module, choosing program"
+  if progExists || sourceExists then do
+    langExists <- doesFileExist langPath
+    libExists <- doesFileExist libPath
+    pure $ ModuleTypeFile progExists langExists libExists
+  else if dirExists then
+    pure ModuleTypeDir
+  else if pathFileExists then
+    mkFail $ desugarError rng $ "no module exists at " <> path <> " (a raw file exists though - when importing, drop the extension)"
+  else
+    mkFail $ desugarError rng $ "no module exists at " <> path
+
+
+parseImportDecl :: T.Text -> S.ImportDecl Range -> SessionRes (ImportDecl Range)
+parseImportDecl myPath (S.ImportDecl rng (S.Symbol litRng lit) path qual) = do
+  unless (lit == "import") $
+    tellError $ desugarError litRng "expected \"import\""
+  absPath <- resolvePath myPath path
+  mtype <- getModuleType pathRng absPath
+  let qual' = parseImportQual qual
+  pure $ ImportDecl rng mtype absPath qual'
+
+resolveSource :: (MonadReader (T.Text, [ImportDecl]) m, MonadIO m, MonadCatch m, MonadResult m) => Bool -> [ImportDecl] -> T.Text -> m ModulePath
+resolveSource localIsCand cands local
+  = resolveLocal ++ resolveExt local
+  where resolveLocal
+          | localIsCand
+
+parseSymbol :: (MonadReader (T.Text, [ImportDecl]) m, MonadIO m, MonadCatch m, MonadResult m) => S.Symbol Range -> m (Symbol Range)
+parseSymbol (S.Symbol rng txt) = do
+  (progPath, decls) <- ask
+  let (qual, local) = T.breakOnEnd "_" txt
+      cands = filter ((== qual) . importDeclQual) decls
+      localIsCand = T.null qual
+  paths <- overErrors (addRangeToErr rng) $ resolveSource localIsCand cands local
+  path <-
+    case paths of
+      [p] -> p
+      [] -> do
+        tellError $ desugarError rng $ "unknown (not local, imported, or builtin): " <> txt
+        pure invalidTxt
+      ps -> do
+        tellError $ desugarError rng $ "ambiguous, modules where this is defined:\n" <> T.lines ps
+        pure $ head ps
+  pure Symbol
+    { symbolAnn = rng
+    , symbolModule = path
+    , symbol = local
+    }
+
+parseValPropDecl :: S.GenProperty Range -> ImportSessionRes T.Text
 parseValPropDecl (S.GenPropertyDecl (S.Symbol _ decl)) = pure decl
 parseValPropDecl (S.GenPropertySubGroup prop) = do
   tellError $ desugarError (getAnn prop) "expected lowercase symbol, got group property declaration"
-  pure undefinedSym
+  pure invalidTxt
 parseValPropDecl (S.GenPropertyRecord val) = do
   tellError $ desugarError (getAnn val) "expected lowercase symbol, got value"
-  pure undefinedSym
+  pure invalidTxt
 parseValPropDecl (S.GenPropertyGroup grp) = do
   tellError $ desugarError (getAnn grp) "expected value, got group"
-  pure undefinedSym
+  pure invalidTxt
 
-parseRecordDecl :: S.RecordDecl Range -> SessionRes (RecordDecl Range)
-parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props))
-  = RecordDecl rng head' <$> traverse parseValPropDecl props
+parseRecordDecl :: S.RecordDecl Range -> ImportSessionRes (RecordDecl Range)
+parseRecordDecl (S.RecordDecl rng (S.Record _ head' props))
+  = RecordDecl rng <$> parseSymbol head' <*> traverse parseValPropDecl props
 
 parsePrim :: S.Primitive Range -> I.GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
@@ -116,8 +186,8 @@ parseValueProperty (S.GenPropertyGroup grp)
   = mkFail $ desugarError (getAnn grp) "expected value, got group"
 
 parseRecord :: S.Record Range -> I.GVBindSessionRes (Record Range)
-parseRecord (S.Record rng (S.Symbol _ head') props)
-  = Record rng head' <$> traverseDropFatals parseValueProperty props
+parseRecord (S.Record rng head' props)
+  = Record rng <$> parseSymbol head' <*> traverseDropFatals parseValueProperty props
 
 parseBind :: S.Bind Range -> I.GVBindSessionRes (Bind Range)
 parseBind (S.Bind rng tgt)
@@ -306,26 +376,33 @@ notGroupedReducerError red
   = desugarError (getAnn red) "reducer not in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
-parseRaw :: S.Program Range -> SessionRes (Program Range)
-parseRaw (S.Program rng topLevels) = do
-  let (topLevelsOutGroups, topLevelsInGroups)
+parseRaw :: FilePath -> S.Program Range -> SessionRes (Program Range)
+parseRaw path (S.Program rng topLevels) = do
+  let mpath = T.pack $ dropExtension path
+      (topLevelsOutGroups, topLevelsInGroups)
         = break (\case S.TopLevelGroupDecl _ -> True; _ -> False) topLevels
-      decls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
+      -- TODO: Verify order of declarations
+      idecls = mapMaybe (\case S.TopLevelImportDecl x -> Just x; _ -> Nothing) topLevels
+      rdecls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
       reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevelsOutGroups
-  decls' <- traverse parseRecordDecl decls
-  reds1 <- traverseDropFatals (parseReducer1 I.emptyGVBindEnv) reds
-  groups1 <- parseAllGroupDefs1 topLevelsInGroups
-  let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
-  reds' <- runReaderT (traverseDropFatals parseReducer2 reds1) groupEnv
-  groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
-  -- TODO Syntax sugar a main group
-  tellErrors $ map notGroupedReducerError reds'
-  pure Program
-    { programAnn = rng
-    , programRecordDecls = decls'
-    , programGroups = groups'
-    }
+  idecls' <- traverse parseImportDecl idecls
+  evalReaderT (mpath, idecls') $ do
+    rdecls' <- traverse parseRecordDecl rdecls
+    reds1 <- traverseDropFatals (parseReducer1 I.emptyGVBindEnv) reds
+    groups1 <- parseAllGroupDefs1 topLevelsInGroups
+    let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
+    reds' <- runReaderT (traverseDropFatals parseReducer2 reds1) groupEnv
+    groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
+    -- TODO: Syntax sugar a main group
+    tellErrors $ map notGroupedReducerError reds'
+    pure Program
+      { programAnn = rng
+      , programPath = mpath
+      , programImportDecls = idecls'
+      , programRecordDecls = rdecls'
+      , programGroups = groups'
+      }
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result.
-parse :: S.Program Range -> SessionRes (Program Range)
-parse = validate . parseRaw
+parse :: FilePath -> S.Program Range -> SessionRes (Program Range)
+parse path = validate . parseRaw path

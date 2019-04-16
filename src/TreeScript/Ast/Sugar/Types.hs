@@ -5,8 +5,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- TODO Groups out of values, group statements with guards
-
 -- | Types for the @Sugar@ AST.
 module TreeScript.Ast.Sugar.Types
   ( module TreeScript.Ast.Sugar.Types
@@ -16,6 +14,22 @@ import TreeScript.Misc
 
 import qualified Data.Text as T
 import GHC.Generics
+
+-- | Where a module is located, just a filepath but in text.
+data ModulePath an
+  = ModulePath
+  { modulePathAnn :: an
+  , modulePathText :: T.Text
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Declares an imported module.
+data ImportDecl an
+  = ImportDecl
+  { importDeclAnn :: an
+  , importDeclLiteral :: Symbol an -- ^ Should be "import", but this has to be checked
+  , importDeclPath :: ModulePath an
+  , importDeclQualifier :: Maybe (Symbol an)
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
@@ -158,7 +172,8 @@ data Reducer an
 
 -- | Not nested in anything other than the program.
 data TopLevel an
-  = TopLevelRecordDecl (RecordDecl an)
+  = TopLevelImportDecl (ImportDecl an)
+  | TopLevelRecordDecl (RecordDecl an)
   | TopLevelReducer (Reducer an)
   | TopLevelGroupDecl (GroupDecl an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
@@ -169,6 +184,14 @@ data Program an
   { programAnn :: an
   , programTopLevels :: [TopLevel an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+instance TreePrintable ModulePath where
+  treePrint _ leaf (ModulePath _ txt) = leaf txt
+
+instance TreePrintable ImportDecl where
+  treePrint par _ (ImportDecl _ lit path qual)
+    = "#" <> par lit <> " " <> par path <> foldMap printQual qual
+    where printQual = (" -> " <>) . par
 
 instance TreePrintable RecordDecl where
   treePrint par _ (RecordDecl _ record)
@@ -267,6 +290,7 @@ instance TreePrintable Reducer where
           printGuard guard = ",\n  " <> par guard
 
 instance TreePrintable TopLevel where
+  treePrint par _ (TopLevelImportDecl decl) = par decl
   treePrint par _ (TopLevelRecordDecl decl) = par decl
   treePrint par _ (TopLevelReducer red) = par red
   treePrint par _ (TopLevelGroupDecl decl) = par decl

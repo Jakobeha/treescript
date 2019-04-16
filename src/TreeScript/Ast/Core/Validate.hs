@@ -18,25 +18,24 @@ import Data.List hiding (group)
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Set as S
-import qualified Data.Text as T
 
 type UnboundErrs = WriterT [Error] (StateT LocalEnv Identity) ()
 
-duplicateDeclErrs :: S.Set T.Text -> [RecordDecl Range] -> [Error]
+duplicateDeclErrs :: S.Set (Symbol ()) -> [RecordDecl Range] -> [Error]
 duplicateDeclErrs imported
   = catMaybes . snd . mapAccumL duplicateDeclErr imported
   where duplicateDeclErr prevs (RecordDecl rng head' _)
-          | S.member head' prevs = (nexts, Just $ desugarError rng $ "duplicate record declaration: " <> head')
+          | S.member (remAnns head') prevs = (nexts, Just $ desugarError rng $ "duplicate record declaration: " <> symbol head')
           | otherwise = (nexts, Nothing)
-          where nexts = S.insert head' prevs
+          where nexts = S.insert (remAnns head') prevs
 
-invalidRecordErrs :: M.Map T.Text Int -> [Reducer Range] -> [Error]
+invalidRecordErrs :: M.Map (Symbol ()) Int -> [Reducer Range] -> [Error]
 invalidRecordErrs decls reds
   = concatMap (foldValuesInReducer invalidRecordErrorsValue1) reds
   where invalidRecordErrorsValue1 (ValuePrimitive _) = []
         invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
-          = case decls M.!? head' of
-              Nothing -> [desugarError rng $ "undeclared record: " <> head']
+          = case decls M.!? remAnns head' of
+              Nothing -> [desugarError rng $ "undeclared record: " <> pprint head']
               Just numDeclProps
                  | numDeclProps /= numProps && numDeclProps /= varNumProps
                 -> [ desugarError rng
@@ -48,7 +47,7 @@ invalidRecordErrs decls reds
                 where numProps = length props
         invalidRecordErrorsValue1 (ValueBind _) = []
 
-invalidFunctionErrs :: S.Set T.Text -> [Reducer Range] -> [Error]
+invalidFunctionErrs :: S.Set (Symbol ()) -> [Reducer Range] -> [Error]
 invalidFunctionErrs decls reds
   = concatMap (foldGroupsInReducer invalidFunctionErrorsGroup1) reds
   where invalidFunctionErrorsGroup1 (GroupRef _ (GroupLocGlobal _ _) _ _) = []
@@ -56,7 +55,7 @@ invalidFunctionErrs decls reds
         invalidFunctionErrorsGroup1 (GroupRef _ (GroupLocFunction nameRng name) vprops gprops)
           | not (null vprops) || not (null gprops)
           = error "function can't have properties (shouldn't be allowed by syntax)"
-          | not (S.member name decls) = [desugarError nameRng $ "undeclared function: " <> name]
+          | not (S.member (remAnns name) decls) = [desugarError nameRng $ "undeclared function: " <> symbol name]
           | otherwise = []
 
 unboundErrsValue :: S.Set Int -> Value Range -> [Error]
@@ -68,16 +67,16 @@ unboundErrsValue binds (ValueBind (Bind rng idx))
   | S.member idx binds = []
   | otherwise = [desugarError rng "unmatched bind in output"]
 
+unboundErrsGroupLoc :: S.Set Int -> GroupLoc Range -> [Error]
+unboundErrsGroupLoc groups (GroupLocLocal locRng idx)
+  | not (S.member idx groups) = [desugarError locRng $ "undeclared local group"]
+unboundErrsGroupLoc _ _ = []
+
 unboundErrsGroupRef :: LocalEnv -> GroupRef Range -> [Error]
-unboundErrsGroupRef env@(LocalEnv binds groups) (GroupRef _ (GroupLocGlobal locRng idx) vprops gprops)
-   = selfErrs
+unboundErrsGroupRef env@(LocalEnv binds groups) (GroupRef _ loc vprops gprops)
+   = unboundErrsGroupLoc groups loc
   ++ foldMap (unboundErrsValue binds) vprops
   ++ foldMap (unboundErrsGroupRef env) gprops
-  where selfErrs
-          | S.member idx groups = [desugarError locRng $ "undeclared local group"]
-          | otherwise = []
-unboundErrsGroupRef _ (GroupRef _ (GroupLocLocal _ _) _ _) = []
-unboundErrsGroupRef _ (GroupRef _ (GroupLocFunction _ _) _ _) = []
 
 addGuardBindsToEnv :: Guard Range -> UnboundErrs
 addGuardBindsToEnv = modify . localEnvInsertBinds . bindsInValue . guardInput
@@ -106,8 +105,10 @@ unboundErrs (GroupDef _ vprops gprops reds)
 
 -- TODO: Undeclared function errors
 
+-- TODO: Validate imports
+
 validationErrs :: SessionEnv -> Program Range -> [Error]
-validationErrs env (Program _ decls groups)
+validationErrs env (Program _ _ _ decls groups)
    = duplicateDeclErrs (S.map declCompactHead $ declSetRecords importedDecls) decls
   ++ invalidRecordErrs (declSetToMap $ declSetRecords allDecls) allReds
   ++ invalidFunctionErrs (S.map declCompactHead $ declSetFunctions allDecls) allReds

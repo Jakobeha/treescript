@@ -26,8 +26,6 @@ module TreeScript.Ast.Core.Analyze
   , langSpecDecls
   , allImportedDecls
   , getAllProgramDecls
-  , allProgramFunctionNames
-  , getAllProgramUsedLibraries
   , allGroupDefReducers
   , allGroupRefReducers
   ) where
@@ -37,10 +35,9 @@ import TreeScript.Misc
 import TreeScript.Plugin
 
 import Data.List hiding (group)
-import Data.Maybe
 import qualified Data.Set as S
 import qualified Data.Text as T
-import qualified Data.Vector as V
+import qualified Data.Map.Strict as M
 
 -- | Applies to each child value, then combines all results.
 mapValue :: (Value an -> Value an) -> Value an -> Value an
@@ -231,7 +228,12 @@ bindsInValue = foldValue bindsInValue1
 declSpecToCompactDecl :: T.Text -> DeclSpec -> DeclCompact
 declSpecToCompactDecl name (DeclSpec nodeName numArgs)
   = DeclCompact
-  { declCompactHead = name <> "_" <> nodeName
+  { declCompactHead
+      = Symbol
+      { symbolAnn = ()
+      , symbolModule = name -- SOON: real path
+      , symbol = nodeName
+      }
   , declCompactNumProps = numArgs
   }
 
@@ -270,30 +272,6 @@ getAllProgramDecls prog = do
       importedDecls = allImportedDecls env
   pure $ declaredDecls <> importedDecls
 
-groupFunctionName1 :: GroupLoc an -> [Annd T.Text an]
-groupFunctionName1 (GroupLocGlobal _ _) = []
-groupFunctionName1 (GroupLocLocal _ _) = []
-groupFunctionName1 (GroupLocFunction ann head') = [Annd ann head']
-
--- | All function names in the program.
-allProgramFunctionNames :: Program an -> [Annd T.Text an]
-allProgramFunctionNames = concatMap (foldGroupsInReducer $ groupFunctionName1 . groupRefLoc) . allProgramReducers
-
-functionUsedLibName1 :: T.Text -> Maybe T.Text
-functionUsedLibName1 name
-  = case T.splitOn "_" name of
-      (libName : _ : _) -> Just libName
-      _ -> Nothing
-
-allProgramUsedLibNames :: Program an -> [T.Text]
-allProgramUsedLibNames
-  = nub . mapMaybe (functionUsedLibName1 . annd) . allProgramFunctionNames
-
--- | Gets all libraries used by the program.
-getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
-getAllProgramUsedLibraries
-  = traverse (libraryWithName StageDesugar) . allProgramUsedLibNames
-
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
 allGroupDefReducers :: [GroupRef an] -> GroupDef an -> [Reducer an]
 allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds)
@@ -301,7 +279,7 @@ allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds)
   where gpropSubsts = zip (map bindIdx gpropIdxs) gprops
 
 -- | The reducers in the referenced group, substituting exported binds, and their mode.
-allGroupRefReducers :: V.Vector (GroupDef an) -> GroupRef an -> [Reducer an]
-allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ idx) _ gprops)
-  = allGroupDefReducers gprops $ groups V.! idx
+allGroupRefReducers :: M.Map (Symbol ()) (GroupDef an) -> GroupRef an -> [Reducer an]
+allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
+  = allGroupDefReducers gprops $ groups M.! remAnns name
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"

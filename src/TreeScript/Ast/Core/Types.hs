@@ -1,9 +1,11 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Types for the @Core@ AST.
 module TreeScript.Ast.Core.Types
@@ -17,6 +19,21 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 import GHC.Generics
 
+-- | Name defines the next step
+data SubPhase
+  = Local -- ^ Index local binds
+  | Module -- ^ Resolve modules
+  | Combine -- ^ Combine with modules
+  | Final -- ^ Done, now can be translated
+
+data family Symbol (p :: SubPhpse) :: * -> *
+
+data family GroupDef (p :: SubPhase) :: * -> *
+
+class SubPhase a where
+  type GroupDef a :: * -> *
+  type Symbol a :: * -> *
+
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
   = LocalEnv
@@ -27,7 +44,7 @@ data LocalEnv
 -- | Declares a type of record or function but doesn't specifify property values.
 data DeclCompact
   = DeclCompact
-  { declCompactHead :: T.Text
+  { declCompactHead :: Symbol ()
   , declCompactNumProps :: Int
   } deriving (Eq, Ord, Read, Show)
 
@@ -36,13 +53,39 @@ data DeclSet
   = DeclSet
   { declSetRecords :: S.Set DeclCompact
   , declSetFunctions :: S.Set DeclCompact
-  }
+  } deriving (Eq, Ord, Read, Show)
+
+-- | Just a path, but in text form, with no extension and @""@ for builtin
+type ModulePath = T.Text
+
+-- | What the module is - how it works.
+data ModuleType
+  = ModuleTypeBuiltin -- ^ Builtin
+  | ModuleTypeFile Bool Bool Bool -- ^ A source or compiled TreeScript, possibly wrapping a language or library
+  | ModuleTypeDir -- ^ A directory - reexports other modules, may have symlinks.
+  deriving (Eq, Ord, Read, Show)
+
+data ImportDecl an
+  = ImportDecl
+  { importDeclAnn :: an
+  , importDeclPath :: ModulePath
+  , importDeclType :: ModuleType
+  , importDeclQual :: T.Text -- Either empty or @<qual>_@
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | An identifier, such as a record head or property key.
+data Symbol an
+  = Symbol
+  { symbolAnn :: an
+  , symbolModule :: ModulePath
+  , symbol :: T.Text
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
   = RecordDecl
   { recordDeclAnn :: an
-  , recordDeclHead :: T.Text
+  , recordDeclHead :: Symbol an
   , recordDeclProps :: [T.Text]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -57,7 +100,7 @@ data Primitive an
 data Record an
   = Record
   { recordAnn :: an
-  , recordHead :: T.Text
+  , recordHead :: Symbol an
   , recordProps :: [Value an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -77,9 +120,9 @@ data Value an
 
 -- | The type and identifier of a group.
 data GroupLoc an
-  = GroupLocGlobal an Int
+  = GroupLocGlobal an (Symbol an)
   | GroupLocLocal an Int
-  | GroupLocFunction an T.Text
+  | GroupLocFunction an (Symbol an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
@@ -121,6 +164,8 @@ data GroupDef an
 data Program an
   = Program
   { programAnn :: an
+  , programPath :: ModulePath
+  , programImportDecls :: [ImportDecl an]
   , programRecordDecls :: [RecordDecl an]
   , programGroups :: [GroupDef an]
   }
@@ -139,34 +184,51 @@ instance Monoid DeclSet where
     , declSetFunctions = mempty
     }
 
+-- | Takes path of right program.
 instance (Semigroup an) => Semigroup (Program an) where
-  Program xAnn xDecls xGroups <> Program yAnn yDecls yGroups
+  Program xAnn _ xIdecls xMdecls xGroups <> Program yAnn yPath yIdecls yMdecls yGroups
     = Program
     { programAnn = xAnn <> yAnn
-    , programRecordDecls = xDecls <> yDecls
+    , programPath = yPath
+    , programImportDecls = xIdecls <> yIdecls
+    , programRecordDecls = xMdecls <> yMdecls
     , programGroups = xGroups <> yGroups
     }
 
-instance (Monoid an) => Monoid (Program an) where
-  mempty
-    = Program
-    { programAnn = mempty
-    , programRecordDecls = mempty
-    , programGroups = mempty
-    }
+instance Printable ModuleType where
+  pprint ModuleTypeBuiltin = "builtin"
+  pprint (ModuleTypeFile cmp lang lib)
+    = printCmp cmp <> printLang lang <> printLib lib
+    where printCmp False = "tscr"
+          printCmp True = "tprg"
+          printLang False = ""
+          printLang True = "+tlng"
+          printLib False = ""
+          printLib True = "+tlib"
+  pprint ModuleTypeDir = "/"
+
+instance Printable (ImportDecl an) where
+  pprint (ImportDecl _ path typ qual)
+    = "#import " <> pprint path <> " (" <> pprint typ <> ") " <> printQual
+    where printQual
+            | T.null qual = ""
+            | otherwise = " => " <> T.dropEnd 1 qual
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
-    = head' <> printProps (map pprint props)
+    = pprint head' <> printProps (map pprint props)
 
 instance Printable (Primitive an) where
   pprint (PrimInteger _ int) = pprint int
   pprint (PrimFloat _ float) = pprint float
   pprint (PrimString _ str) = pprint str
 
+instance Printable (Symbol an) where
+  pprint (Symbol _ md txt) = T.takeEnd modulePathPrintLength md <> "_" <> txt
+
 instance Printable (Record an) where
   pprint (Record _ head' props)
-    = head' <> "[" <> T.intercalate ", " (map pprint props) <> "]"
+    = pprint head' <> "[" <> T.intercalate ", " (map pprint props) <> "]"
 
 instance Printable (Bind an) where
   pprint (Bind _ idx) = "\\" <> pprint idx
@@ -177,9 +239,9 @@ instance Printable (Value an) where
   pprint (ValueBind bind) = pprint bind
 
 instance Printable (GroupLoc an) where
-  pprint (GroupLocGlobal _ idx) = "&+" <> pprint idx
-  pprint (GroupLocLocal _ idx) = "&-" <> pprint idx
-  pprint (GroupLocFunction _ txt) = "#" <> txt
+  pprint (GroupLocGlobal _ sym) = "&" <> pprint sym
+  pprint (GroupLocLocal _ idx) = "&" <> pprint idx
+  pprint (GroupLocFunction _ sym) = "#" <> pprint sym
 
 instance Printable (GroupRef an) where
   pprint (GroupRef _ loc vprops gprops)
@@ -205,8 +267,19 @@ instance Printable (Reducer an) where
           printGuard guard = ",\n  " <> pprint guard
 
 instance Printable (Program an) where
-  pprint (Program _ decls groups)
-    = T.unlines $ map pprint decls ++ [T.empty] ++ zipWith printGroupDef [0..] groups
+  pprint (Program _ name idecls rdecls groups)
+     = T.unlines
+     $ ["#module " <> pprint name]
+    ++ [T.empty]
+    ++ map pprint idecls
+    ++ [T.empty]
+    ++ map pprint rdecls
+    ++ [T.empty]
+    ++ zipWith printGroupDef [0..] groups
+
+-- | How much of the module path will be printed.
+modulePathPrintLength :: Int
+modulePathPrintLength = 5
 
 printProps :: [T.Text] -> T.Text
 printProps props = "[" <> T.intercalate ", " props <> "]"
@@ -219,7 +292,7 @@ printGroupDef head' (GroupDef _ vprops gprops reds)
           <> pprint head'
           <> printProps (map pprint vprops ++ map printGroupDefProp gprops)
           <> "."
-        printGroupDefProp (Bind _ idx) = "&-" <> pprint idx
+        printGroupDefProp (Bind _ idx) = "&" <> pprint idx
 
 -- | Specifies that a record declaration can take any number of properties.
 varNumProps :: Int
@@ -232,17 +305,25 @@ localEnvInsertBinds binds env
   , localEnvGroups = localEnvGroups env
   }
 
+mkBuiltinSymbol :: T.Text -> Symbol ()
+mkBuiltinSymbol txt
+  = Symbol
+  { symbolAnn = ()
+  , symbolModule = ""
+  , symbol = txt
+  }
+
 mkBuiltinDecl :: T.Text -> Int -> DeclCompact
 mkBuiltinDecl head' numProps
   = DeclCompact
-  { declCompactHead = head'
+  { declCompactHead = mkBuiltinSymbol head'
   , declCompactNumProps = numProps
   }
 
 compactRecordDecl :: RecordDecl an -> DeclCompact
 compactRecordDecl (RecordDecl _ head' props)
   = DeclCompact
-  { declCompactHead = head'
+  { declCompactHead = remAnns head'
   , declCompactNumProps = length props
   }
 
@@ -264,15 +345,19 @@ builtinDecls
   , declSetFunctions = S.empty
   }
 
-declSetToMap :: S.Set DeclCompact -> M.Map T.Text Int
+declSetToMap :: S.Set DeclCompact -> M.Map (Symbol ()) Int
 declSetToMap = M.fromAscList . map declToTuple . S.toAscList
   where declToTuple (DeclCompact head' numProps) = (head', numProps)
 
-hole :: an -> an -> Int -> Value an
-hole ann idxAnn idx
+hole :: an -> an -> an -> Int -> Value an
+hole ann headAnn idxAnn idx
   = ValueRecord Record
   { recordAnn = ann
-  , recordHead = "Hole"
+  , recordHead = Symbol
+      { symbolAnn = headAnn
+      , symbolModule = ""
+      , symbol = "Hole"
+      }
   , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
   }
 
