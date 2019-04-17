@@ -1,15 +1,20 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
--- | Intermediate types used to parse the @Core@ AST.
-module TreeScript.Ast.Core.Intermediate
-  ( module TreeScript.Ast.Core.Intermediate
+module TreeScript.Ast.Core.Local
+  (
+
   ) where
 
-import qualified TreeScript.Ast.Core.Types as C
+import TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Sugar.Types as S
 import TreeScript.Misc
 import TreeScript.Plugin
@@ -18,6 +23,7 @@ import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import qualified Data.Text as T
 import GHC.Generics
 
@@ -45,51 +51,47 @@ type BindSessionRes a = StateT BindEnv (ResultT (ReaderT SessionEnv (LoggingT IO
 
 type GVBindSessionRes a = StateT (GVEnv BindEnv) (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
+-- | What reducers get from their parent group, or output values / groups from their reducer.
+data LocalEnv
+  = LocalEnv
+  { localEnvBinds :: S.Set Int
+  , localEnvGroups :: S.Set Int
+  } deriving (Eq, Ord, Read, Show)
+
 -- = Intermediate AST
 
 -- | The type and identifier of a group reference.
-data GroupLoc an
+data instance GroupLoc 'Local an
   = GroupLocGlobal (S.Symbol an)
-  | GroupLocLocal (C.Bind an)
+  | GroupLocLocal (Bind 'Local an)
   | GroupLocFunction (S.Symbol an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | References a group - group gets applied when the reducer or guard matches, and if it fails, the entire reducer / guard fails.
-data GroupRef an
-  = GroupRef
-  { groupRefAnn :: an
-  , groupRefLoc :: GroupLoc an
-  , groupRefValueProps :: [C.Value an]
-  , groupRefGroupProps :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Matches an input value against an output value. Like a "let" statement.
-data Guard an
-  = Guard
-  { guardAnn :: an
-  , guardInput :: C.Value an
-  , guardOutput :: C.Value an
-  , guardNexts :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
--- | Transforms a value into a different value. Like a "match" case.
-data Reducer an
-  = Reducer
-  { reducerAnn :: an
-  , reducerMain :: Guard an
-  , reducerGuards :: [Guard an]
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
 -- | Defines a group of reducers, which can be referenced by other reducers.
-data GroupDef an
+data instance GroupDef 'Local an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefValueProps :: [(T.Text, C.Bind an)]
-  , groupDefGroupProps :: [(T.Text, C.Bind an)]
-  , groupDefReducers :: [Reducer an]
+  , groupDefValueProps :: [(T.Text, Bind 'Local an)]
+  , groupDefGroupProps :: [(T.Text, Bind 'Local an)]
+  , groupDefReducers :: [Reducer 'Local an]
   , groupDefPropEnv :: GVBindEnv
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+hole :: an -> an -> Int -> Value 'Local an
+hole ann idxAnn idx
+  = ValueRecord Record
+  { recordAnn = ann
+  , recordHead = "Hole"
+  , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
+  }
+
+localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
+localEnvInsertBinds binds env
+  = LocalEnv
+  { localEnvBinds = binds <> localEnvBinds env
+  , localEnvGroups = localEnvGroups env
+  }
 
 emptyBindEnv :: BindEnv
 emptyBindEnv
