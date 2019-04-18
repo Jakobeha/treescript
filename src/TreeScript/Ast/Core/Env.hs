@@ -28,7 +28,8 @@ import System.Directory
 data ImportEnv
   = ImportEnv
   { importEnvLocalDecls :: (ModulePath, DeclSet)
-  , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)] -- ^ Includes module decl.
+    -- | Includes builtins.
+  , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
   }
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
@@ -62,7 +63,7 @@ mkImportEnv :: ModulePath -> DeclSet -> [ImportDecl Range] -> ImportEnv
 mkImportEnv mpath mexps idecls
   = ImportEnv
   { importEnvLocalDecls = (mpath, mexps)
-  , importEnvImportedDecls = M.fromListWith (<>) $ map convertDecl idecls
+  , importEnvImportedDecls = M.fromListWith (<>) $ ("", [("", builtinDecls)]) : map convertDecl idecls
   }
   where convertDecl (ImportDecl _ path qual (Module exps _)) = (qual, [(path, exps)])
 
