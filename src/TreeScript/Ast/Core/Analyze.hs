@@ -24,10 +24,9 @@ module TreeScript.Ast.Core.Analyze
   , maxNumBindsInProgram
   , bindsInValue
   , langSpecDecls
-  , allImportedDecls
-  , getAllProgramDecls
   , allGroupDefReducers
   , allGroupRefReducers
+  , remExtra
   ) where
 
 import TreeScript.Ast.Core.Types
@@ -36,7 +35,6 @@ import TreeScript.Plugin
 
 import Data.List hiding (group)
 import qualified Data.Set as S
-import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 
 -- | Applies to each child value, then combines all results.
@@ -176,8 +174,8 @@ traverseValuesInReducer f (Reducer ann main guards)
   <*> traverse (traverseValuesInGuard f) guards
 
 -- | Reducers in all groups.
-allProgramReducers :: Program an -> [Reducer an]
-allProgramReducers = concatMap groupDefReducers . programGroups
+allProgramReducers :: Program e an -> [Reducer an]
+allProgramReducers = concatMap groupDefReducers . moduleGroups . programModule
 
 substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
 substGroupProp1 substs x
@@ -214,7 +212,7 @@ maxNumBindsInReducers :: [Reducer an] -> Int
 maxNumBindsInReducers stmts = maximum $ 0 : map maxNumBindsInReducer stmts
 
 -- | The maximum number of binds used by the main reducers in the program - the maximum index in any used bind.
-maxNumBindsInProgram :: Program an -> Int
+maxNumBindsInProgram :: Program e an -> Int
 maxNumBindsInProgram = maxNumBindsInReducers . allProgramReducers
 
 bindsInValue1 :: Value an -> S.Set Int
@@ -225,61 +223,35 @@ bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 bindsInValue :: Value an -> S.Set Int
 bindsInValue = foldValue bindsInValue1
 
-declSpecToCompactDecl :: T.Text -> DeclSpec -> DeclCompact
-declSpecToCompactDecl name (DeclSpec nodeName numArgs)
-  = DeclCompact
-  { declCompactHead
-      = Symbol
-      { symbolAnn = ()
-      , symbolModule = name -- SOON: real path
-      , symbol = nodeName
-      }
-  , declCompactNumProps = numArgs
+declSpecToCompactRecordDecl :: DeclSpec -> RecordDeclCompact
+declSpecToCompactRecordDecl (DeclSpec nodeName numArgs)
+  = RecordDeclCompact
+  { recordDeclCompactHead = nodeName
+  , recordDeclCompactNumProps = numArgs
   }
 
 langSpecDecls :: LangSpec -> DeclSet
-langSpecDecls spec
-  = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToCompactDecl langName) $ langSpecNodes spec
-  , declSetFunctions = S.empty
-  }
-  where langName = langSpecName spec
-
-librarySpecDecls :: LibrarySpec -> DeclSet
-librarySpecDecls spec
-  = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToCompactDecl libraryName) $ librarySpecRecords spec
-  , declSetFunctions = S.fromList $ map (declSpecToCompactDecl libraryName) $ librarySpecFunctions spec
-  }
-  where libraryName = librarySpecName spec
-
--- | All record declarations imported by a program in the given environment.
-allImportedDecls :: SessionEnv -> DeclSet
-allImportedDecls env
-   = builtinDecls
-  <> foldMap (langSpecDecls . languageSpec) (sessionEnvLanguages env)
-  <> foldMap (librarySpecDecls . librarySpec) (sessionEnvLibraries env)
-
--- | All declarations accessible from the program, declared and imported.
-getAllProgramDecls :: Program an -> SessionRes DeclSet
-getAllProgramDecls prog = do
-  env <- getSessionEnv
-  let declaredDecls
-        = DeclSet
-        { declSetRecords = S.fromList $ map compactRecordDecl $ programRecordDecls prog
-        , declSetFunctions = S.empty
-        }
-      importedDecls = allImportedDecls env
-  pure $ declaredDecls <> importedDecls
+langSpecDecls spec = mkDeclSet (map declSpecToCompactRecordDecl $ langSpecNodes spec) [] []
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
-allGroupDefReducers :: [GroupRef an] -> GroupDef an -> [Reducer an]
-allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds)
+allGroupDefReducers :: [GroupRef an] -> GroupDef e an -> [Reducer an]
+allGroupDefReducers gprops (GroupDef _ _ _ gpropIdxs reds _)
     = map (mapGroupsInReducer (substGroupProp1 gpropSubsts)) reds
-  where gpropSubsts = zip (map bindIdx gpropIdxs) gprops
+  where gpropSubsts = zip (map (bindIdx . snd) gpropIdxs) gprops
 
 -- | The reducers in the referenced group, substituting exported binds, and their mode.
-allGroupRefReducers :: M.Map (Symbol ()) (GroupDef an) -> GroupRef an -> [Reducer an]
+allGroupRefReducers :: M.Map (Symbol ()) (GroupDef e an) -> GroupRef an -> [Reducer an]
 allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
   = allGroupDefReducers gprops $ groups M.! remAnns name
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
+
+remGroupBindEnv :: GroupDef e an -> GroupDef () an
+remGroupBindEnv (GroupDef ann head' vprops gprops reds _)
+  = GroupDef ann head' vprops gprops reds ()
+
+remModBindEnv :: Module e an -> Module () an
+remModBindEnv (Module exps grps)
+  = Module exps $ map remGroupBindEnv grps
+
+remExtra :: Program e an -> Module () ()
+remExtra = remModBindEnv . (() <$) . programModule

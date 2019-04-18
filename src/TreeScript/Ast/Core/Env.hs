@@ -5,26 +5,38 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Intermediate types used to parse the @Core@ AST.
-module TreeScript.Ast.Core.Intermediate
-  ( module TreeScript.Ast.Core.Intermediate
+-- | Environments and monads used to parse and validate the @Core@ AST.
+module TreeScript.Ast.Core.Env
+  ( module TreeScript.Ast.Core.Env
   ) where
 
-import qualified TreeScript.Ast.Core.Types as C
-import qualified TreeScript.Ast.Sugar.Types as S
+import TreeScript.Ast.Core.Types
+import qualified TreeScript.Ast.Sugar as S
 import TreeScript.Misc
 import TreeScript.Plugin
 
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Data.Foldable
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import qualified Data.Text as T
-import GHC.Generics
 import System.FilePath
 import System.Directory
 
--- = Bind identifier/index environment
+data ImportEnv
+  = ImportEnv
+  { importEnvLocalDecls :: (ModulePath, DeclSet)
+  , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)] -- ^ Includes module decl.
+  }
+
+-- | What reducers get from their parent group, or output values / groups from their reducer.
+data LocalEnv
+  = LocalEnv
+  { localEnvBinds :: S.Set Int
+  , localEnvGroups :: S.Set Int
+  } deriving (Eq, Ord, Read, Show)
 
 data BindEnv
   = BindEnv
@@ -40,24 +52,32 @@ data GVEnv a
 
 type GVBindEnv = GVEnv BindEnv
 
-type ImportSessionRes a = ReaderT [C.ImportDecl Range] (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type ImportSessionRes a = ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
-type BindSessionRes a = StateT BindEnv (ReaderT [C.ImportDecl Range] (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type BindSessionRes a = StateT BindEnv (ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 
-type GVBindSessionRes a = StateT (GVEnv BindEnv) (ReaderT [C.ImportDecl Range] (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type GVBindSessionRes a = StateT (GVEnv BindEnv) (ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 
--- = Intermediate AST
+mkImportEnv :: ModulePath -> DeclSet -> [ImportDecl Range] -> ImportEnv
+mkImportEnv mpath mexps idecls
+  = ImportEnv
+  { importEnvLocalDecls = (mpath, mexps)
+  , importEnvImportedDecls = M.fromListWith (<>) $ map convertDecl idecls
+  }
+  where convertDecl (ImportDecl _ path qual (Module exps _)) = (qual, [(path, exps)])
 
--- | Defines a group of reducers, which can be referenced by other reducers.
-data GroupDef an
-  = GroupDef
-  { groupDefAnn :: an
-  , groupDefHead :: T.Text
-  , groupDefValueProps :: [(T.Text, C.Bind an)]
-  , groupDefGroupProps :: [(T.Text, C.Bind an)]
-  , groupDefReducers :: [C.Reducer an]
-  , groupDefPropEnv :: GVBindEnv
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+importEnvAllDecls :: ImportEnv -> M.Map T.Text [(ModulePath, DeclSet)]
+importEnvAllDecls (ImportEnv locs imps) = M.insertWith (<>) "" [locs] imps
+
+importEnvImportedLocals :: ImportEnv -> DeclSet
+importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
+
+localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
+localEnvInsertBinds binds env
+  = LocalEnv
+  { localEnvBinds = binds <> localEnvBinds env
+  , localEnvGroups = localEnvGroups env
+  }
 
 emptyBindEnv :: BindEnv
 emptyBindEnv

@@ -8,7 +8,6 @@ module IntegrSpec
 
 import Core.Test
 import TreeScript
-import qualified TreeScript.Ast.Translate as T
 import qualified TreeScript.Ast.Core as C
 import qualified TreeScript.Ast.Lex as L
 import qualified TreeScript.Ast.Sugar as S
@@ -57,7 +56,6 @@ spec = do
   exampleLexVars <- runIO $ mkVarMap exampleFiles
   exampleSugarVars <- runIO $ mkVarMap exampleFiles
   exampleCoreVars <- runIO $ mkVarMap exampleFiles
-  exampleTranslateVars <- runIO $ mkVarMap exampleFiles
   exampleExecVars <- runIO $ mkVarMap exampleFiles
   exampleUnsetVars <- runIO $ mkVarMap exampleFiles
   let forExampleFile :: (TestFile -> SpecWith FilePath) -> SpecWith FilePath
@@ -84,10 +82,8 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
-      forExampleCore :: TestFile -> (C.Program Range -> IO ()) -> IO ()
-      forExampleCore = forExampleIntermediateIn exampleCoreVars exampleTranslateVars
-      forExampleTranslate :: TestFile -> (T.Program -> IO ()) -> IO ()
-      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars exampleExecVars
+      forExampleCore :: TestFile -> (C.Program C.GVBindEnv Range -> IO ()) -> IO ()
+      forExampleCore = forExampleIntermediateIn exampleCoreVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
       codeToAstData :: T.Text -> T.Text -> ResultT IO T.Text
@@ -158,7 +154,8 @@ spec = do
               assertProperFailure testInfo sugarRes
         it "Desugars" $ \_ ->
           forExampleSugar file $ \sugarSrc -> do
-            coreRes <- runSessionResVirtual exampleEnv $ C.parse sugarSrc
+            let filePath = examplesDir </> T.unpack (fileName srcFile)
+            coreRes <- runSessionResVirtual exampleEnv $ C.parseProg filePath sugarSrc
             when (testInfoPrintCore testInfo) $ do
               T.putStrLn $ fileName srcFile <> ":"
               T.putStrLn $ pprint coreRes
@@ -173,27 +170,10 @@ spec = do
             else do
               insertVarMapFailure exampleCoreVars file True
               assertProperFailure testInfo coreRes
-        it "Translates" $ \_ ->
-          forExampleCore file $ \coreSrc -> do
-            translateRes <- runSessionResVirtual exampleEnv $ T.parse coreSrc
-            when (testInfoPrintTranslate testInfo) $ do
-              T.putStrLn $ fileName srcFile <> ":"
-              T.putStrLn $ pprint translateRes
-            if testInfoIsTranslatable testInfo then
-              case translateRes of
-                ResultFail translateErr -> do
-                  insertVarMapFailure exampleTranslateVars file False
-                  assertFailureText $ pprint translateErr
-                Result translateErrs translateSrc -> do
-                  insertVarMapSuccess exampleTranslateVars file translateSrc
-                  assertNoErrors translateErrs
-            else do
-              insertVarMapFailure exampleTranslateVars file True
-              assertProperFailure testInfo translateRes
         it "Compiles" $ \tmpDir ->
-          forExampleTranslate file $ \translateSrc -> do
+          forExampleCore file $ \coreSrc -> do
             let execPath = tmpDir </> T.unpack (fileName srcFile)
-            execRes <- runSessionResVirtual exampleEnv $ T.exportFile execPath translateSrc
+            execRes <- runSessionResVirtual exampleEnv $ C.exportFile execPath $ C.remExtra coreSrc
             if testInfoIsCompilable testInfo then
               case execRes of
                 ResultFail execErr -> do

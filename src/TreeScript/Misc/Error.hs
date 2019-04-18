@@ -18,6 +18,7 @@ module TreeScript.Misc.Error
   , addRangeToErr
   , isSuccess
   , forceSuccess
+  , justSuccess
   , traverseDropFatals
   , mapResultT
   , catchExceptionToError
@@ -235,6 +236,12 @@ forceSuccess (ResultFail err) = error $ "unexpected fatal error:\n" <> T.unpack 
 forceSuccess (Result errs x)
   | null errs = x
   | otherwise = error $ "unexpected nonfatal errors:\n" <> T.unpack (T.unlines $ map pprint errs)
+
+-- | @Nothing@ if there's any failure (even if success).
+justSuccess :: Result a -> Maybe a
+justSuccess (ResultFail _) = Nothing
+justSuccess (Result [] x) = Just x
+justSuccess (Result _ _) = Nothing
 
 -- | Like 'traverse', but when an element raises a fatal error, instead of completely failing, the element is removed and the error becomes nonfatal.
 traverseDropFatals :: (Applicative w, MonadResult w) => (a -> w b) -> [a] -> w [b]

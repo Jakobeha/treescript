@@ -1,30 +1,40 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST.
 module TreeScript.Ast.Core.Parse
-  ( parse
+  ( parseProg
+  , parse
+  , parseFromStart
   ) where
 
+import TreeScript.Ast.Core.Analyze
 import TreeScript.Ast.Core.Validate
-import qualified TreeScript.Ast.Core.Intermediate as I
+import TreeScript.Ast.Core.Env
 import TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Flat as F
 import qualified TreeScript.Ast.Sugar as S
+import qualified TreeScript.Ast.Lex as L
 import TreeScript.Misc
 import TreeScript.Plugin
 
+import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.Reader
 import Control.Monad.State.Strict
-import Control.Exception
+import qualified Data.Aeson as A
 import Data.Bifunctor
 import Data.Either
+import Data.Foldable
 import qualified Data.List.NonEmpty as N
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Vector as V
+import System.Directory
 import System.FilePath
 
 -- = Parsing from AST data
@@ -37,8 +47,8 @@ decodeError msg
   , errorMsg = msg
   }
 
-decodeAstData :: T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
-decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
+decodeAstData :: ModulePath -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
+decodeAstData mpath txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
   where
     splicesVec = V.fromList splices
     decodeAstData1 lexs = do
@@ -56,8 +66,14 @@ decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse 
     primParser (F.PrimInteger value) = PrimInteger Nothing value
     primParser (F.PrimFloat value) = PrimFloat Nothing value
     primParser (F.PrimString value) = PrimString Nothing value
-    recordParser head' numProps rest = do
+    recordParser lhead numProps rest = do
       (props, rest') <- propsParser numProps rest
+      let head'
+            = Symbol
+            { symbolAnn = Nothing
+            , symbolModule = mpath
+            , symbol = lhead
+            }
       pure
         ( Record
           { recordAnn = Nothing
@@ -76,8 +92,9 @@ decodeAstData txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse 
 runLanguageParser :: Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 runLanguageParser lang txt splices = do
   let parser = languageParser lang
+      mpath = langSpecName $ languageSpec lang -- TODO: New languages/libraries
   astData <- overErrors (prependMsgToErr "couldn't parse code") $ runCmdProgram parser txt
-  overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData astData splices
+  overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData mpath astData splices
 
 -- = Parsing from Sugar
 
@@ -86,73 +103,76 @@ invalidTxt = "???"
 
 parseImportQual :: Maybe (S.Symbol Range) -> T.Text
 parseImportQual Nothing = ""
-parseImportQual (Just qual) = qual <> "_"
+parseImportQual (Just (S.Symbol _ qual)) = qual <> "_"
 
-getModuleType :: S.ModulePath Range -> SessionRes ModuleType
-getModuleType (S.ModulePath rng path) = do
+getProgModule :: S.ModulePath Range -> SessionRes (Module () ())
+getProgModule (S.ModulePath rng path) = do
+  let msgPrefix = "couldn't import program: " <> path
+      liftProgIO
+        = overErrors (addRangeToErr rng . prependMsgToErr msgPrefix)
+        . liftIOAndCatch StageDesugar
+  pmod <- liftProgIO $ A.eitherDecodeFileStrict' $ T.unpack path
+  case pmod of
+    Left msg -> mkFail $ desugarError rng $ msgPrefix <> T.pack msg
+    Right pmod' -> pure pmod'
+
+getScriptModule :: S.ModulePath Range -> SessionRes (Module () ())
+getScriptModule (S.ModulePath rng path)
+    = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't import script: " <> path))
+    $ parseFromStart (T.unpack path)
+
+getDirModule :: S.ModulePath Range -> SessionRes (Module () ())
+getDirModule (S.ModulePath rng path) = do
   let liftModIO
-        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't check " <> txt))
+        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't get directory contents: " <> path))
+        . liftIOAndCatch StageDesugar
+  subPaths <- liftModIO $ listDirectory $ T.unpack path
+  subs <- traverseDropFatals tryGetModule $ map (S.ModulePath rng . T.pack) subPaths
+  pure $ fold $ rights subs
+
+-- | If the path doesn't refer to a module, will return the error instead of failing.
+-- Still fails if the path refers to a bad module.
+tryGetModule :: S.ModulePath Range -> SessionRes (Either Error (Module () ()))
+tryGetModule (S.ModulePath rng path) = do
+  let liftModIO
+        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't check " <> path))
         . liftIOAndCatch StageDesugar
       scriptPath = path <> ".tscr"
       progPath = path <> ".tprg"
-      langPath = path <> ".tlng"
-      libPath = path <> ".tlib"
-  pathFileExists <- doesFileExist path
-  dirExists <- doesDirectoryExist path
-  progExists <- doesFileExist progPath
-  sourceExists <- doesFileExist sourcePath
+  pathFileExists <- liftModIO $ doesFileExist $ T.unpack path
+  dirExists <- liftModIO $ doesDirectoryExist $ T.unpack path
+  progExists <- liftModIO $ doesFileExist $ T.unpack progPath
+  sourceExists <- liftModIO $ doesFileExist $ T.unpack scriptPath
   when (dirExists && (progExists || sourceExists)) $
-    tellError $ desugarError rng $ "both a directory and program exist for this module, choosing program"
-  if progExists || sourceExists then do
-    langExists <- doesFileExist langPath
-    libExists <- doesFileExist libPath
-    pure $ ModuleTypeFile progExists langExists libExists
-  else if dirExists then
-    pure ModuleTypeDir
+    tellError $ desugarError rng $ "both a directory and file exist for this module"
+  if progExists then do
+    Right <$> getProgModule (S.ModulePath rng progPath)
+  else if sourceExists then do
+    Right <$> getScriptModule (S.ModulePath rng scriptPath)
+  else if dirExists then do
+    Right <$> getDirModule (S.ModulePath rng path)
   else if pathFileExists then
-    mkFail $ desugarError rng $ "no module exists at " <> path <> " (a raw file exists though - when importing, drop the extension)"
+    pure $ Left $ desugarError rng $ "no module exists at " <> path <> " (a raw file exists though - when importing, drop the extension)"
   else
-    mkFail $ desugarError rng $ "no module exists at " <> path
+    pure $ Left $ desugarError rng $ "no module exists at " <> path
 
+getModule :: S.ModulePath Range -> SessionRes (Module () ())
+getModule path = do
+  mdl <- tryGetModule path
+  case mdl of
+    Left err -> mkFail err
+    Right mdl' -> pure mdl'
 
 parseImportDecl :: T.Text -> S.ImportDecl Range -> SessionRes (ImportDecl Range)
 parseImportDecl myPath (S.ImportDecl rng (S.Symbol litRng lit) path qual) = do
   unless (lit == "import") $
     tellError $ desugarError litRng "expected \"import\""
   absPath <- resolvePath myPath path
-  mtype <- getModuleType pathRng absPath
   let qual' = parseImportQual qual
-  pure $ ImportDecl rng mtype absPath qual'
+  imod <- getModule absPath
+  pure $ ImportDecl rng (S.modulePathText absPath) qual' imod
 
-resolveSource :: (MonadReader (T.Text, [ImportDecl]) m, MonadIO m, MonadCatch m, MonadResult m) => Bool -> [ImportDecl] -> T.Text -> m ModulePath
-resolveSource localIsCand cands local
-  = resolveLocal ++ resolveExt local
-  where resolveLocal
-          | localIsCand
-
-parseSymbol :: (MonadReader (T.Text, [ImportDecl]) m, MonadIO m, MonadCatch m, MonadResult m) => S.Symbol Range -> m (Symbol Range)
-parseSymbol (S.Symbol rng txt) = do
-  (progPath, decls) <- ask
-  let (qual, local) = T.breakOnEnd "_" txt
-      cands = filter ((== qual) . importDeclQual) decls
-      localIsCand = T.null qual
-  paths <- overErrors (addRangeToErr rng) $ resolveSource localIsCand cands local
-  path <-
-    case paths of
-      [p] -> p
-      [] -> do
-        tellError $ desugarError rng $ "unknown (not local, imported, or builtin): " <> txt
-        pure invalidTxt
-      ps -> do
-        tellError $ desugarError rng $ "ambiguous, modules where this is defined:\n" <> T.lines ps
-        pure $ head ps
-  pure Symbol
-    { symbolAnn = rng
-    , symbolModule = path
-    , symbol = local
-    }
-
-parseValPropDecl :: S.GenProperty Range -> ImportSessionRes T.Text
+parseValPropDecl :: S.GenProperty Range -> SessionRes T.Text
 parseValPropDecl (S.GenPropertyDecl (S.Symbol _ decl)) = pure decl
 parseValPropDecl (S.GenPropertySubGroup prop) = do
   tellError $ desugarError (getAnn prop) "expected lowercase symbol, got group property declaration"
@@ -164,11 +184,41 @@ parseValPropDecl (S.GenPropertyGroup grp) = do
   tellError $ desugarError (getAnn grp) "expected value, got group"
   pure invalidTxt
 
-parseRecordDecl :: S.RecordDecl Range -> ImportSessionRes (RecordDecl Range)
-parseRecordDecl (S.RecordDecl rng (S.Record _ head' props))
-  = RecordDecl rng <$> parseSymbol head' <*> traverse parseValPropDecl props
+parseRecordDecl :: S.RecordDecl Range -> SessionRes (RecordDecl Range)
+parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props))
+  = RecordDecl rng head' <$> traverse parseValPropDecl props
 
-parsePrim :: S.Primitive Range -> I.GVBindSessionRes (Primitive Range)
+parseGroupDecl :: S.GroupDecl Range -> SessionRes (Either GroupDeclCompact FunctionDeclCompact)
+parseGroupDecl (S.GroupDecl _ (S.Group _ loc (S.Symbol hrng head') props))
+  = case loc of
+      S.GroupLocGlobal _ -> pure $ Left $ GroupDeclCompact head' nvps ngps
+      S.GroupLocFunction _ -> pure $ Right $ FunctionDeclCompact head' nvps -- TODO: Types and checking more stuff
+      S.GroupLocLocal lrng -> mkFail $ desugarError (lrng <> hrng) "can't declare local (lowercase) group"
+  where nvps = length $ filter (\case S.GenPropertyRecord (S.ValueBind _) -> True; _ -> False) props
+        ngps = length $ filter (\case S.GenPropertySubGroup _ -> True; _ -> False) props
+
+parseSymbol :: (MonadReader ImportEnv m, MonadIO m, MonadCatch m, MonadResult m) => SymbolType -> S.Symbol Range -> m (Symbol Range)
+parseSymbol typ (S.Symbol rng txt) = do
+  imps <- ask
+  let (qual, lcl) = T.breakOnEnd "_" txt
+      cands = fold $ importEnvAllDecls imps M.!? qual
+      paths = map fst $ filter (declSetContains typ lcl . snd) cands
+  path <-
+    case paths of
+      [p] -> pure p
+      [] -> do
+        tellError $ desugarError rng $ "unknown (not local, imported, or builtin): " <> txt
+        pure invalidTxt
+      ps -> do
+        tellError $ desugarError rng $ T.unlines $ "ambiguous, modules where this is defined:" : ps
+        pure $ head ps
+  pure Symbol
+    { symbolAnn = rng
+    , symbolModule = path
+    , symbol = lcl
+    }
+
+parsePrim :: S.Primitive Range -> GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
   = pure $ PrimInteger rng int
 parsePrim (S.PrimFloat rng float)
@@ -176,7 +226,7 @@ parsePrim (S.PrimFloat rng float)
 parsePrim (S.PrimString rng string)
   = pure $ PrimString rng string
 
-parseValueProperty :: S.GenProperty Range -> I.GVBindSessionRes (Value Range)
+parseValueProperty :: S.GenProperty Range -> GVBindSessionRes (Value Range)
 parseValueProperty (S.GenPropertyDecl key)
   = mkFail $ desugarError (getAnn key) "expected value, got lowercase symbol"
 parseValueProperty (S.GenPropertySubGroup prop)
@@ -185,18 +235,20 @@ parseValueProperty (S.GenPropertyRecord val) = parseValue val
 parseValueProperty (S.GenPropertyGroup grp)
   = mkFail $ desugarError (getAnn grp) "expected value, got group"
 
-parseRecord :: S.Record Range -> I.GVBindSessionRes (Record Range)
+parseRecord :: S.Record Range -> GVBindSessionRes (Record Range)
 parseRecord (S.Record rng head' props)
-  = Record rng <$> parseSymbol head' <*> traverseDropFatals parseValueProperty props
+    = Record rng
+  <$> parseSymbol SymbolTypeRecord head'
+  <*> traverseDropFatals parseValueProperty props
 
-parseBind :: S.Bind Range -> I.GVBindSessionRes (Bind Range)
+parseBind :: S.Bind Range -> GVBindSessionRes (Bind Range)
 parseBind (S.Bind rng tgt)
   = case tgt of
       S.BindTargetNone _ -> pure $ Bind rng 0
       S.BindTargetSome (S.Symbol _ txt) -> do
         env <- get
-        let (idx, newEnv) = I.bindEnvLookup txt $ I.gvEnvValue env
-        put env{ I.gvEnvValue = newEnv }
+        let (idx, newEnv) = bindEnvLookup txt $ gvEnvValue env
+        put env{ gvEnvValue = newEnv }
         pure $ Bind rng idx
 
 flattenSpliceText :: S.SpliceText Range -> T.Text
@@ -216,167 +268,133 @@ spliceTextSplices :: S.SpliceText Range -> [S.Splice Range]
 spliceTextSplices (S.SpliceTextNil _ _) = []
 spliceTextSplices (S.SpliceTextCons _ _ _ val rst) = val : spliceTextSplices rst
 
-parseSpliceCode :: S.SpliceCode Range -> I.GVBindSessionRes (Value Range)
+parseSpliceCode :: S.SpliceCode Range -> GVBindSessionRes (Value Range)
 parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
   let txt = flattenSpliceText spliceText
       unparsedSplices = spliceTextSplices spliceText
   splices <- traverse parseSplice unparsedSplices
-  lang <- lift $ overErrors (addRangeToErr langExtRng) $ langWithExt StageDesugar langExt
-  ress <- overErrors (addRangeToErr rng) $ lift $ runLanguageParser lang txt splices
+  lang <- overErrors (addRangeToErr langExtRng) $ lift $ lift $ langWithExt StageDesugar langExt
+  ress <- overErrors (addRangeToErr rng) $ lift $ lift $ runLanguageParser lang txt splices
   case ress of
     [res] -> pure $ (rng `fromMaybe`) <$> res
     _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint (length ress)
 
-parseSplice :: S.Splice Range -> I.GVBindSessionRes (Value Range)
+parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
   where bind = S.Bind (getAnn targ) targ
 parseSplice (S.SpliceHole (S.HoleIdx ann idx)) = pure $ hole ann ann idx
 
-parseValue :: S.Value Range -> I.GVBindSessionRes (Value Range)
+parseValue :: S.Value Range -> GVBindSessionRes (Value Range)
 parseValue (S.ValuePrimitive prim) = ValuePrimitive <$> parsePrim prim
 parseValue (S.ValueRecord record) = ValueRecord <$> parseRecord record
 parseValue (S.ValueBind bind) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code) = parseSpliceCode code
 parseValue (S.ValueHole (S.Hole ann (S.HoleIdx idxAnn idx))) = pure $ hole ann idxAnn idx
 
-parseGroupHead1 :: S.GroupLoc Range -> S.Symbol Range -> I.GVBindSessionRes (I.GroupLoc Range)
-parseGroupHead1 (S.GroupLocGlobal _) head' = pure $ I.GroupLocGlobal head'
-parseGroupHead1 (S.GroupLocLocal _) (S.Symbol rng txt) = do
+parseGroupHead :: S.GroupLoc Range -> S.Symbol Range -> GVBindSessionRes (GroupLoc Range)
+parseGroupHead (S.GroupLocGlobal lrng) head'@(S.Symbol hrng _)
+  = GroupLocGlobal (lrng <> hrng) <$> parseSymbol SymbolTypeGroup head'
+parseGroupHead (S.GroupLocLocal _) (S.Symbol rng txt) = do
   env <- get
-  let (idx, newEnv) = I.bindEnvLookup txt $ I.gvEnvGroup env
-  put env{ I.gvEnvGroup = newEnv }
-  pure $ I.GroupLocLocal $ Bind rng idx
-parseGroupHead1 (S.GroupLocFunction _) head' = pure $ I.GroupLocFunction head'
+  let (idx, newEnv) = bindEnvLookup txt $ gvEnvGroup env
+  put env{ gvEnvGroup = newEnv }
+  pure $ GroupLocLocal rng idx
+parseGroupHead (S.GroupLocFunction lrng) head'@(S.Symbol hrng _)
+  = GroupLocFunction (lrng <> hrng) <$> parseSymbol SymbolTypeFunction head'
 
-parseGroupProperty1 :: S.GenProperty Range -> I.GVBindSessionRes (Either (Value Range) (I.GroupRef Range))
-parseGroupProperty1 (S.GenPropertyDecl key)
+parseGroupProperty :: S.GenProperty Range -> GVBindSessionRes (Either (Value Range) (GroupRef Range))
+parseGroupProperty (S.GenPropertyDecl key)
   = mkFail $ desugarError (getAnn key) "expected group, got lowercase symbol"
-parseGroupProperty1 (S.GenPropertySubGroup prop)
+parseGroupProperty (S.GenPropertySubGroup prop)
   = mkFail $ desugarError (getAnn prop) "expected group, got group property declaration"
-parseGroupProperty1 (S.GenPropertyRecord val)
+parseGroupProperty (S.GenPropertyRecord val)
   = Left <$> parseValue val
-parseGroupProperty1 (S.GenPropertyGroup grp)
-  = Right <$> parseGroupRef1 grp
+parseGroupProperty (S.GenPropertyGroup grp)
+  = Right <$> parseGroupRef grp
 
-parseGroupRef1 :: S.Group Range -> I.GVBindSessionRes (I.GroupRef Range)
-parseGroupRef1 (S.Group rng isProp head' props) = do
-  loc <- parseGroupHead1 isProp head'
-  (vprops, gprops) <- partitionEithers <$> traverseDropFatals parseGroupProperty1 props
-  pure $ I.GroupRef rng loc vprops gprops
+parseGroupRef :: S.Group Range -> GVBindSessionRes (GroupRef Range)
+parseGroupRef (S.Group rng isProp head' props) = do
+  loc <- parseGroupHead isProp head'
+  (vprops, gprops) <- partitionEithers <$> traverseDropFatals parseGroupProperty props
+  pure $ GroupRef rng loc vprops gprops
 
-parseGuard1 :: S.Guard Range -> I.GVBindSessionRes (I.Guard Range)
-parseGuard1 (S.Guard rng input output nexts)
-    = I.Guard rng
+parseGuard :: S.Guard Range -> GVBindSessionRes (Guard Range)
+parseGuard (S.Guard rng input output nexts)
+    = Guard rng
   <$> parseValue input
   <*> parseValue output
-  <*> traverse parseGroupRef1 nexts
+  <*> traverse parseGroupRef nexts
 
-parseReducer1 :: I.GVBindEnv -> S.Reducer Range -> SessionRes (I.Reducer Range)
-parseReducer1 bindEnv (S.Reducer rng main guards)
+parseReducer :: GVBindEnv -> S.Reducer Range -> ImportSessionRes (Reducer Range)
+parseReducer bindEnv (S.Reducer rng main guards)
     = evalStateT
-    ( I.Reducer rng
-  <$> parseGuard1 main
-  <*> traverse parseGuard1 guards
+    ( Reducer rng
+  <$> parseGuard main
+  <*> traverse parseGuard guards
     ) bindEnv
 
-parseGroupPropDecl1 :: S.GenProperty Range -> I.GVBindSessionRes (Maybe (Side, (T.Text, Bind Range)))
-parseGroupPropDecl1 (S.GenPropertyDecl prop)
+parseGroupPropDecl :: S.GenProperty Range -> GVBindSessionRes (Maybe (Side, (T.Text, Bind Range)))
+parseGroupPropDecl (S.GenPropertyDecl prop)
   = mkFail $ desugarError (getAnn prop) "expected group property declaration, got lowercase symbol"
-parseGroupPropDecl1 (S.GenPropertySubGroup (S.SubGroupProperty rng (S.Symbol _ txt))) = do
+parseGroupPropDecl (S.GenPropertySubGroup (S.SubGroupProperty rng (S.Symbol _ txt))) = do
   env <- get
-  let (idx, newEnv) = I.bindEnvLookup txt $ I.gvEnvGroup env
-  put env{ I.gvEnvGroup = newEnv }
+  let (idx, newEnv) = bindEnvLookup txt $ gvEnvGroup env
+  put env{ gvEnvGroup = newEnv }
   pure $ Just (SideRight, (txt, Bind rng idx))
-parseGroupPropDecl1 (S.GenPropertyRecord (S.ValueBind (S.Bind rng (S.BindTargetSome (S.Symbol _ txt))))) = do
+parseGroupPropDecl (S.GenPropertyRecord (S.ValueBind (S.Bind rng (S.BindTargetSome (S.Symbol _ txt))))) = do
   env <- get
-  let (idx, newEnv) = I.bindEnvLookup txt $ I.gvEnvValue env
-  put env{ I.gvEnvValue = newEnv }
+  let (idx, newEnv) = bindEnvLookup txt $ gvEnvValue env
+  put env{ gvEnvValue = newEnv }
   pure $ Just (SideLeft, (txt, Bind rng idx))
-parseGroupPropDecl1 (S.GenPropertyRecord (S.ValueBind (S.Bind _ (S.BindTargetNone _)))) = pure Nothing
-parseGroupPropDecl1 (S.GenPropertyRecord val)
+parseGroupPropDecl (S.GenPropertyRecord (S.ValueBind (S.Bind _ (S.BindTargetNone _)))) = pure Nothing
+parseGroupPropDecl (S.GenPropertyRecord val)
   = mkFail $ desugarError (getAnn val) "expected group property declaration, got (non-bind) value"
-parseGroupPropDecl1 (S.GenPropertyGroup grp)
+parseGroupPropDecl (S.GenPropertyGroup grp)
   = mkFail $ desugarError (getAnn grp) "expected group property declaration, got group"
 
-parseEmptyGroupDef1 :: S.GroupDecl Range -> SessionRes (I.GroupDef Range)
-parseEmptyGroupDef1 (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') props))
+parseEmptyGroupDef :: S.GroupDecl Range -> ImportSessionRes (GroupDef GVBindEnv Range)
+parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') props))
   = case loc of
       S.GroupLocGlobal _ -> do
         (props', bindEnv)
-          <- runStateT (traverseDropFatals parseGroupPropDecl1 props) I.emptyGVBindEnv
+          <- runStateT (traverseDropFatals parseGroupPropDecl props) emptyGVBindEnv
         let (vprops, gprops) = partitionTuple $ catMaybes props'
-        pure I.GroupDef
-          { I.groupDefAnn = rng
-          , I.groupDefHead = head'
-          , I.groupDefValueProps = vprops
-          , I.groupDefGroupProps = gprops
-          , I.groupDefReducers = []
-          , I.groupDefPropEnv = bindEnv
+        pure GroupDef
+          { groupDefAnn = rng
+          , groupDefHead = head'
+          , groupDefValueProps = vprops
+          , groupDefGroupProps = gprops
+          , groupDefReducers = []
+          , groupDefPropEnv = bindEnv
           }
       S.GroupLocLocal _ -> mkFail $ desugarError headRng "can't declare a lowercase group, lowercase groups are group properties"
       S.GroupLocFunction _ -> mkFail $ desugarError headRng "can't declare a function, functions are provided by libraries"
 
-parseRestGroupDefs1 :: S.GroupDecl Range -> [S.TopLevel Range] -> SessionRes (N.NonEmpty (I.GroupDef Range))
-parseRestGroupDefs1 decl [] = (N.:| []) <$> parseEmptyGroupDef1 decl
-parseRestGroupDefs1 decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs1 decl xs
-parseRestGroupDefs1 decl (S.TopLevelReducer red : xs) = do
-  I.GroupDef yRng yHead yValueProps yGroupProps yReds yBindEnv N.:| ys <- parseRestGroupDefs1 decl xs
-  red' <- parseReducer1 yBindEnv red
+parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (GroupDef GVBindEnv Range))
+parseRestGroupDefs decl [] = (N.:| []) <$> parseEmptyGroupDef decl
+parseRestGroupDefs decl (S.TopLevelImportDecl _ : xs) = parseRestGroupDefs decl xs
+parseRestGroupDefs decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs decl xs
+parseRestGroupDefs decl (S.TopLevelReducer red : xs) = do
+  GroupDef yRng yHead yValueProps yGroupProps yReds yBindEnv N.:| ys <- parseRestGroupDefs decl xs
+  red' <- parseReducer yBindEnv red
   let yRng' = getAnn red <> yRng
       yReds' = red' : yReds
-  pure $ I.GroupDef yRng' yHead yValueProps yGroupProps yReds' yBindEnv N.:| ys
-parseRestGroupDefs1 decl (S.TopLevelGroupDecl decl' : xs)
-  = (N.<|) <$> parseEmptyGroupDef1 decl <*> parseRestGroupDefs1 decl' xs
+  pure $ GroupDef yRng' yHead yValueProps yGroupProps yReds' yBindEnv N.:| ys
+parseRestGroupDefs decl (S.TopLevelGroupDecl decl' : xs)
+  = (N.<|) <$> parseEmptyGroupDef decl <*> parseRestGroupDefs decl' xs
 
-parseAllGroupDefs1 :: [S.TopLevel Range] -> SessionRes [I.GroupDef Range]
-parseAllGroupDefs1 [] = pure []
-parseAllGroupDefs1 (S.TopLevelGroupDecl x : xs)
-  = N.toList <$> parseRestGroupDefs1 x xs
-parseAllGroupDefs1 (_ : _) = error "expected group declaration when parsing group definitions"
-
-parseGroupRef2 :: I.GroupRef Range -> I.GroupSessionRes (GroupRef Range)
-parseGroupRef2 (I.GroupRef rng loc vprops gprops) = do
-  groupEnv <- ask
-  loc' <-
-    case loc of
-      I.GroupLocGlobal (S.Symbol headRng headSym) ->
-        case groupEnv M.!? headSym of
-          Nothing -> mkFail $ desugarError headRng $ "undefined group: " <> headSym
-          Just idx -> pure $ GroupLocGlobal headRng idx
-      I.GroupLocLocal (Bind headRng idx) -> pure $ GroupLocLocal headRng idx
-      I.GroupLocFunction (S.Symbol headRng headSym) -> pure $ GroupLocFunction headRng headSym
-  gprops' <- traverse parseGroupRef2 gprops
-  pure GroupRef
-    { groupRefAnn = rng
-    , groupRefLoc = loc'
-    , groupRefValueProps = vprops
-    , groupRefGroupProps = gprops'
-    }
-
-parseGuard2 :: I.Guard Range -> I.GroupSessionRes (Guard Range)
-parseGuard2 (I.Guard rng input output nexts)
-  = Guard rng input output <$> traverse parseGroupRef2 nexts
-
-parseReducer2 :: I.Reducer Range -> I.GroupSessionRes (Reducer Range)
-parseReducer2 (I.Reducer rng main guards)
-    = Reducer rng
-  <$> parseGuard2 main
-  <*> traverse parseGuard2 guards
-
-parseGroupDef2 :: I.GroupDef Range -> I.GroupSessionRes (GroupDef Range)
-parseGroupDef2 (I.GroupDef rng _ vprops gprops reds _)
-    = GroupDef rng (map (\(_, bind) -> bind) vprops) (map (\(_, bind) -> bind) gprops)
-  <$> traverseDropFatals parseReducer2 reds
-
-parseGroupDefEnv :: I.GroupDef Range -> Int -> (T.Text, Int)
-parseGroupDefEnv group idx = (I.groupDefHead group, idx)
+parseAllGroupDefs :: [S.TopLevel Range] -> ImportSessionRes [GroupDef GVBindEnv Range]
+parseAllGroupDefs [] = pure []
+parseAllGroupDefs (S.TopLevelGroupDecl x : xs)
+  = N.toList <$> parseRestGroupDefs x xs
+parseAllGroupDefs (_ : _) = error "expected group declaration when parsing group definitions"
 
 notGroupedReducerError :: Reducer Range -> Error
 notGroupedReducerError red
   = desugarError (getAnn red) "reducer not in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
-parseRaw :: FilePath -> S.Program Range -> SessionRes (Program Range)
+parseRaw :: FilePath -> S.Program Range -> SessionRes (ImportEnv, Program GVBindEnv Range)
 parseRaw path (S.Program rng topLevels) = do
   let mpath = T.pack $ dropExtension path
       (topLevelsOutGroups, topLevelsInGroups)
@@ -385,24 +403,41 @@ parseRaw path (S.Program rng topLevels) = do
       idecls = mapMaybe (\case S.TopLevelImportDecl x -> Just x; _ -> Nothing) topLevels
       rdecls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
       reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevelsOutGroups
-  idecls' <- traverse parseImportDecl idecls
-  evalReaderT (mpath, idecls') $ do
-    rdecls' <- traverse parseRecordDecl rdecls
-    reds1 <- traverseDropFatals (parseReducer1 I.emptyGVBindEnv) reds
-    groups1 <- parseAllGroupDefs1 topLevelsInGroups
-    let groupEnv = M.fromList $ zipWith parseGroupDefEnv groups1 [0..]
-    reds' <- runReaderT (traverseDropFatals parseReducer2 reds1) groupEnv
-    groups' <- runReaderT (traverseDropFatals parseGroupDef2 groups1) groupEnv
+      gdecls = mapMaybe (\case S.TopLevelGroupDecl x -> Just x; _ -> Nothing) topLevels
+  idecls' <- traverse (parseImportDecl mpath) idecls
+  rdecls' <- traverse parseRecordDecl rdecls
+  (gdecls', fdecls) <- partitionEithers <$> traverse parseGroupDecl gdecls
+  let exps = mkDeclSet (map compactRecordDecl rdecls') gdecls' fdecls
+      imps = mkImportEnv mpath exps idecls'
+  (`runReaderT` imps) $ do
+    reds' <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
+    groups <- parseAllGroupDefs topLevelsInGroups
     -- TODO: Syntax sugar a main group
     tellErrors $ map notGroupedReducerError reds'
-    pure Program
+    pure (imps, Program
       { programAnn = rng
-      , programPath = mpath
       , programImportDecls = idecls'
       , programRecordDecls = rdecls'
-      , programGroups = groups'
-      }
+      , programModule
+          = Module
+          { moduleExports = exps
+          , moduleGroups = groups
+          }
+      })
 
--- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result.
-parse :: FilePath -> S.Program Range -> SessionRes (Program Range)
-parse path = validate . parseRaw path
+-- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Preserves extra so the program can be further analyzed.
+parseProg :: FilePath -> S.Program Range -> SessionRes (Program GVBindEnv Range)
+parseProg path = validate . parseRaw path
+
+-- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Strips extra.
+parse :: FilePath -> S.Program Range -> SessionRes (Module () ())
+parse path = fmap remExtra . parseProg path
+
+-- | Compile a source into a @Module@.
+parseFromStart :: FilePath -> SessionRes (Module () ())
+parseFromStart input
+  = ( parse input
+  <=< ResultT . pure . S.parse
+  <=< ResultT . pure . L.parse
+  <=< liftIOAndCatch StageReadInput . T.readFile
+    ) input
