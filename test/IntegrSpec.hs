@@ -14,6 +14,7 @@ import qualified TreeScript.Ast.Sugar as S
 
 import Control.Concurrent.MVar
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.List
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
@@ -90,16 +91,22 @@ spec = do
       codeToAstData txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langWithExt undefined ext
-          let parser = languageParser lang
-          runCmdProgram parser txt
+          lang <- langWithExt ext
+          case languageParser <$> lang of
+            Nothing -> do
+              liftIO $ pendingWith $ T.unpack $ "unknown language with extension: " <> ext
+              pure undefined
+            Just parser -> runCmdProgram parser txt
       astDataToCode :: T.Text -> T.Text -> ResultT IO T.Text
       astDataToCode txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langWithExt undefined ext
-          let printer = languagePrinter lang
-          runCmdProgram printer txt
+          lang <- langWithExt ext
+          case languagePrinter <$> lang of
+            Nothing -> do
+              liftIO $ pendingWith $ T.unpack $ "unknown language with extension: " <> ext
+              pure undefined
+            Just printer -> runCmdProgram printer txt
       assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
       assertProperFailure testInfo (ResultFail err) = do
         unless (T.null $ testInfoFatalErrorMsg testInfo) $

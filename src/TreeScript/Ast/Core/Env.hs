@@ -1,9 +1,12 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Environments and monads used to parse and validate the @Core@ AST.
 module TreeScript.Ast.Core.Env
@@ -15,6 +18,7 @@ import qualified TreeScript.Ast.Sugar as S
 import TreeScript.Misc
 import TreeScript.Plugin
 
+import Control.Monad.Catch
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -28,9 +32,12 @@ import System.Directory
 data ImportEnv
   = ImportEnv
   { importEnvLocalDecls :: (ModulePath, DeclSet)
-    -- | Includes builtins.
+  -- | Includes builtins.
   , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
+  , importEnvImportDecls :: [ImportDecl Range]
   }
+
+newtype ImportT m a = ImportT (StateT ImportEnv m a) deriving (Functor, Applicative, Monad, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
@@ -53,25 +60,55 @@ data GVEnv a
 
 type GVBindEnv = GVEnv BindEnv
 
-type ImportSessionRes a = ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type ImportSessionRes a = ImportT (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
-type BindSessionRes a = StateT BindEnv (ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type BindSessionRes a = StateT BindEnv (ImportT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 
-type GVBindSessionRes a = StateT (GVEnv BindEnv) (ReaderT ImportEnv (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type GVBindSessionRes a = StateT (GVEnv BindEnv) (ImportT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+
+class (Monad m) => MonadImport m where
+  getImportEnv :: m ImportEnv
+  importTInsertDecl :: ImportDecl Range -> m ()
+
+instance (Monad m) => MonadImport (ImportT m) where
+  getImportEnv = ImportT get
+  importTInsertDecl = ImportT . modify . importEnvInsertDecl
+
+instance (MonadReader r m) => MonadReader r (ImportT m) where
+  ask = ImportT ask
+  reader = ImportT . reader
+  local f (ImportT x) = ImportT $ local f x
+
+instance (MonadImport m) => MonadImport (StateT s m) where
+  getImportEnv = lift getImportEnv
+  importTInsertDecl = lift . importTInsertDecl
+
+importEnvInsertDecl :: ImportDecl Range -> ImportEnv -> ImportEnv
+importEnvInsertDecl decl@(ImportDecl _ path qual (Module exps _)) (ImportEnv locs imps idecls)
+  = ImportEnv
+  { importEnvLocalDecls = locs
+  , importEnvImportedDecls = M.insertWith (<>) qual [(path, exps)] imps
+  , importEnvImportDecls = decl : idecls
+  }
 
 mkImportEnv :: ModulePath -> DeclSet -> [ImportDecl Range] -> ImportEnv
-mkImportEnv mpath mexps idecls
-  = ImportEnv
-  { importEnvLocalDecls = (mpath, mexps)
-  , importEnvImportedDecls = M.fromListWith (<>) $ ("", [("", builtinDecls)]) : map convertDecl idecls
-  }
-  where convertDecl (ImportDecl _ path qual (Module exps _)) = (qual, [(path, exps)])
+mkImportEnv mpath mexps
+  = foldr importEnvInsertDecl localEnv
+  where localEnv
+          = ImportEnv
+          { importEnvLocalDecls = (mpath, mexps)
+          , importEnvImportedDecls = M.fromList [("", [("", builtinDecls)])]
+          , importEnvImportDecls = []
+          }
 
 importEnvAllDecls :: ImportEnv -> M.Map T.Text [(ModulePath, DeclSet)]
-importEnvAllDecls (ImportEnv locs imps) = M.insertWith (<>) "" [locs] imps
+importEnvAllDecls (ImportEnv locs imps _) = M.insertWith (<>) "" [locs] imps
 
 importEnvImportedLocals :: ImportEnv -> DeclSet
 importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
+
+evalImportT :: (Monad m) => ImportT m a -> ImportEnv -> m a
+evalImportT (ImportT x) = evalStateT x
 
 localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
 localEnvInsertBinds binds env

@@ -1,0 +1,15 @@
+name: R
+extension: r
+nodes:
+- name: Literal
+  args: 1 # content
+- name: Symbol # x
+  args: 1 # identifier
+- name: Call # 2
+  args: 2 # parent and child list
+- name: PairList
+  args: 1 # element list
+- name: Named
+  args: 2 # name and value
+- name: Missing
+  args: 0

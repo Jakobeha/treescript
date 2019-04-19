@@ -23,7 +23,6 @@ module TreeScript.Ast.Core.Analyze
   , allProgramReducers
   , maxNumBindsInProgram
   , bindsInValue
-  , langSpecDecls
   , allGroupDefReducers
   , allGroupRefReducers
   , remExtra
@@ -31,7 +30,6 @@ module TreeScript.Ast.Core.Analyze
 
 import TreeScript.Ast.Core.Types
 import TreeScript.Misc
-import TreeScript.Plugin
 
 import Data.List hiding (group)
 import qualified Data.Set as S
@@ -222,16 +220,6 @@ bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 
 bindsInValue :: Value an -> S.Set Int
 bindsInValue = foldValue bindsInValue1
-
-declSpecToCompactRecordDecl :: DeclSpec -> RecordDeclCompact
-declSpecToCompactRecordDecl (DeclSpec nodeName numArgs)
-  = RecordDeclCompact
-  { recordDeclCompactHead = nodeName
-  , recordDeclCompactNumProps = numArgs
-  }
-
-langSpecDecls :: LangSpec -> DeclSet
-langSpecDecls spec = mkDeclSet (map declSpecToCompactRecordDecl $ langSpecNodes spec) [] []
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
 allGroupDefReducers :: [GroupRef an] -> GroupDef e an -> [Reducer an]

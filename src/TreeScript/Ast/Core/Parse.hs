@@ -1,6 +1,6 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TupleSections #-}
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST.
@@ -39,41 +39,28 @@ import System.FilePath
 
 -- = Parsing from AST data
 
-decodeError :: T.Text -> Error
-decodeError msg
-  = Error
-  { errorStage = StagePluginUse
-  , errorRange = Nothing
-  , errorMsg = msg
-  }
-
-decodeAstData :: ModulePath -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
-decodeAstData mpath txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
+decodeAstData :: Range -> T.Text -> [Value an] -> ImportSessionRes [Value (Maybe an)]
+decodeAstData rng txt splices = traverse decodeAstData1 =<< ImportT (lift $ ResultT $ pure $ F.parse txt)
   where
     splicesVec = V.fromList splices
     decodeAstData1 lexs = do
       (res, rest) <- valueParser lexs
       unless (null rest) $
-        mkFail $ decodeError "unexpected extra nodes after decoded value"
+        mkFail $ desugarError rng "unexpected extra nodes after decoded value"
       pure res
-    valueParser [] = mkFail $ decodeError "tried to decode value from no nodes"
+    valueParser [] = mkFail $ desugarError rng "tried to decode value from no nodes"
     valueParser (F.LexemeEnterSplice idx : rest)
       = case splicesVec V.!? idx of
-          Nothing -> mkFail $ decodeError $ "invalid splice index: " <> pprint idx
+          Nothing -> mkFail $ desugarError rng $ "invalid splice index: " <> pprint idx
           Just splice -> pure (Just <$> splice, rest)
     valueParser (F.LexemePrimitive prim : rest) = pure (ValuePrimitive $ primParser prim, rest)
     valueParser (F.LexemeRecordHead head' numProps : rest) = first ValueRecord <$> recordParser head' numProps rest
     primParser (F.PrimInteger value) = PrimInteger Nothing value
     primParser (F.PrimFloat value) = PrimFloat Nothing value
     primParser (F.PrimString value) = PrimString Nothing value
-    recordParser lhead numProps rest = do
+    recordParser qualHead numProps rest = do
       (props, rest') <- propsParser numProps rest
-      let head'
-            = Symbol
-            { symbolAnn = Nothing
-            , symbolModule = mpath
-            , symbol = lhead
-            }
+      head' <- (Nothing <$) <$> parseSymbol lift SymbolTypeRecord (S.Symbol rng qualHead)
       pure
         ( Record
           { recordAnn = Nothing
@@ -89,12 +76,11 @@ decodeAstData mpath txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.
       pure (x : xs, rest'')
 
 
-runLanguageParser :: Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
-runLanguageParser lang txt splices = do
+runLanguageParser :: Range -> Language -> T.Text -> [Value an] -> ImportSessionRes [Value (Maybe an)]
+runLanguageParser rng lang txt splices = do
   let parser = languageParser lang
-      mpath = langSpecName $ languageSpec lang -- TODO: New languages/libraries
-  astData <- overErrors (prependMsgToErr "couldn't parse code") $ runCmdProgram parser txt
-  overErrors (prependMsgToErr "parsing plugin returned bad AST data") $ decodeAstData mpath astData splices
+  astData <- overErrors (addRangeToErr rng . prependMsgToErr "couldn't parse code") $ runCmdProgram parser txt
+  decodeAstData rng astData splices
 
 -- = Parsing from Sugar
 
@@ -197,23 +183,39 @@ parseGroupDecl (S.GroupDecl _ (S.Group _ loc (S.Symbol hrng head') props))
   where nvps = length $ filter (\case S.GenPropertyRecord (S.ValueBind _) -> True; _ -> False) props
         ngps = length $ filter (\case S.GenPropertySubGroup _ -> True; _ -> False) props
 
-parseSymbol :: (MonadReader ImportEnv m, MonadIO m, MonadCatch m, MonadResult m) => SymbolType -> S.Symbol Range -> m (Symbol Range)
-parseSymbol typ (S.Symbol rng txt) = do
-  imps <- ask
-  let (qual, lcl) = T.breakOnEnd "_" txt
+tryImportBuiltin :: (MonadImport m, MonadIO m, MonadCatch m, MonadResult m) => (forall a. SessionRes a -> m a) -> Range -> T.Text -> m (Maybe ModulePath)
+tryImportBuiltin liftSession rng qual = do
+  bltPath <- liftSession $ builtinModWithQual qual
+  case bltPath of
+    Nothing -> pure Nothing
+    Just bltPath' -> do
+      let bltModPath = T.pack bltPath'
+      bltMod <- liftSession $ getModule $ S.ModulePath rng bltModPath
+      importTInsertDecl $ ImportDecl rng bltModPath qual bltMod
+      pure $ Just bltModPath
+
+parseSymbol :: (MonadImport m, MonadIO m, MonadCatch m, MonadResult m) => (forall a. SessionRes a -> m a) -> SymbolType -> S.Symbol Range -> m (Symbol Range)
+parseSymbol liftSession typ (S.Symbol ann txt) = do
+  imps <- getImportEnv
+  let (qual_, lcl) = T.breakOnEnd "_" txt
+      qual = T.dropEnd 1 qual_
       cands = fold $ importEnvAllDecls imps M.!? qual
       paths = map fst $ filter (declSetContains typ lcl . snd) cands
   path <-
     case paths of
-      [p] -> pure p
       [] -> do
-        tellError $ desugarError rng $ "unknown (not local, imported, or builtin): " <> txt
-        pure invalidTxt
+        bltPath <- tryImportBuiltin liftSession ann qual
+        case bltPath of
+          Nothing -> do
+            tellError $ desugarError ann $ "unknown (not local, imported, or builtin): " <> txt
+            pure invalidTxt
+          Just p -> pure p
+      [p] -> pure p
       ps -> do
-        tellError $ desugarError rng $ T.unlines $ "ambiguous, modules where this is defined:" : ps
+        tellError $ desugarError ann $ T.unlines $ "ambiguous, modules where this is defined:" : ps
         pure $ head ps
   pure Symbol
-    { symbolAnn = rng
+    { symbolAnn = ann
     , symbolModule = path
     , symbol = lcl
     }
@@ -238,7 +240,7 @@ parseValueProperty (S.GenPropertyGroup grp)
 parseRecord :: S.Record Range -> GVBindSessionRes (Record Range)
 parseRecord (S.Record rng head' props)
     = Record rng
-  <$> parseSymbol SymbolTypeRecord head'
+  <$> parseSymbol (lift . lift) SymbolTypeRecord head'
   <*> traverseDropFatals parseValueProperty props
 
 parseBind :: S.Bind Range -> GVBindSessionRes (Bind Range)
@@ -273,11 +275,14 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
   let txt = flattenSpliceText spliceText
       unparsedSplices = spliceTextSplices spliceText
   splices <- traverse parseSplice unparsedSplices
-  lang <- overErrors (addRangeToErr langExtRng) $ lift $ lift $ langWithExt StageDesugar langExt
-  ress <- overErrors (addRangeToErr rng) $ lift $ lift $ runLanguageParser lang txt splices
-  case ress of
-    [res] -> pure $ (rng `fromMaybe`) <$> res
-    _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint (length ress)
+  lang <- overErrors (addRangeToErr langExtRng) $ lift $ lift $ langWithExt langExt
+  case lang of
+    Nothing -> mkFail $ desugarError langExtRng $ "unknown language with extension: " <> langExt
+    Just lang' -> do
+      ress <- lift $ runLanguageParser rng lang' txt splices
+      case ress of
+        [res] -> pure $ (rng `fromMaybe`) <$> res
+        _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint (length ress)
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
@@ -293,14 +298,14 @@ parseValue (S.ValueHole (S.Hole ann (S.HoleIdx idxAnn idx))) = pure $ hole ann i
 
 parseGroupHead :: S.GroupLoc Range -> S.Symbol Range -> GVBindSessionRes (GroupLoc Range)
 parseGroupHead (S.GroupLocGlobal lrng) head'@(S.Symbol hrng _)
-  = GroupLocGlobal (lrng <> hrng) <$> parseSymbol SymbolTypeGroup head'
+  = GroupLocGlobal (lrng <> hrng) <$> parseSymbol (lift . lift) SymbolTypeGroup head'
 parseGroupHead (S.GroupLocLocal _) (S.Symbol rng txt) = do
   env <- get
   let (idx, newEnv) = bindEnvLookup txt $ gvEnvGroup env
   put env{ gvEnvGroup = newEnv }
   pure $ GroupLocLocal rng idx
 parseGroupHead (S.GroupLocFunction lrng) head'@(S.Symbol hrng _)
-  = GroupLocFunction (lrng <> hrng) <$> parseSymbol SymbolTypeFunction head'
+  = GroupLocFunction (lrng <> hrng) <$> parseSymbol (lift . lift) SymbolTypeFunction head'
 
 parseGroupProperty :: S.GenProperty Range -> GVBindSessionRes (Either (Value Range) (GroupRef Range))
 parseGroupProperty (S.GenPropertyDecl key)
@@ -409,14 +414,15 @@ parseRaw path (S.Program rng topLevels) = do
   (gdecls', fdecls) <- partitionEithers <$> traverse parseGroupDecl gdecls
   let exps = mkDeclSet (map compactRecordDecl rdecls') gdecls' fdecls
       imps = mkImportEnv mpath exps idecls'
-  (`runReaderT` imps) $ do
+  (`evalImportT` imps) $ do
     reds' <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
     groups <- parseAllGroupDefs topLevelsInGroups
+    idecls'' <- importEnvImportDecls <$> getImportEnv
     -- TODO: Syntax sugar a main group
     tellErrors $ map notGroupedReducerError reds'
     pure (imps, Program
       { programAnn = rng
-      , programImportDecls = idecls'
+      , programImportDecls = idecls''
       , programRecordDecls = rdecls'
       , programModule
           = Module

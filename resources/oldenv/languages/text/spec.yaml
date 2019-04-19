@@ -1,0 +1,7 @@
+name: Text
+extension: txt
+nodes:
+- name: Text
+  args: 1 # the literal text
+- name: Splice
+  args: 2 # the outer text, and splice arguments
