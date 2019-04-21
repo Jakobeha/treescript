@@ -36,7 +36,7 @@ for (line in readLines(stdin)) {
       break
     }
 
-    if (in_cdr && word != "Scheme_Cons" && word != "Scheme_Nil") {
+    if (in_cdr && word != "Scheme_Lang_SCons" && word != "Scheme_Lang_SNil") {
       cat(" . ")
     }
 
@@ -45,7 +45,7 @@ for (line in readLines(stdin)) {
       idx <- idx_and_inp[2]
       inp <- idx_and_inp[3]
       cat("\\", idx, sep="")
-    } else if (word == "Scheme_Symbol") {
+    } else if (word == "Scheme_Lang_Symbol") {
       inp <- read_expect_integer(inp, 1)
       word_and_inp <- get_next_word(inp)
       word <- word_and_inp[2]
@@ -58,7 +58,7 @@ for (line in readLines(stdin)) {
       } else {
         cat("<expected \"string\", got:", word, ">")
       }
-    } else if (word == "Scheme_Atom") {
+    } else if (word == "Scheme_Lang_Atom") {
       inp <- read_expect_integer(inp, 1)
       word_and_inp <- get_next_word(inp)
       word <- word_and_inp[2]
@@ -82,12 +82,12 @@ for (line in readLines(stdin)) {
       } else {
         cat("<expected a primitive word, got:", word, ">")
       }
-    } else if (word == "Scheme_Nil") {
+    } else if (word == "Scheme_Lang_SNil") {
       inp <- read_expect_integer(inp, 0)
       if (!in_cdr) {
         cat("()")
       }
-    } else if (word == "Scheme_Cons") {
+    } else if (word == "Scheme_Lang_SCons") {
       inp <- read_expect_integer(inp, 2)
       if (in_cdr) {
         cat(" ")
@@ -99,7 +99,7 @@ for (line in readLines(stdin)) {
       cat("<unknown word:", word, ">")
     }
 
-    if (word != "Scheme_Cons") {
+    if (word != "Scheme_Lang_SCons") {
       if (in_cdr) {
         cat(")")
       } else {

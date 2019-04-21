@@ -1,4 +1,4 @@
 Symbol[id].
 Atom[x].
-Nil[].
-Cons[car, cdr].
+SNil[].
+SCons[car, cdr].

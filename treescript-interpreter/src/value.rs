@@ -18,10 +18,16 @@ pub enum Prim {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Symbol {
+  module: String,
+  local: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Value {
   Splice(usize),
   Prim(Prim),
-  Record { head: String, props: Vec<Value> },
+  Record { head: Symbol, props: Vec<Value> },
 }
 
 impl PartialEq for Float {
@@ -67,6 +73,22 @@ impl Prim {
       Prim::Float(_) => "float",
       Prim::String(_) => "string",
     }
+  }
+}
+
+impl Display for Symbol {
+  fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    if self.module.is_empty() {
+      return write!(f, "{}", self.local);
+    } else {
+      return write!(f, "{}_{}", self.module, self.local);
+    }
+  }
+}
+
+impl Symbol {
+  fn from(qualified: &String) -> Symbol {
+    // TODO
   }
 }
 

@@ -83,7 +83,7 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
-      forExampleCore :: TestFile -> (C.Program C.GVBindEnv Range -> IO ()) -> IO ()
+      forExampleCore :: TestFile -> ((C.Program T.Text C.GVBindEnv Range, C.Program () () ()) -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
@@ -161,11 +161,10 @@ spec = do
               assertProperFailure testInfo sugarRes
         it "Desugars" $ \_ ->
           forExampleSugar file $ \sugarSrc -> do
-            let filePath = examplesDir </> T.unpack (fileName srcFile)
-            coreRes <- runSessionResVirtual exampleEnv $ C.parseProg filePath sugarSrc
+            coreRes <- runSessionResVirtual exampleEnv $ C.parse1 examplesDir (fileName srcFile) sugarSrc
             when (testInfoPrintCore testInfo) $ do
               T.putStrLn $ fileName srcFile <> ":"
-              T.putStrLn $ pprint coreRes
+              T.putStrLn $ pprint $ fst <$> coreRes
             if testInfoIsDesugarable testInfo then
               case coreRes of
                 ResultFail coreErr -> do
@@ -176,10 +175,11 @@ spec = do
                   assertNoErrors coreErrs
             else do
               insertVarMapFailure exampleCoreVars file True
-              assertProperFailure testInfo coreRes
+              assertProperFailure testInfo $ fst <$> coreRes
         it "Compiles" $ \tmpDir ->
-          forExampleCore file $ \coreSrc -> do
-            let execPath = tmpDir </> T.unpack (fileName srcFile)
+          forExampleCore file $ \(coreSrcMain, coreImods) -> do
+            let coreSrc = C.remExtra coreSrcMain <> coreImods
+                execPath = tmpDir </> T.unpack (fileName srcFile)
             execRes <- runSessionResVirtual exampleEnv $ C.exportFile execPath $ C.remExtra coreSrc
             if testInfoIsCompilable testInfo then
               case execRes of

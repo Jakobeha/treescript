@@ -10,8 +10,30 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+struct DeclSet {
+  records: Vec<(String, usize)>,
+  groups: Vec<(String, (usize, usize))>,
+  functions: Vec<(String, usize)>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ImportDecl {
+  path: String,
+  qual: String,
+  exports: DeclSet,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct RecordDecl {
+  head: String,
+  props: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
-  pub libraries: Vec<LibrarySpec>,
+  import_decls: Vec<ImportDecl>,
+  record_decls: Vec<RecordDecl>,
+  exports: DeclSet,
   pub groups: Vec<GroupDefSerial>,
 }
 

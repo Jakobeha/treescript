@@ -14,7 +14,6 @@ module TreeScript.Ast.Core.Env
   ) where
 
 import TreeScript.Ast.Core.Types
-import qualified TreeScript.Ast.Sugar as S
 import TreeScript.Misc
 import TreeScript.Plugin
 
@@ -22,22 +21,25 @@ import Control.Monad.Catch
 import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 import Data.Foldable
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
-import System.FilePath
-import System.Directory
 
 data ImportEnv
   = ImportEnv
-  { importEnvLocalDecls :: (ModulePath, DeclSet)
+  { importEnvRoot :: FilePath
+  , importEnvModulePath :: ModulePath
+  , importEnvLocalDecls :: (ModulePath, DeclSet)
+  -- | Includes builtins.
+  , importEnvImportedModules :: S.Set ModulePath
   -- | Includes builtins.
   , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
   , importEnvImportDecls :: [ImportDecl Range]
   }
 
-newtype ImportT m a = ImportT (StateT ImportEnv m a) deriving (Functor, Applicative, Monad, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
+newtype ImportT m a = ImportT (StateT ImportEnv (WriterT (Program () () ()) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
@@ -68,47 +70,55 @@ type GVBindSessionRes a = StateT (GVEnv BindEnv) (ImportT (ResultT (ReaderT Sess
 
 class (Monad m) => MonadImport m where
   getImportEnv :: m ImportEnv
-  importTInsertDecl :: ImportDecl Range -> m ()
+  addImportedModule :: Range -> T.Text -> Program () () () -> m ()
 
 instance (Monad m) => MonadImport (ImportT m) where
   getImportEnv = ImportT get
-  importTInsertDecl = ImportT . modify . importEnvInsertDecl
+  addImportedModule rng qual mdl = do
+    let decl = ImportDecl rng (programPath mdl) qual (programExports mdl)
+    ImportT $ lift $ tell mdl
+    ImportT $ modify $ importEnvInsertDecl decl
+
+instance (MonadImport m) => MonadImport (StateT s m) where
+  getImportEnv = lift getImportEnv
+  addImportedModule rng qual = lift . addImportedModule rng qual
 
 instance (MonadReader r m) => MonadReader r (ImportT m) where
   ask = ImportT ask
   reader = ImportT . reader
   local f (ImportT x) = ImportT $ local f x
 
-instance (MonadImport m) => MonadImport (StateT s m) where
-  getImportEnv = lift getImportEnv
-  importTInsertDecl = lift . importTInsertDecl
+instance MonadTrans ImportT where
+  lift = ImportT . lift . lift
 
 importEnvInsertDecl :: ImportDecl Range -> ImportEnv -> ImportEnv
-importEnvInsertDecl decl@(ImportDecl _ path qual (Module exps _)) (ImportEnv locs imps idecls)
+importEnvInsertDecl decl@(ImportDecl _ ipath qual exps) (ImportEnv root mpath locs imods imps idecls)
   = ImportEnv
-  { importEnvLocalDecls = locs
-  , importEnvImportedDecls = M.insertWith (<>) qual [(path, exps)] imps
+  { importEnvRoot = root
+  , importEnvModulePath = mpath
+  , importEnvLocalDecls = locs
+  , importEnvImportedModules = S.insert ipath imods
+  , importEnvImportedDecls = M.insertWith (<>) qual [(ipath, exps)] imps
   , importEnvImportDecls = decl : idecls
   }
 
-mkImportEnv :: ModulePath -> DeclSet -> [ImportDecl Range] -> ImportEnv
-mkImportEnv mpath mexps
-  = foldr importEnvInsertDecl localEnv
-  where localEnv
-          = ImportEnv
-          { importEnvLocalDecls = (mpath, mexps)
-          , importEnvImportedDecls = M.fromList [("", [("", builtinDecls)])]
-          , importEnvImportDecls = []
-          }
-
 importEnvAllDecls :: ImportEnv -> M.Map T.Text [(ModulePath, DeclSet)]
-importEnvAllDecls (ImportEnv locs imps _) = M.insertWith (<>) "" [locs] imps
+importEnvAllDecls (ImportEnv _ _ locs _ imps _) = M.insertWith (<>) "" [locs] imps
 
 importEnvImportedLocals :: ImportEnv -> DeclSet
 importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
 
-evalImportT :: (Monad m) => ImportT m a -> ImportEnv -> m a
-evalImportT (ImportT x) = evalStateT x
+runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, Program () () ())
+runImportT root mpath mexps (ImportT x) = runWriterT $ (`evalStateT` initEnv) x
+  where initEnv
+          = ImportEnv
+          { importEnvRoot = root
+          , importEnvModulePath = mpath
+          , importEnvLocalDecls = (mpath, mexps)
+          , importEnvImportedModules = S.singleton ""
+          , importEnvImportedDecls = M.fromList [("", [("", builtinDecls)])]
+          , importEnvImportDecls = []
+          }
 
 localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
 localEnvInsertBinds binds env
@@ -142,13 +152,3 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
           }
         )
       Just idx -> (idx, env)
-
--- | Makes the path absolute (relative to source path).
-resolvePath :: T.Text -> S.ModulePath Range -> SessionRes (S.ModulePath Range)
-resolvePath myPath (S.ModulePath rng path) = do
-  let liftIO'
-        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't resolve relative path " <> path))
-        . liftIOAndCatch StageDesugar
-      dirPath = takeDirectory $ T.unpack myPath
-      path' = T.unpack path
-  liftIO' $ S.ModulePath rng . T.pack <$> canonicalizePath (dirPath </> path')

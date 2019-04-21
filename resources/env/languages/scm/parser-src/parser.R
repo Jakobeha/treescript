@@ -33,7 +33,7 @@ for (line in readLines(stdin, warn=FALSE)) {
         else
           started <- TRUE
       } else if (!didCons)
-        writeRecord("Scheme_Cons", 2)
+        writeRecord("Scheme_Lang_SCons", 2)
     }
 
     if (grepl("^\\\\[0-9]+$", token)) {
@@ -50,7 +50,7 @@ for (line in readLines(stdin, warn=FALSE)) {
       if (didCons) {
         didCons <- FALSE
       } else {
-        writeRecord("Scheme_Nil", 0)
+        writeRecord("Scheme_Lang_SNil", 0)
       }
       level <- level - 1
     } else if (token == ".") {
@@ -62,13 +62,13 @@ for (line in readLines(stdin, warn=FALSE)) {
         didCons <- TRUE
       }
     } else if (token == "#true") {
-      writeRecord("Scheme_Atom", 1)
+      writeRecord("Scheme_Lang_Atom", 1)
       writeRecord("True", 0)
     } else if (token == "#false") {
-      writeRecord("Scheme_Atom", 1)
+      writeRecord("Scheme_Lang_Atom", 1)
       writeRecord("False", 0)
     } else if (suppressWarnings(all(!is.na(as.numeric(token))))) {
-      writeRecord("Scheme_Atom", 1)
+      writeRecord("Scheme_Lang_Atom", 1)
       if (grepl("\\.", token)) {
         writeWord("float")
       } else {
@@ -76,11 +76,11 @@ for (line in readLines(stdin, warn=FALSE)) {
       }
       writeWord(token)
     } else if (grepl("\"", token)) {
-      writeRecord("Scheme_Atom", 1)
+      writeRecord("Scheme_Lang_Atom", 1)
       writeWord("string")
       writeWord(token)
     } else {
-      writeRecord("Scheme_Symbol", 1)
+      writeRecord("Scheme_Lang_Symbol", 1)
       writeWord("string")
       writeWord(dQuote(token))
     }

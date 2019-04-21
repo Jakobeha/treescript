@@ -172,8 +172,8 @@ traverseValuesInReducer f (Reducer ann main guards)
   <*> traverse (traverseValuesInGuard f) guards
 
 -- | Reducers in all groups.
-allProgramReducers :: Program e an -> [Reducer an]
-allProgramReducers = concatMap groupDefReducers . moduleGroups . programModule
+allProgramReducers :: Program e1 e2 an -> [Reducer an]
+allProgramReducers = concatMap groupDefReducers . programGroups
 
 substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
 substGroupProp1 substs x
@@ -210,7 +210,7 @@ maxNumBindsInReducers :: [Reducer an] -> Int
 maxNumBindsInReducers stmts = maximum $ 0 : map maxNumBindsInReducer stmts
 
 -- | The maximum number of binds used by the main reducers in the program - the maximum index in any used bind.
-maxNumBindsInProgram :: Program e an -> Int
+maxNumBindsInProgram :: Program e1 e2 an -> Int
 maxNumBindsInProgram = maxNumBindsInReducers . allProgramReducers
 
 bindsInValue1 :: Value an -> S.Set Int
@@ -222,24 +222,25 @@ bindsInValue :: Value an -> S.Set Int
 bindsInValue = foldValue bindsInValue1
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
-allGroupDefReducers :: [GroupRef an] -> GroupDef e an -> [Reducer an]
+allGroupDefReducers :: [GroupRef an] -> GroupDef e1 e2 an -> [Reducer an]
 allGroupDefReducers gprops (GroupDef _ _ _ gpropIdxs reds _)
     = map (mapGroupsInReducer (substGroupProp1 gpropSubsts)) reds
   where gpropSubsts = zip (map (bindIdx . snd) gpropIdxs) gprops
 
 -- | The reducers in the referenced group, substituting exported binds, and their mode.
-allGroupRefReducers :: M.Map (Symbol ()) (GroupDef e an) -> GroupRef an -> [Reducer an]
+allGroupRefReducers :: M.Map (Symbol ()) (GroupDef e1 e2 an) -> GroupRef an -> [Reducer an]
 allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
   = allGroupDefReducers gprops $ groups M.! remAnns name
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
 
-remGroupBindEnv :: GroupDef e an -> GroupDef () an
+remGroupBindEnv :: GroupDef e1 e2 an -> GroupDef () () an
 remGroupBindEnv (GroupDef ann head' vprops gprops reds _)
-  = GroupDef ann head' vprops gprops reds ()
+  = GroupDef ann head' (map remText vprops) (map remText gprops) reds ()
+  where remText (_, x) = ((), x)
 
-remModBindEnv :: Module e an -> Module () an
-remModBindEnv (Module exps grps)
-  = Module exps $ map remGroupBindEnv grps
+remProgBindEnv :: Program e1 e2 an -> Program () () an
+remProgBindEnv (Program ann mpath idecls rdecls exps grps)
+  = Program ann mpath idecls rdecls exps $ map remGroupBindEnv grps
 
-remExtra :: Program e an -> Module () ()
-remExtra = remModBindEnv . (() <$) . programModule
+remExtra :: Program e1 e2 an -> Program () () ()
+remExtra = remProgBindEnv . (() <$)

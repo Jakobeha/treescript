@@ -55,7 +55,7 @@ Subst[scm'(\a \x \y \z)', \old, \new] -> scm'(\a \x2 \y2 \z2)',
 Subst[\body, \_, \_] -> \body;
 
 &NonEmpty[].
-Scheme_Cons[\_, \_] -> T[];
+Scheme_SCons[\_, \_] -> T[];
 
 &IsEqual[].
 T[\x, \x] -> True[];

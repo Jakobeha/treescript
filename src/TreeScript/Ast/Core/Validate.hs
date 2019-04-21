@@ -67,7 +67,7 @@ unboundErrsReducer env (Reducer _ main guards) = (`evalState` env) $ execWriterT
     addGuardBindsToEnv guard'
   unboundErrsGuard main
 
-unboundErrs :: GroupDef p Range -> [Error]
+unboundErrs :: GroupDef e1 e2 Range -> [Error]
 unboundErrs (GroupDef _ _ vprops gprops reds _)
   = concatMap (unboundErrsReducer env) reds
   where env = LocalEnv
@@ -76,19 +76,21 @@ unboundErrs (GroupDef _ _ vprops gprops reds _)
           }
         convertProps = S.fromList . map bindIdx
 
+-- SOON: Error on module path with bad characters
+
 -- TODO: Undeclared function errors
 
 -- TODO: Validate imports
 
-validationErrs :: ImportEnv -> Program p Range -> [Error]
-validationErrs imps (Program _ _ decls (Module _ groups))
+validationErrs :: ImportEnv -> Program e1 e2 Range -> [Error]
+validationErrs imps (Program _ mpath _ decls _ groups)
    = duplicateDeclErrs (M.keysSet importedRecordDecls) decls
   ++ concatMap unboundErrs groups
   where importedRecordDecls = declSetRecords $ importEnvImportedLocals imps
 
 -- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.
-validate :: SessionRes (ImportEnv, Program p Range) -> SessionRes (Program p Range)
+validate :: SessionRes ((Program e1 e2 Range, ImportEnv), Program () () ()) -> SessionRes (Program e1 e2 Range, Program () () ())
 validate res = do
-  (imps, x) <- res
+  ((x, imps), imods) <- res
   tellErrors $ sort $ validationErrs imps x
-  pure x
+  pure (x, imods)

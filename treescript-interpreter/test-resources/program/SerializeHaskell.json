@@ -1,233 +1,248 @@
-{
-  "moduleExports": {
-    "declSetGroups": {
-      "Main": [
-        0,
-        0
-      ],
-      "Foo": [
-        0,
-        1
-      ],
-      "Bar": [
-        0,
-        0
-      ]
-    },
-    "declSetRecords": {
-      "Foo": 1,
-      "Bar": 0
-    },
-    "declSetFunctions": {}
-  },
-  "moduleGroups": [
-    {
-      "groupDefValueProps": [],
-      "groupDefHead": "Main",
-      "groupDefPropEnv": [],
-      "groupDefGroupProps": [],
-      "groupDefAnn": [],
-      "groupDefReducers": [
-        {
-          "reducerSubGuards": [],
-          "reducerAnn": [],
-          "reducerMain": {
-            "guardInput": {
-              "tag": "ValueBind",
-              "contents": {
-                "bindIdx": 1,
-                "bindAnn": []
-              }
-            },
-            "guardAnn": [],
-            "guardOutput": {
-              "tag": "ValueBind",
-              "contents": {
-                "bindIdx": 1,
-                "bindAnn": []
-              }
-            },
-            "guardNexts": [
-              {
-                "groupRefGroupProps": [
-                  {
-                    "groupRefGroupProps": [],
-                    "groupRefAnn": [],
-                    "groupRefValueProps": [],
-                    "groupRefLoc": {
-                      "tag": "GroupLocGlobal",
-                      "contents": [
-                        [],
-                        {
-                          "symbolModule": "test-resources/Serialize",
-                          "symbol": "Bar",
-                          "symbolAnn": []
-                        }
-                      ]
-                    }
-                  }
-                ],
-                "groupRefAnn": [],
-                "groupRefValueProps": [],
-                "groupRefLoc": {
-                  "tag": "GroupLocGlobal",
-                  "contents": [
-                    [],
-                    {
-                      "symbolModule": "test-resources/Serialize",
-                      "symbol": "Foo",
-                      "symbolAnn": []
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "groupDefValueProps": [],
-      "groupDefHead": "Foo",
-      "groupDefPropEnv": [],
-      "groupDefGroupProps": [
+[
+    [
+        "Serialize",
+        []
+    ],
+    [
         [
-          "foo",
-          {
-            "bindIdx": 1,
-            "bindAnn": []
-          }
+            "Foo",
+            [
+                "foo"
+            ]
+        ],
+        [
+            "Bar",
+            []
         ]
-      ],
-      "groupDefAnn": [],
-      "groupDefReducers": [
-        {
-          "reducerSubGuards": [
-            {
-              "guardInput": {
-                "tag": "ValueBind",
-                "contents": {
-                  "bindIdx": 1,
-                  "bindAnn": []
-                }
-              },
-              "guardAnn": [],
-              "guardOutput": {
-                "tag": "ValuePrimitive",
-                "contents": {
-                  "tag": "PrimInteger",
-                  "contents": [
-                    [],
-                    5
-                  ]
-                }
-              },
-              "guardNexts": [
-                {
-                  "groupRefGroupProps": [],
-                  "groupRefAnn": [],
-                  "groupRefValueProps": [],
-                  "groupRefLoc": {
-                    "tag": "GroupLocLocal",
-                    "contents": [
-                      [],
-                      1
+    ],
+    [
+        [
+            [
+                "Bar",
+                0
+            ],
+            [
+                "Foo",
+                1
+            ]
+        ],
+        [
+            [
+                "Bar",
+                [
+                    0,
+                    0
+                ]
+            ],
+            [
+                "Foo",
+                [
+                    0,
+                    1
+                ]
+            ],
+            [
+                "Main",
+                [
+                    0,
+                    0
+                ]
+            ]
+        ],
+        []
+    ],
+    [
+        [
+            [
+                "Main",
+                []
+            ],
+            [],
+            [
+                [
+                    [
+                        [
+                            [
+                                2,
+                                [
+                                    1
+                                ]
+                            ]
+                        ],
+                        [
+                            2,
+                            [
+                                1
+                            ]
+                        ],
+                        [
+                            [
+                                [
+                                    [
+                                        0,
+                                        [
+                                            [
+                                                "Serialize",
+                                                "Foo"
+                                            ]
+                                        ]
+                                    ]
+                                ],
+                                [],
+                                [
+                                    [
+                                        [
+                                            [
+                                                0,
+                                                [
+                                                    [
+                                                        "Serialize",
+                                                        "Bar"
+                                                    ]
+                                                ]
+                                            ]
+                                        ],
+                                        [],
+                                        []
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ],
+                    []
+                ]
+            ]
+        ],
+        [
+            [
+                "Foo",
+                []
+            ],
+            [
+                [
+                    null,
+                    [
+                        1
                     ]
-                  }
-                }
-              ]
-            }
-          ],
-          "reducerAnn": [],
-          "reducerMain": {
-            "guardInput": {
-              "tag": "ValuePrimitive",
-              "contents": {
-                "tag": "PrimString",
-                "contents": [
-                  [],
-                  "bar"
                 ]
-              }
-            },
-            "guardAnn": [],
-            "guardOutput": {
-              "tag": "ValueRecord",
-              "contents": {
-                "recordAnn": [],
-                "recordHead": {
-                  "symbolModule": "test-resources/Serialize",
-                  "symbol": "Foo",
-                  "symbolAnn": []
-                },
-                "recordProps": [
-                  {
-                    "tag": "ValueBind",
-                    "contents": {
-                      "bindIdx": 1,
-                      "bindAnn": []
-                    }
-                  }
+            ],
+            [
+                [
+                    [
+                        [
+                            [
+                                0,
+                                [
+                                    2,
+                                    [
+                                        "bar"
+                                    ]
+                                ]
+                            ]
+                        ],
+                        [
+                            1,
+                            [
+                                [
+                                    "Serialize",
+                                    "Foo"
+                                ],
+                                [
+                                    [
+                                        2,
+                                        [
+                                            1
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        []
+                    ],
+                    [
+                        [
+                            [
+                                [
+                                    2,
+                                    [
+                                        1
+                                    ]
+                                ]
+                            ],
+                            [
+                                0,
+                                [
+                                    0,
+                                    [
+                                        5
+                                    ]
+                                ]
+                            ],
+                            [
+                                [
+                                    [
+                                        [
+                                            1,
+                                            [
+                                                1
+                                            ]
+                                        ]
+                                    ],
+                                    [],
+                                    []
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            [
+                                1,
+                                [
+                                    [
+                                        "Serialize",
+                                        "Foo"
+                                    ],
+                                    [
+                                        [
+                                            1,
+                                            [
+                                                [
+                                                    "Serialize",
+                                                    "Bar"
+                                                ],
+                                                []
+                                            ]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        [
+                            1,
+                            [
+                                [
+                                    "Serialize",
+                                    "Bar"
+                                ],
+                                []
+                            ]
+                        ],
+                        []
+                    ],
+                    []
                 ]
-              }
-            },
-            "guardNexts": []
-          }
-        },
-        {
-          "reducerSubGuards": [],
-          "reducerAnn": [],
-          "reducerMain": {
-            "guardInput": {
-              "tag": "ValueRecord",
-              "contents": {
-                "recordAnn": [],
-                "recordHead": {
-                  "symbolModule": "test-resources/Serialize",
-                  "symbol": "Foo",
-                  "symbolAnn": []
-                },
-                "recordProps": [
-                  {
-                    "tag": "ValueRecord",
-                    "contents": {
-                      "recordAnn": [],
-                      "recordHead": {
-                        "symbolModule": "test-resources/Serialize",
-                        "symbol": "Bar",
-                        "symbolAnn": []
-                      },
-                      "recordProps": []
-                    }
-                  }
-                ]
-              }
-            },
-            "guardAnn": [],
-            "guardOutput": {
-              "tag": "ValueRecord",
-              "contents": {
-                "recordAnn": [],
-                "recordHead": {
-                  "symbolModule": "test-resources/Serialize",
-                  "symbol": "Bar",
-                  "symbolAnn": []
-                },
-                "recordProps": []
-              }
-            },
-            "guardNexts": []
-          }
-        }
-      ]
-    },
-    {
-      "groupDefValueProps": [],
-      "groupDefHead": "Bar",
-      "groupDefPropEnv": [],
-      "groupDefGroupProps": [],
-      "groupDefAnn": [],
-      "groupDefReducers": []
-    }
-  ]
-}
+            ]
+        ],
+        [
+            [
+                "Bar",
+                []
+            ],
+            [],
+            []
+        ]
+    ]
+]

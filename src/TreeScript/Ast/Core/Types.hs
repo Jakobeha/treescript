@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Types for the @Core@ AST.
@@ -10,9 +11,9 @@ module TreeScript.Ast.Core.Types
   ( module TreeScript.Ast.Core.Types
   ) where
 
+import TreeScript.Ast.Core.Serialize
 import TreeScript.Misc
 
-import qualified Data.Aeson as A
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import GHC.Generics
@@ -45,18 +46,18 @@ data DeclSet
   { declSetRecords :: M.Map T.Text Int
   , declSetGroups :: M.Map T.Text (Int, Int)
   , declSetFunctions :: M.Map T.Text Int
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial)
 
--- | Just a path, but in text form, with no extension and @""@ for builtin
+-- | Determines which module a symbol is located, so 2 symbols with the same name don't conflict.
 type ModulePath = T.Text
 
 data ImportDecl an
   = ImportDecl
   { importDeclAnn :: an
   , importDeclPath :: ModulePath
-  , importDeclQual :: T.Text -- Either empty or @<qual>_@
-  , importDeclModule :: Module () ()
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  , importDeclQual :: T.Text
+  , importDeclExps :: DeclSet
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
@@ -64,21 +65,21 @@ data RecordDecl an
   { recordDeclAnn :: an
   , recordDeclHead :: T.Text
   , recordDeclProps :: [T.Text]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
 data Primitive an
   = PrimInteger an Int
   | PrimFloat an Float
   | PrimString an T.Text
-  deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Type of symbol (used in resolution).
 data SymbolType
   = SymbolTypeRecord
   | SymbolTypeGroup
   | SymbolTypeFunction
-  deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON)
+  deriving (Eq, Ord, Read, Show, Generic, Serial)
 
 -- | An identifier, such as a record head or property key.
 data Symbol an
@@ -86,7 +87,7 @@ data Symbol an
   { symbolAnn :: an
   , symbolModule :: ModulePath
   , symbol :: T.Text
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
 data Record an
@@ -94,28 +95,28 @@ data Record an
   { recordAnn :: an
   , recordHead :: Symbol an
   , recordProps :: [Value an]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | In an input value, assigns an index identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be '0' in an input value, in which case the value is discarded, but not in an output value.
 data Bind an
   = Bind
   { bindAnn :: an
   , bindIdx :: Int
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Type of data in TreeScript.
 data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
   | ValueBind (Bind an)
-  deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | The type and identifier of a group.
 data GroupLoc an
   = GroupLocGlobal an (Symbol an)
   | GroupLocLocal an Int
   | GroupLocFunction an (Symbol an)
-  deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
 data GroupRef an
@@ -124,7 +125,7 @@ data GroupRef an
   , groupRefLoc :: GroupLoc an
   , groupRefValueProps :: [Value an]
   , groupRefGroupProps :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches a value against a different value. Like a "let" statement.
 data Guard an
@@ -133,7 +134,7 @@ data Guard an
   , guardInput :: Value an
   , guardOutput :: Value an
   , guardNexts :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a case in a "match" statement.
 data Reducer an
@@ -141,36 +142,31 @@ data Reducer an
   { reducerAnn :: an
   , reducerMain :: Guard an
   , reducerSubGuards :: [Guard an]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Defines a group of reducers, which can be referenced by other reducers.
-data GroupDef e an
+data GroupDef e1 e2 an
   = GroupDef
   { groupDefAnn :: an
   , groupDefHead :: T.Text
-  , groupDefValueProps :: [(T.Text, Bind an)]
-  , groupDefGroupProps :: [(T.Text, Bind an)]
+  , groupDefValueProps :: [(e1, Bind an)]
+  , groupDefGroupProps :: [(e1, Bind an)]
   , groupDefReducers :: [Reducer an]
-  , groupDefPropEnv :: e
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  , groupDefPropEnv :: e2
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | TODO Used libs.
-
--- | A module - contains the data of a TreeScript program.
-data Module e an
-  = Module
-  { moduleExports :: DeclSet
-  , moduleGroups :: [GroupDef e an]
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable)
+-- | TODO Make import and record decls a removable type param.
 
 -- | A full TreeScript program.
-data Program e an
+data Program e1 e2 an
   = Program
   { programAnn :: an
+  , programPath :: ModulePath
   , programImportDecls :: [ImportDecl an]
   , programRecordDecls :: [RecordDecl an]
-  , programModule :: Module e an
-  } deriving (Eq, Ord, Read, Show, Generic, A.ToJSON, A.FromJSON, Functor, Foldable, Traversable, Generic1, Annotatable)
+  , programExports :: DeclSet
+  , programGroups :: [GroupDef e1 e2 an]
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 instance Semigroup DeclSet where
   DeclSet xRecs xGrps xFuns <> DeclSet yRecs yGrps yFuns
@@ -188,36 +184,32 @@ instance Monoid DeclSet where
     , declSetFunctions = mempty
     }
 
-instance Semigroup (Module e an) where
-  Module xExps xGrps <> Module yExps yGrps
-    = Module
-    { moduleExports = xExps <> yExps
-    , moduleGroups = xGrps <> yGrps
-    }
-
-instance Monoid (Module e an) where
-  mempty
-    = Module
-    { moduleExports = mempty
-    , moduleGroups = mempty
-    }
-
-instance (Semigroup an) => Semigroup (Program e an) where
-  Program xAnn xIdecls xRdecls xMod <> Program yAnn yIdecls yRdecls yMod
+-- | Takes path of left, unless empty (to satisfy @Monoid@).
+-- TODO Fix all right program paths.
+instance (Semigroup an) => Semigroup (Program e1 e2 an) where
+  Program xAnn xPath xIdecls xRdecls xExps xGrps <> Program yAnn yPath yIdecls yRdecls yExps yGrps
     = Program
     { programAnn = xAnn <> yAnn
+    , programPath = path
     , programImportDecls = xIdecls <> yIdecls
     , programRecordDecls = xRdecls <> yRdecls
-    , programModule = xMod <> yMod
+    , programExports = xExps <> yExps
+    , programGroups = xGrps <> yGrps
     }
+    where path
+            | xPath == "" = yPath
+            | otherwise = xPath
 
-instance (Monoid an) => Monoid (Program e an) where
+-- | No path.
+instance (Monoid an) => Monoid (Program e1 e2 an) where
   mempty
     = Program
     { programAnn = mempty
+    , programPath = ""
     , programImportDecls = mempty
     , programRecordDecls = mempty
-    , programModule = mempty
+    , programExports = mempty
+    , programGroups = mempty
     }
 
 instance Printable DeclSet where
@@ -227,7 +219,7 @@ instance Printable DeclSet where
     <> foldMap (",\n  #" <>) (M.keys fexps)
 
 instance Printable (ImportDecl an) where
-  pprint (ImportDecl _ path qual (Module exps _))
+  pprint (ImportDecl _ path qual exps)
     = "#import " <> pprint path <> printQual <> pprint exps <> ";"
     where printQual
             | T.null qual = ""
@@ -235,15 +227,17 @@ instance Printable (ImportDecl an) where
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
-    = pprint head' <> printProps (map pprint props)
+    = head' <> printProps props
+
+instance Printable (Symbol an) where
+  pprint (Symbol _ md txt)
+    | md == "" = txt
+    | otherwise = md <> "_" <> txt
 
 instance Printable (Primitive an) where
   pprint (PrimInteger _ int) = pprint int
   pprint (PrimFloat _ float) = pprint float
   pprint (PrimString _ str) = pprint str
-
-instance Printable (Symbol an) where
-  pprint (Symbol _ md txt) = T.takeEnd modulePathPrintLength md <> "_" <> txt
 
 instance Printable (Record an) where
   pprint (Record _ head' props)
@@ -285,21 +279,22 @@ instance Printable (Reducer an) where
     where printNext next' = " " <> pprint next'
           printGuard guard = ",\n  " <> pprint guard
 
-instance Printable (GroupDef e an) where
+instance (e1 ~ T.Text) => Printable (GroupDef e1 e2 an) where
   -- TODO: Print env
   pprint (GroupDef _ head' vprops gprops reds _)
     = T.unlines $ printDecl : map pprint reds
     where printDecl
             = "&"
-            <> pprint head'
+            <> head'
             <> printProps (map (printGroupDefProp "\\") vprops ++ map (printGroupDefProp "&") gprops)
             <> "."
           printGroupDefProp pre (txt, (Bind _ idx)) = pre <> txt <> "=" <> pprint idx
 
-instance Printable (Program e an) where
-  pprint (Program _ idecls rdecls (Module _ grps))
+instance (e1 ~ T.Text) => Printable (Program e1 e2 an) where
+  pprint (Program _ mpath idecls rdecls _ grps)
      = T.unlines
-     $ map pprint idecls
+     $ ["#module " <> mpath <> ";"]
+    ++ map pprint idecls
     ++ [T.empty]
     ++ map pprint rdecls
     ++ [T.empty]

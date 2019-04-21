@@ -15,7 +15,6 @@ module TreeScript.Plugin.Session
   , runPreSessionRes
   , runSessionResReal
   , langWithExt
-  , builtinModWithQual
   ) where
 
 import TreeScript.Plugin.CmdProgram
@@ -27,7 +26,6 @@ import Control.Monad.Reader
 import Data.Char
 import Data.List
 import qualified Data.Map.Strict as M
-import Data.Maybe
 import qualified Data.Text as T
 import Data.Yaml
 import System.Directory
@@ -57,7 +55,7 @@ data SessionEnv
   = SessionEnv
   { sessionEnvSettings :: Settings
   , sessionEnvLanguages :: M.Map T.Text Language
-  , sessionEnvBuiltinMods :: M.Map T.Text FilePath
+  , sessionEnvBuiltinModsPath :: FilePath
   }
 
 type PreSessionRes a = forall r. ResultT (ReaderT r (LoggingT IO)) a
@@ -95,7 +93,7 @@ emptySessionEnv
   = SessionEnv
   { sessionEnvSettings = defaultSettings
   , sessionEnvLanguages = M.empty
-  , sessionEnvBuiltinMods = M.empty
+  , sessionEnvBuiltinModsPath = ""
   }
 
 mkPluginLoadError :: T.Text -> Error
@@ -144,14 +142,6 @@ mkLanguage pluginPath ext = do
     } )
 
 
-mkBuiltinMod :: FilePath -> String -> PreSessionRes (T.Text, FilePath)
-mkBuiltinMod pluginPath name = do
-  let path = pluginPath </> name
-      name' = T.pack name
-  unless (isUpper $ T.head name') $
-    tellError $ mkPluginLoadError $ "module name (extension) must be uppercase: " <> name'
-  pure (name', path)
-
 listDirPlugins :: FilePath -> PreSessionRes [String]
 listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
   where isHidden name = "." `isPrefixOf` name
@@ -169,11 +159,10 @@ getEnvAtPath pluginPath = do
         pure defaultSettings
       Right res -> pure res
   languages <- fmap M.fromList . traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
-  mods <- fmap M.fromList . traverseDropFatals (mkBuiltinMod modsPath) =<< listDirPlugins modsPath
   pure SessionEnv
     { sessionEnvSettings = settings
     , sessionEnvLanguages = languages
-    , sessionEnvBuiltinMods = mods
+    , sessionEnvBuiltinModsPath = modsPath
     }
 
 -- | Loads the environment which is shipped with this package.
@@ -223,12 +212,3 @@ langWithExt :: T.Text -> SessionRes (Maybe Language)
 langWithExt ext = do
   langs <- sessionEnvLanguages <$> getSessionEnv
   pure $ langs M.!? ext
-
--- | Gets the path of the module with the given qualifier in the session.
-builtinModWithQual :: T.Text -> SessionRes (Maybe FilePath)
-builtinModWithQual qual = do
-  mods <- sessionEnvBuiltinMods <$> getSessionEnv
-  let res = mods M.!? qual
-  unless (isJust res) $
-    logDebugN $ "Module '" <> qual <> "' " <> "not found"
-  pure res

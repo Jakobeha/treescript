@@ -34,6 +34,7 @@ import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 import Data.Maybe
 import qualified Data.Text as T
 import Control.Monad.Logger
@@ -152,6 +153,9 @@ instance (Applicative u) => MonadResult (ResultT u) where
   overErrors f (ResultT x) = ResultT $ overErrors f <$> x
   downgradeFatal (ResultT x) = ResultT $ downgradeFatal <$> x
 
+instance MonadTrans ResultT where
+  lift = ResultT . fmap (Result [])
+
 instance (Monad u, MonadResult u) => MonadResult (ReaderT r u) where
   mkFail = lift . mkFail
   tellErrors = lift . tellErrors
@@ -166,6 +170,15 @@ instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
     where run s = fmap fillState $ downgradeFatal $ runStateT x s
             where fillState Nothing = (Nothing, s)
                   fillState (Just (res, s')) = (Just res, s')
+
+instance (Monoid m, Monad u, MonadResult u) => MonadResult (WriterT m u) where
+  mkFail = lift . mkFail
+  tellErrors = lift . tellErrors
+  overErrors = mapWriterT . overErrors
+  downgradeFatal x = WriterT run
+    where run = fmap fillState $ downgradeFatal $ runWriterT x
+            where fillState Nothing = (Nothing, mempty)
+                  fillState (Just (res, m')) = (Just res, m')
 
 instance (MonadReader r u) => MonadReader r (ResultT u) where
   ask = ResultT $ pure <$> ask

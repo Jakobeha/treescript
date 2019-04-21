@@ -1,5 +1,5 @@
 extern crate unicode_reader;
-use crate::value::{Float, Prim, Value};
+use crate::value::{Float, Prim, Symbol, Value};
 use std::io::Read;
 use unicode_reader::CodePoints;
 
@@ -119,7 +119,7 @@ impl<'a, R: Read> Parser<'a, R> {
             props.push(self.scan_sub_value().unwrap());
           }
           return Option::Some(Value::Record {
-            head: word,
+            head: Symbol::from(head),
             props: props,
           });
         } else {

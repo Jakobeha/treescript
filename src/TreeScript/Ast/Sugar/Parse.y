@@ -55,10 +55,10 @@ TopLevel : ImportDecl { TopLevelImportDecl $1 }
          | Reducer { TopLevelReducer $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
          ;
-ImportDecl : '#' LowerSym string '->' UpperSym ';' -- SOON: Replace with '=>'
-           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 (ModulePath (getAnn $3) (annd $3)) (Just $5) }
-           | '#' LowerSym string ';'
-           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4) $2 (ModulePath (getAnn $3) (annd $3)) Nothing }
+ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 $3 (Just $5) }
+           | '#' LowerSym UpperSym ';'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4) $2 $3 Nothing }
            ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;

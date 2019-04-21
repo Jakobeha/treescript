@@ -15,19 +15,12 @@ import TreeScript.Misc
 import qualified Data.Text as T
 import GHC.Generics
 
--- | Where a module is located, just a filepath but in text.
-data ModulePath an
-  = ModulePath
-  { modulePathAnn :: an
-  , modulePathText :: T.Text
-  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
-
 -- | Declares an imported module.
 data ImportDecl an
   = ImportDecl
   { importDeclAnn :: an
   , importDeclLiteral :: Symbol an -- ^ Should be "import", but this has to be checked
-  , importDeclPath :: ModulePath an
+  , importDeclMod :: Symbol an
   , importDeclQualifier :: Maybe (Symbol an)
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -185,12 +178,9 @@ data Program an
   , programTopLevels :: [TopLevel an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
-instance TreePrintable ModulePath where
-  treePrint _ leaf (ModulePath _ txt) = leaf txt
-
 instance TreePrintable ImportDecl where
-  treePrint par _ (ImportDecl _ lit path qual)
-    = "#" <> par lit <> " " <> par path <> foldMap printQual qual
+  treePrint par _ (ImportDecl _ lit mdl qual)
+    = "#" <> par lit <> " " <> par mdl <> foldMap printQual qual
     where printQual = (" -> " <>) . par
 
 instance TreePrintable RecordDecl where

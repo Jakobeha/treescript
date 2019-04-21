@@ -1,6 +1,6 @@
 extern crate serde;
 use crate::session::Session;
-use crate::value::{Prim, Value};
+use crate::value::{Prim, Symbol, Value};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::iter;
@@ -41,9 +41,9 @@ pub enum Consume {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum GroupLoc {
-  Global(usize),
+  Global(Symbol),
   Local(usize),
-  Function(String),
+  Function(Symbol),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -68,6 +68,7 @@ pub struct Reducer {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupDefSerial {
+  pub head: String,
   pub vprops: Vec<usize>,
   pub gprops: Vec<usize>,
   pub reducers: Vec<Reducer>,

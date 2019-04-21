@@ -132,13 +132,13 @@ function readAst(inp) {
       var lst = [];
       readList(inp, lst);
       return lst;
-    case "JS_Undefined":
+    case "JS_Lang_Undefined":
       numProps = readInteger(inp);
       if (numProps != 0) {
         return raiseProps(word, 0, numProps);
       }
       return undefined;
-    case "JS_RegExp":
+    case "JS_Lang_RegExp":
       numProps = readInteger(inp);
       if (numProps != 1) {
         return raiseProps(word, 1, numProps);
@@ -149,8 +149,8 @@ function readAst(inp) {
       }
       return new RegExp(readString(inp));
     default:
-      if (word.startsWith("JS_")) {
-        var type = word.substring("JS_".length);
+      if (word.startsWith("JS_Lang_")) {
+        var type = word.substring("JS_Lang_".length);
         numProps = readInteger(inp);
         var props = spec.nodes[type];
         if (typeof props == "undefined") {

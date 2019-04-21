@@ -5,32 +5,34 @@
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST.
 module TreeScript.Ast.Core.Parse
-  ( parseProg
+  ( parse1
   , parse
-  , parseFromStart
   ) where
 
 import TreeScript.Ast.Core.Analyze
 import TreeScript.Ast.Core.Validate
 import TreeScript.Ast.Core.Env
+import TreeScript.Ast.Core.Serialize
 import TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Flat as F
 import qualified TreeScript.Ast.Sugar as S
 import qualified TreeScript.Ast.Lex as L
 import TreeScript.Misc
+import qualified TreeScript.Misc.Ext.Text as T
 import TreeScript.Plugin
 
 import Control.Monad
-import Control.Monad.Catch
+import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
-import qualified Data.Aeson as A
 import Data.Bifunctor
+import qualified Data.ByteString.Lazy as B
 import Data.Either
 import Data.Foldable
 import qualified Data.List.NonEmpty as N
 import qualified Data.Map.Strict as M
 import Data.Maybe
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
@@ -39,8 +41,18 @@ import System.FilePath
 
 -- = Parsing from AST data
 
-decodeAstData :: Range -> T.Text -> [Value an] -> ImportSessionRes [Value (Maybe an)]
-decodeAstData rng txt splices = traverse decodeAstData1 =<< ImportT (lift $ ResultT $ pure $ F.parse txt)
+parseAstSymbol :: T.Text -> Symbol (Maybe an)
+parseAstSymbol txt
+  = Symbol
+  { symbolAnn = Nothing
+  , symbolModule = path
+  , symbol = lcl
+  }
+  where (path_, lcl) = T.breakOnEnd "_" txt
+        path = T.dropEnd 1 path_
+
+decodeAstData :: Range -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
+decodeAstData rng txt splices = traverse decodeAstData1 =<< ResultT (pure $ F.parse txt)
   where
     splicesVec = V.fromList splices
     decodeAstData1 lexs = do
@@ -60,7 +72,7 @@ decodeAstData rng txt splices = traverse decodeAstData1 =<< ImportT (lift $ Resu
     primParser (F.PrimString value) = PrimString Nothing value
     recordParser qualHead numProps rest = do
       (props, rest') <- propsParser numProps rest
-      head' <- (Nothing <$) <$> parseSymbol lift SymbolTypeRecord (S.Symbol rng qualHead)
+      let head' = parseAstSymbol qualHead
       pure
         ( Record
           { recordAnn = Nothing
@@ -76,7 +88,7 @@ decodeAstData rng txt splices = traverse decodeAstData1 =<< ImportT (lift $ Resu
       pure (x : xs, rest'')
 
 
-runLanguageParser :: Range -> Language -> T.Text -> [Value an] -> ImportSessionRes [Value (Maybe an)]
+runLanguageParser :: Range -> Language -> T.Text -> [Value an] -> SessionRes [Value (Maybe an)]
 runLanguageParser rng lang txt splices = do
   let parser = languageParser lang
   astData <- overErrors (addRangeToErr rng . prependMsgToErr "couldn't parse code") $ runCmdProgram parser txt
@@ -87,76 +99,142 @@ runLanguageParser rng lang txt splices = do
 invalidTxt :: T.Text
 invalidTxt = "???"
 
+-- | Gets the path of the module given the root path.
+moduleFilePath :: FilePath -> ModulePath -> FilePath
+moduleFilePath mroot mpath = mroot </> lpath
+  where lpath = T.unpack $ T.replace "_" "/" mpath
+
+subModule :: ModulePath -> T.Text -> ModulePath
+subModule mpath subName
+  | mpath == "" = subName
+  | otherwise = mpath <> "_" <> subName
+
 parseImportQual :: Maybe (S.Symbol Range) -> T.Text
 parseImportQual Nothing = ""
-parseImportQual (Just (S.Symbol _ qual)) = qual <> "_"
+parseImportQual (Just (S.Symbol _ qual)) = qual
 
-getProgModule :: S.ModulePath Range -> SessionRes (Module () ())
-getProgModule (S.ModulePath rng path) = do
-  let msgPrefix = "couldn't import program: " <> path
+getProgModule :: Range -> ModulePath -> FilePath -> ImportSessionRes (Program () () ())
+getProgModule rng mpath path = do
+  -- SOON: Replace program's path with mpath
+  let msgPrefix = "couldn't import program: " <> T.pack path <> " - "
       liftProgIO
         = overErrors (addRangeToErr rng . prependMsgToErr msgPrefix)
         . liftIOAndCatch StageDesugar
-  pmod <- liftProgIO $ A.eitherDecodeFileStrict' $ T.unpack path
+  pmod <- liftProgIO $ fmap deserialize $ B.readFile path
   case pmod of
-    Left msg -> mkFail $ desugarError rng $ msgPrefix <> T.pack msg
-    Right pmod' -> pure pmod'
+    Nothing -> mkFail $ desugarError rng $ msgPrefix <> "bad format"
+    Just pmod' -> pure pmod'
 
-getScriptModule :: S.ModulePath Range -> SessionRes (Module () ())
-getScriptModule (S.ModulePath rng path)
-    = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't import script: " <> path))
-    $ parseFromStart (T.unpack path)
+getScriptModule :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes (Program () () ())
+getScriptModule rng mroot mpath path = do
+  res <- lift $ lift $ runResultT $ parseLocal mroot mpath path
+  case res of
+    ResultFail err ->
+      mkFail $ desugarError rng $ "error in script: " <> T.pack path <> "\n" <> pprint err
+    Result errs x -> do
+      unless (null errs) $
+        tellError $ desugarError rng $ "errors in script: " <> T.pack path <> "\n" <> T.unlines (map (T.bullet . pprint) errs)
+      pure x
 
-getDirModule :: S.ModulePath Range -> SessionRes (Module () ())
-getDirModule (S.ModulePath rng path) = do
+getDirModules :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes [Program () () ()]
+getDirModules rng mroot mpath path = do
   let liftModIO
-        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't get directory contents: " <> path))
+        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't get directory contents: " <> T.pack path))
         . liftIOAndCatch StageDesugar
-  subPaths <- liftModIO $ listDirectory $ T.unpack path
-  subs <- traverseDropFatals tryGetModule $ map (S.ModulePath rng . T.pack) subPaths
-  pure $ fold $ rights subs
+  subNames <- liftModIO $ listDirectory path
+  subs <- traverseDropFatals (tryGetModule rng mroot . subModule mpath . T.pack . dropExtension) subNames
+  pure $ concat $ rights subs
 
 -- | If the path doesn't refer to a module, will return the error instead of failing.
 -- Still fails if the path refers to a bad module.
-tryGetModule :: S.ModulePath Range -> SessionRes (Either Error (Module () ()))
-tryGetModule (S.ModulePath rng path) = do
-  let liftModIO
-        = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't check " <> path))
-        . liftIOAndCatch StageDesugar
-      scriptPath = path <> ".tscr"
-      progPath = path <> ".tprg"
-  pathFileExists <- liftModIO $ doesFileExist $ T.unpack path
-  dirExists <- liftModIO $ doesDirectoryExist $ T.unpack path
-  progExists <- liftModIO $ doesFileExist $ T.unpack progPath
-  sourceExists <- liftModIO $ doesFileExist $ T.unpack scriptPath
-  when (dirExists && (progExists || sourceExists)) $
-    tellError $ desugarError rng $ "both a directory and file exist for this module"
-  if progExists then do
-    Right <$> getProgModule (S.ModulePath rng progPath)
-  else if sourceExists then do
-    Right <$> getScriptModule (S.ModulePath rng scriptPath)
-  else if dirExists then do
-    Right <$> getDirModule (S.ModulePath rng path)
-  else if pathFileExists then
-    pure $ Left $ desugarError rng $ "no module exists at " <> path <> " (a raw file exists though - when importing, drop the extension)"
-  else
-    pure $ Left $ desugarError rng $ "no module exists at " <> path
+tryGetModule :: Range -> FilePath -> ModulePath -> ImportSessionRes (Either Error [Program () () ()])
+tryGetModule rng mroot mpath = do
+  ienv <- getImportEnv
+  let impaths = importEnvImportedModules ienv
+      myPath = importEnvModulePath ienv
+  if S.member mpath impaths then
+    pure $ Left $ desugarError rng $ "module " <> mpath <> " already imported"
+  else if myPath == mpath then
+    pure $ Left $ desugarError rng $ "module " <> mpath <> " recursively imports itself"
+  else do
+    let liftModIO
+          = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't check " <> T.pack path))
+          . liftIOAndCatch StageDesugar
+        path = moduleFilePath mroot mpath
+        scriptPath = path <> ".tscr"
+        progPath = path <> ".tprg"
+    pathFileExists <- liftModIO $ doesFileExist path
+    dirExists <- liftModIO $ doesDirectoryExist path
+    progExists <- liftModIO $ doesFileExist progPath
+    sourceExists <- liftModIO $ doesFileExist scriptPath
+    when (dirExists && (progExists || sourceExists)) $
+      tellError $ desugarError rng $ "both a directory and file exist for this module"
+    if progExists then do
+      Right . pure <$> getProgModule rng mpath progPath
+    else if sourceExists then do
+      Right . pure <$> getScriptModule rng mroot mpath scriptPath
+    else if dirExists then do
+      Right <$> getDirModules rng mroot mpath path
+    else if pathFileExists then
+      pure $ Left $ desugarError rng $ "no module exists at " <> T.pack path <> " (a raw file exists though - when importing, drop the extension)"
+    else
+      pure $ Left $ desugarError rng $ "no module exists at " <> T.pack path
 
-getModule :: S.ModulePath Range -> SessionRes (Module () ())
-getModule path = do
-  mdl <- tryGetModule path
-  case mdl of
-    Left err -> mkFail err
-    Right mdl' -> pure mdl'
+tryImportModulesAtPath :: Range -> FilePath -> ModulePath -> T.Text -> ImportSessionRes (Maybe Error)
+tryImportModulesAtPath rng mroot mpath qual = do
+  imods <- tryGetModule rng mroot mpath
+  case imods of
+    Left err -> pure $ Just err
+    Right imods' -> do
+      mapM_ (addImportedModule rng qual) imods'
+      pure Nothing
 
-parseImportDecl :: T.Text -> S.ImportDecl Range -> SessionRes (ImportDecl Range)
-parseImportDecl myPath (S.ImportDecl rng (S.Symbol litRng lit) path qual) = do
+tryImportModules :: Range -> ModulePath -> T.Text -> ImportSessionRes [Error]
+tryImportModules rng mpath qual = do
+  root <- importEnvRoot <$> getImportEnv
+  builtin <- sessionEnvBuiltinModsPath <$> lift getSessionEnv
+  res1 <- tryImportModulesAtPath rng root mpath qual
+  res2 <- tryImportModulesAtPath rng builtin mpath qual
+  case (res1, res2) of
+    (Just e1, Just e2) -> pure [e1, e2]
+    _ -> pure []
+
+importModules :: Range -> ModulePath -> T.Text -> ImportSessionRes ()
+importModules rng mpath qual = do
+  res <- tryImportModules rng mpath qual
+  case res of
+    [] -> pure ()
+    err : _ -> mkFail err
+
+parseImportDecl :: S.ImportDecl Range -> ImportSessionRes ()
+parseImportDecl (S.ImportDecl _ (S.Symbol litRng lit) (S.Symbol modRange mdl) qual) = do
   unless (lit == "import") $
     tellError $ desugarError litRng "expected \"import\""
-  absPath <- resolvePath myPath path
   let qual' = parseImportQual qual
-  imod <- getModule absPath
-  pure $ ImportDecl rng (S.modulePathText absPath) qual' imod
+  importModules modRange mdl qual'
+
+parseSymbol :: SymbolType -> S.Symbol Range -> ImportSessionRes (Symbol Range)
+parseSymbol typ (S.Symbol ann txt) = do
+  let (qual_, lcl) = T.breakOnEnd "_" txt
+      qual = T.dropEnd 1 qual_
+  _ <- tryImportModules ann qual qual
+  imps <- getImportEnv
+  let cands = fold $ importEnvAllDecls imps M.!? qual
+      paths = map fst $ filter (declSetContains typ lcl . snd) cands
+  path <-
+    case paths of
+      [] -> do
+        tellError $ desugarError ann $ "unknown (not local or imported): " <> txt
+        pure invalidTxt
+      [p] -> pure p
+      ps -> do
+        tellError $ desugarError ann $ T.unlines $ "ambiguous, specific modules this qualifier resolves to (some might have the same name):" : ps
+        pure $ head ps
+  pure Symbol
+    { symbolAnn = ann
+    , symbolModule = path
+    , symbol = lcl
+    }
 
 parseValPropDecl :: S.GenProperty Range -> SessionRes T.Text
 parseValPropDecl (S.GenPropertyDecl (S.Symbol _ decl)) = pure decl
@@ -183,43 +261,6 @@ parseGroupDecl (S.GroupDecl _ (S.Group _ loc (S.Symbol hrng head') props))
   where nvps = length $ filter (\case S.GenPropertyRecord (S.ValueBind _) -> True; _ -> False) props
         ngps = length $ filter (\case S.GenPropertySubGroup _ -> True; _ -> False) props
 
-tryImportBuiltin :: (MonadImport m, MonadIO m, MonadCatch m, MonadResult m) => (forall a. SessionRes a -> m a) -> Range -> T.Text -> m (Maybe ModulePath)
-tryImportBuiltin liftSession rng qual = do
-  bltPath <- liftSession $ builtinModWithQual qual
-  case bltPath of
-    Nothing -> pure Nothing
-    Just bltPath' -> do
-      let bltModPath = T.pack bltPath'
-      bltMod <- liftSession $ getModule $ S.ModulePath rng bltModPath
-      importTInsertDecl $ ImportDecl rng bltModPath qual bltMod
-      pure $ Just bltModPath
-
-parseSymbol :: (MonadImport m, MonadIO m, MonadCatch m, MonadResult m) => (forall a. SessionRes a -> m a) -> SymbolType -> S.Symbol Range -> m (Symbol Range)
-parseSymbol liftSession typ (S.Symbol ann txt) = do
-  imps <- getImportEnv
-  let (qual_, lcl) = T.breakOnEnd "_" txt
-      qual = T.dropEnd 1 qual_
-      cands = fold $ importEnvAllDecls imps M.!? qual
-      paths = map fst $ filter (declSetContains typ lcl . snd) cands
-  path <-
-    case paths of
-      [] -> do
-        bltPath <- tryImportBuiltin liftSession ann qual
-        case bltPath of
-          Nothing -> do
-            tellError $ desugarError ann $ "unknown (not local, imported, or builtin): " <> txt
-            pure invalidTxt
-          Just p -> pure p
-      [p] -> pure p
-      ps -> do
-        tellError $ desugarError ann $ T.unlines $ "ambiguous, modules where this is defined:" : ps
-        pure $ head ps
-  pure Symbol
-    { symbolAnn = ann
-    , symbolModule = path
-    , symbol = lcl
-    }
-
 parsePrim :: S.Primitive Range -> GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
   = pure $ PrimInteger rng int
@@ -240,7 +281,7 @@ parseValueProperty (S.GenPropertyGroup grp)
 parseRecord :: S.Record Range -> GVBindSessionRes (Record Range)
 parseRecord (S.Record rng head' props)
     = Record rng
-  <$> parseSymbol (lift . lift) SymbolTypeRecord head'
+  <$> lift (parseSymbol SymbolTypeRecord head')
   <*> traverseDropFatals parseValueProperty props
 
 parseBind :: S.Bind Range -> GVBindSessionRes (Bind Range)
@@ -279,7 +320,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) = do
   case lang of
     Nothing -> mkFail $ desugarError langExtRng $ "unknown language with extension: " <> langExt
     Just lang' -> do
-      ress <- lift $ runLanguageParser rng lang' txt splices
+      ress <- lift $ lift $ runLanguageParser rng lang' txt splices
       case ress of
         [res] -> pure $ (rng `fromMaybe`) <$> res
         _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint (length ress)
@@ -298,14 +339,14 @@ parseValue (S.ValueHole (S.Hole ann (S.HoleIdx idxAnn idx))) = pure $ hole ann i
 
 parseGroupHead :: S.GroupLoc Range -> S.Symbol Range -> GVBindSessionRes (GroupLoc Range)
 parseGroupHead (S.GroupLocGlobal lrng) head'@(S.Symbol hrng _)
-  = GroupLocGlobal (lrng <> hrng) <$> parseSymbol (lift . lift) SymbolTypeGroup head'
+  = GroupLocGlobal (lrng <> hrng) <$> lift (parseSymbol SymbolTypeGroup head')
 parseGroupHead (S.GroupLocLocal _) (S.Symbol rng txt) = do
   env <- get
   let (idx, newEnv) = bindEnvLookup txt $ gvEnvGroup env
   put env{ gvEnvGroup = newEnv }
   pure $ GroupLocLocal rng idx
 parseGroupHead (S.GroupLocFunction lrng) head'@(S.Symbol hrng _)
-  = GroupLocFunction (lrng <> hrng) <$> parseSymbol (lift . lift) SymbolTypeFunction head'
+  = GroupLocFunction (lrng <> hrng) <$> lift (parseSymbol SymbolTypeFunction head')
 
 parseGroupProperty :: S.GenProperty Range -> GVBindSessionRes (Either (Value Range) (GroupRef Range))
 parseGroupProperty (S.GenPropertyDecl key)
@@ -357,7 +398,7 @@ parseGroupPropDecl (S.GenPropertyRecord val)
 parseGroupPropDecl (S.GenPropertyGroup grp)
   = mkFail $ desugarError (getAnn grp) "expected group property declaration, got group"
 
-parseEmptyGroupDef :: S.GroupDecl Range -> ImportSessionRes (GroupDef GVBindEnv Range)
+parseEmptyGroupDef :: S.GroupDecl Range -> ImportSessionRes (GroupDef T.Text GVBindEnv Range)
 parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') props))
   = case loc of
       S.GroupLocGlobal _ -> do
@@ -375,7 +416,7 @@ parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') prop
       S.GroupLocLocal _ -> mkFail $ desugarError headRng "can't declare a lowercase group, lowercase groups are group properties"
       S.GroupLocFunction _ -> mkFail $ desugarError headRng "can't declare a function, functions are provided by libraries"
 
-parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (GroupDef GVBindEnv Range))
+parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (GroupDef T.Text GVBindEnv Range))
 parseRestGroupDefs decl [] = (N.:| []) <$> parseEmptyGroupDef decl
 parseRestGroupDefs decl (S.TopLevelImportDecl _ : xs) = parseRestGroupDefs decl xs
 parseRestGroupDefs decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs decl xs
@@ -388,7 +429,7 @@ parseRestGroupDefs decl (S.TopLevelReducer red : xs) = do
 parseRestGroupDefs decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef decl <*> parseRestGroupDefs decl' xs
 
-parseAllGroupDefs :: [S.TopLevel Range] -> ImportSessionRes [GroupDef GVBindEnv Range]
+parseAllGroupDefs :: [S.TopLevel Range] -> ImportSessionRes [GroupDef T.Text GVBindEnv Range]
 parseAllGroupDefs [] = pure []
 parseAllGroupDefs (S.TopLevelGroupDecl x : xs)
   = N.toList <$> parseRestGroupDefs x xs
@@ -399,51 +440,55 @@ notGroupedReducerError red
   = desugarError (getAnn red) "reducer not in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
-parseRaw :: FilePath -> S.Program Range -> SessionRes (ImportEnv, Program GVBindEnv Range)
-parseRaw path (S.Program rng topLevels) = do
-  let mpath = T.pack $ dropExtension path
-      (topLevelsOutGroups, topLevelsInGroups)
+parseRaw :: FilePath -> ModulePath -> S.Program Range -> SessionRes ((Program T.Text GVBindEnv Range, ImportEnv), Program () () ())
+parseRaw root mpath (S.Program rng topLevels) = do
+  let (topLevelsOutGroups, topLevelsInGroups)
         = break (\case S.TopLevelGroupDecl _ -> True; _ -> False) topLevels
       -- TODO: Verify order of declarations
       idecls = mapMaybe (\case S.TopLevelImportDecl x -> Just x; _ -> Nothing) topLevels
       rdecls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
       reds = mapMaybe (\case S.TopLevelReducer x -> Just x; _ -> Nothing) topLevelsOutGroups
       gdecls = mapMaybe (\case S.TopLevelGroupDecl x -> Just x; _ -> Nothing) topLevels
-  idecls' <- traverse (parseImportDecl mpath) idecls
   rdecls' <- traverse parseRecordDecl rdecls
   (gdecls', fdecls) <- partitionEithers <$> traverse parseGroupDecl gdecls
   let exps = mkDeclSet (map compactRecordDecl rdecls') gdecls' fdecls
-      imps = mkImportEnv mpath exps idecls'
-  (`evalImportT` imps) $ do
+  runImportT root mpath exps $ do
+    mapM_ parseImportDecl idecls
     reds' <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
     groups <- parseAllGroupDefs topLevelsInGroups
-    idecls'' <- importEnvImportDecls <$> getImportEnv
+    impEnv <- getImportEnv
+    let idecls' = importEnvImportDecls impEnv
     -- TODO: Syntax sugar a main group
     tellErrors $ map notGroupedReducerError reds'
-    pure (imps, Program
+    pure (Program
       { programAnn = rng
-      , programImportDecls = idecls''
+      , programPath = importEnvModulePath impEnv
+      , programImportDecls = idecls'
       , programRecordDecls = rdecls'
-      , programModule
-          = Module
-          { moduleExports = exps
-          , moduleGroups = groups
-          }
-      })
+      , programExports = exps
+      , programGroups = groups
+      }, impEnv)
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Preserves extra so the program can be further analyzed.
-parseProg :: FilePath -> S.Program Range -> SessionRes (Program GVBindEnv Range)
-parseProg path = validate . parseRaw path
+parse1 :: FilePath -> ModulePath -> S.Program Range -> SessionRes (Program T.Text GVBindEnv Range, Program () () ())
+parse1 root mpath = validate . parseRaw root mpath
 
--- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Strips extra.
-parse :: FilePath -> S.Program Range -> SessionRes (Module () ())
-parse path = fmap remExtra . parseProg path
+-- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Strips extra and combines with imports.
+parse1Local :: FilePath -> ModulePath -> S.Program Range -> SessionRes (Program () () ())
+parse1Local root mpath prev = do
+  (full, imods) <- parse1 root mpath prev
+  pure $ remExtra full <> imods
 
--- | Compile a source into a @Module@.
-parseFromStart :: FilePath -> SessionRes (Module () ())
-parseFromStart input
-  = ( parse input
+-- | Compile a source into a @Program@. Strips extra.
+parseLocal :: FilePath -> ModulePath -> FilePath -> SessionRes (Program () () ())
+parseLocal root mpath
+    = parse1Local root mpath
   <=< ResultT . pure . S.parse
   <=< ResultT . pure . L.parse
   <=< liftIOAndCatch StageReadInput . T.readFile
-    ) input
+
+-- | Compile a source into a @Program@. Strips extra.
+parse :: FilePath -> SessionRes (Program () () ())
+parse path = parseLocal root mpath path
+  where (root, lpath) = splitFileName $ dropExtension path
+        mpath = T.replace "/" "_" $ T.pack lpath

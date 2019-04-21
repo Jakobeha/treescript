@@ -37,7 +37,7 @@ function writeAst(out, esAst) {
       break;
     case "function":
       console.error("<Node shouldn't be a function>");
-      writeNode(out, "JS_BadFunction", 0);
+      writeNode(out, "JS_Lang_BadFunction", 0);
       break;
     case "number":
       if (Number.isInteger(esAst)) {
@@ -59,7 +59,7 @@ function writeAst(out, esAst) {
         writeNode(out, "Nil", 0);
       } else if (esAst instanceof RegExp) {
         // Regexp
-        writeNode(out, "JS_RegExp", 1);
+        writeNode(out, "JS_Lang_RegExp", 1);
         writeString(out, esAst.source);
       } else {
         // AST
@@ -73,18 +73,18 @@ function writeAst(out, esAst) {
         }
         if (!esAst.hasOwnProperty("type")) {
           console.error("<Node shouldn't be a non-AST object: " + esAst + ">");
-          writeNode(out, "JS_BadObject", 0);
+          writeNode(out, "JS_Lang_BadObject", 0);
           break;
         }
         var type = esAst.type;
         var props = spec.nodes[type];
         if (typeof props == "undefined") {
           console.error("<Unknown node type: " + type + ">");
-          writeNode(out, "JS_BadNode", 1);
+          writeNode(out, "JS_Lang_BadNode", 1);
           writeString(out, type);
           break;
         }
-        writeNode(out, "JS_" + type, props.length);
+        writeNode(out, "JS_Lang_" + type, props.length);
         props.forEach(prop => {
           var val = esAst[prop];
           writeAst(out, val);
@@ -96,14 +96,14 @@ function writeAst(out, esAst) {
       break;
     case "symbol":
       console.error("<Node shouldn't be a symbol>");
-      writeNode(out, "JS_BadSymbol", 0);
+      writeNode(out, "JS_Lang_BadSymbol", 0);
       break;
     case "undefined":
-      writeNode(out, "JS_Undefined", 0);
+      writeNode(out, "JS_Lang_Undefined", 0);
       break;
     default:
       console.error("<Node has invalid type: " + typeof esAst + ">");
-      writeNode(out, "JS_BadTypeof", 1);
+      writeNode(out, "JS_Lang_BadTypeof", 1);
       writeString(typeof esAst);
       break;
   }
