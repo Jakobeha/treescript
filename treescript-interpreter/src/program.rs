@@ -1,65 +1,69 @@
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{Consume, GroupDef, GroupDefSerial, ReduceResult};
+use crate::reduce::{GroupDef, GroupDefSerial, ReduceResult};
 use crate::session::{LibrarySpec, Session};
-use crate::value::Value;
+use crate::value::{Record, Symbol, Value};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct DeclSet {
-  records: Vec<(String, usize)>,
-  groups: Vec<(String, (usize, usize))>,
-  functions: Vec<(String, usize)>,
+pub struct DeclSet {
+  pub records: Vec<(String, usize)>,
+  pub groups: Vec<(String, (usize, usize))>,
+  pub functions: Vec<(String, usize)>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct ImportDecl {
-  path: String,
-  qual: String,
-  exports: DeclSet,
+pub struct ImportDecl {
+  pub path: String,
+  pub qual: String,
+  pub exports: DeclSet,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct RecordDecl {
-  head: String,
-  props: Vec<String>,
+pub struct RecordDecl {
+  pub head: String,
+  pub props: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
-  import_decls: Vec<ImportDecl>,
-  record_decls: Vec<RecordDecl>,
-  exports: DeclSet,
-  pub groups: Vec<GroupDefSerial>,
+  pub path: String,
+  pub import_decls: Vec<ImportDecl>,
+  pub record_decls: Vec<RecordDecl>,
+  pub exports: DeclSet,
+  pub groups: Vec<(Symbol, GroupDefSerial)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Program {
+  path: String,
   pub libraries: Vec<LibrarySpec>,
-  pub groups: Rc<Vec<GroupDef>>,
+  pub groups: Rc<HashMap<Symbol, GroupDef>>,
 }
 
 impl From<ProgramSerial> for Program {
   fn from(serial: ProgramSerial) -> Program {
     let mut program = Program {
-      libraries: serial.libraries,
+      path: serial.path,
+      libraries: vec![], // SOON
       groups: Rc::new(
         serial
           .groups
           .into_iter()
-          .map(|sub_group| GroupDef::from_no_env(sub_group))
+          .map(|(head, sub_group)| (head, GroupDef::from_no_env(sub_group)))
           .collect(),
       ),
     };
 
     unsafe {
       let groups = Rc::into_raw(program.groups);
-      let groups = groups as *mut Vec<GroupDef>;
-      let groups_iter = (&mut *groups).iter_mut();
+      let groups = groups as *mut HashMap<Symbol, GroupDef>;
+      let groups_iter = (&mut *groups).values_mut();
       program.groups = Rc::from_raw(groups);
       for group in groups_iter {
         group.env = Rc::downgrade(&program.groups);
@@ -83,27 +87,25 @@ impl Program {
     return Session::new(self.libraries.clone());
   }
 
-  pub fn inferred_lang(&self) -> Option<String> {
+  pub fn inferred_lang(&self) -> Option<&String> {
     return self
       .groups
-      .iter()
+      .values()
       .flat_map(|group| group.reducers.iter())
-      .flat_map(|reducer| reducer.main.input.iter())
-      .filter_map(|consume| match consume {
-        Consume::Record(head) => Some(head),
+      .map(|reducer| &reducer.main.input)
+      .filter_map(|value| match value {
+        Value::Record(Record { head, props: _ }) => Some(head),
         _ => None,
       })
-      .filter_map(|head| Value::record_head_to_fun(head))
-      .map(|(lib, _)| lib)
+      .map(|head| &head.module)
       .next();
   }
 
   fn main_group(&self) -> &GroupDef {
     return self
       .groups
-      .iter()
-      .next()
-      .expect("program ill-formed - needs at least 1 group");
+      .get(&Symbol::main_group(self.path.clone()))
+      .expect("program ill-formed - needs \"Main\" group");
   }
 
   pub fn run<R: Read, W: Write>(

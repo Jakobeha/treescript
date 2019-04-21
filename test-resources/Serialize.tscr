@@ -9,5 +9,4 @@ Bar[].
   \foo <- 5 &foo[];
 Foo[Bar[]] -> Bar[];
 
-
 &Bar[].

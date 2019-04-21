@@ -68,7 +68,7 @@ unboundErrsReducer env (Reducer _ main guards) = (`evalState` env) $ execWriterT
   unboundErrsGuard main
 
 unboundErrs :: GroupDef e1 e2 Range -> [Error]
-unboundErrs (GroupDef _ _ vprops gprops reds _)
+unboundErrs (GroupDef _ vprops gprops reds _)
   = concatMap (unboundErrsReducer env) reds
   where env = LocalEnv
           { localEnvBinds = convertProps $ map snd vprops

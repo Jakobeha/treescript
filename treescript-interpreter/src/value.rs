@@ -19,15 +19,21 @@ pub enum Prim {
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Symbol {
-  module: String,
-  local: String,
+  pub module: String,
+  pub local: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Record {
+  pub head: Symbol,
+  pub props: Vec<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Value {
-  Splice(usize),
   Prim(Prim),
-  Record { head: Symbol, props: Vec<Value> },
+  Record(Record),
+  Splice(usize),
 }
 
 impl PartialEq for Float {
@@ -86,9 +92,32 @@ impl Display for Symbol {
   }
 }
 
+impl<S: AsRef<str>> From<S> for Symbol {
+  fn from(qualified: S) -> Symbol {
+    let mut iter = qualified.as_ref().rsplitn(2, "_");
+    let local = String::from(
+      iter
+        .next()
+        .expect("expected rsplitn to return at least 1 item"),
+    );
+    let module = String::from(iter.next().unwrap_or(""));
+    return Symbol {
+      module: module,
+      local: local,
+    };
+  }
+}
+
 impl Symbol {
-  fn from(qualified: &String) -> Symbol {
-    // TODO
+  pub fn main_group(module: String) -> Symbol {
+    return Symbol {
+      module: module,
+      local: String::from("Main"),
+    };
+  }
+
+  pub fn tuple_head() -> Symbol {
+    return Symbol::from("T");
   }
 }
 
@@ -97,7 +126,7 @@ impl Display for Value {
     match self {
       Value::Splice(idx) => write!(f, "\\{}", idx),
       Value::Prim(prim) => prim.fmt(f),
-      Value::Record { head, props } => {
+      Value::Record(Record { head, props }) => {
         write!(f, "{}[", head)?;
         let mut first = true;
         for prop in props {
@@ -116,34 +145,32 @@ impl Display for Value {
 
 #[allow(dead_code)]
 impl Value {
-  pub const TUPLE_HEAD: &'static str = "T";
-
   pub fn unit() -> Value {
-    return Value::Record {
-      head: String::from("Unit"),
+    return Value::Record(Record {
+      head: Symbol::from("Unit"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn true_() -> Value {
-    return Value::Record {
-      head: String::from("True"),
+    return Value::Record(Record {
+      head: Symbol::from("True"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn false_() -> Value {
-    return Value::Record {
-      head: String::from("False"),
+    return Value::Record(Record {
+      head: Symbol::from("False"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn nil() -> Value {
-    return Value::Record {
-      head: String::from("Nil"),
+    return Value::Record(Record {
+      head: Symbol::from("Nil"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn bool(x: bool) -> Value {
@@ -155,32 +182,32 @@ impl Value {
   }
 
   pub fn cons(first: Value, rest: Value) -> Value {
-    return Value::Record {
-      head: String::from("Cons"),
+    return Value::Record(Record {
+      head: Symbol::from("Cons"),
       props: vec![first, rest],
-    };
+    });
   }
 
   pub fn hole(idx: i32) -> Value {
-    return Value::Record {
-      head: String::from("Hole"),
+    return Value::Record(Record {
+      head: Symbol::from("Hole"),
       props: vec![Value::Prim(Prim::Integer(idx))],
-    };
+    });
   }
 
   pub fn option(val: Option<Value>) -> Value {
     match val {
       None => {
-        return Value::Record {
-          head: String::from("None"),
+        return Value::Record(Record {
+          head: Symbol::from("None"),
           props: Vec::default(),
-        };
+        });
       }
       Some(val) => {
-        return Value::Record {
-          head: String::from("Some"),
+        return Value::Record(Record {
+          head: Symbol::from("Some"),
           props: vec![val],
-        };
+        });
       }
     };
   }
@@ -203,8 +230,8 @@ impl Value {
   }
 
   pub fn to_args(&self) -> Vec<Value> {
-    if let Value::Record { head, props } = self {
-      if head == Value::TUPLE_HEAD {
+    if let Value::Record(Record { head, props }) = self {
+      if head == &Symbol::tuple_head() {
         return props.clone();
       }
     }
@@ -220,8 +247,8 @@ impl Value {
   }
 
   pub fn is_hole(&self) -> bool {
-    if let Value::Record { head, .. } = self {
-      return head == "Hole";
+    if let Value::Record(Record { head, .. }) = self {
+      return head == &Symbol::from("Hole");
     } else {
       return false;
     }
@@ -231,11 +258,11 @@ impl Value {
     if self.is_hole() {
       return true;
     }
-    if let Value::Record { head, props } = self {
-      if let Value::Record {
+    if let Value::Record(Record { head, props }) = self {
+      if let Value::Record(Record {
         head: other_head,
         props: other_props,
-      } = other
+      }) = other
       {
         return head == other_head
           && Iterator::zip(props.iter(), other_props.iter())
@@ -250,7 +277,7 @@ impl Value {
   pub fn subst(&mut self, old: &Value, new: &Value) {
     if self == old {
       *self = new.clone();
-    } else if let Value::Record { props, .. } = self {
+    } else if let Value::Record(Record { props, .. }) = self {
       for prop in props {
         prop.subst(old, new);
       }
@@ -261,7 +288,7 @@ impl Value {
     match self {
       Value::Splice(idx) => *self = f(*idx),
       Value::Prim(_) => (),
-      Value::Record { head: _, props } => {
+      Value::Record(Record { head: _, props }) => {
         for prop in props {
           prop.fill_splices(f);
         }
@@ -270,7 +297,7 @@ impl Value {
   }
 
   pub fn modify_children<F: FnMut(&mut Value) -> bool>(&mut self, f: &mut F) {
-    if let Value::Record { props, .. } = self {
+    if let Value::Record(Record { props, .. }) = self {
       for prop in props {
         if f(prop) {
           prop.modify_children(f);
@@ -281,7 +308,7 @@ impl Value {
 
   pub fn breadth_first(&self) -> GeneratorIterator<impl Generator<Yield = &Value, Return = ()>> {
     return GeneratorIterator(move || {
-      if let Value::Record { props, .. } = self {
+      if let Value::Record(Record { props, .. }) = self {
         let mut yielded = true;
         let mut level = 0;
         let mut props_stack: Vec<Iter<Value>> = Vec::new();
@@ -295,10 +322,10 @@ impl Value {
                 yield top_prop;
                 yielded = true;
               } else {
-                if let Value::Record {
+                if let Value::Record(Record {
                   props: top_sub_props,
                   ..
-                } = top_prop
+                }) = top_prop
                 {
                   props_stack.push(top_sub_props.iter())
                 }
@@ -316,7 +343,7 @@ impl Value {
     &mut self,
   ) -> GeneratorIterator<impl Generator<Yield = &mut Value, Return = ()>> {
     return GeneratorIterator(move || unsafe {
-      if let Value::Record { props, .. } = self {
+      if let Value::Record(Record { props, .. }) = self {
         let props = props as *mut Vec<Value>;
         let mut yielded = true;
         let mut level = 0;
@@ -331,10 +358,10 @@ impl Value {
                 yield top_prop;
                 yielded = true;
               } else {
-                if let Value::Record {
+                if let Value::Record(Record {
                   props: top_sub_props,
                   ..
-                } = top_prop
+                }) = top_prop
                 {
                   props_stack.push(top_sub_props.iter_mut())
                 }
@@ -376,36 +403,36 @@ impl Value {
 
 #[test]
 fn test_breadth_first_mut() {
-  let mut x = Value::Record {
-    head: String::from("Foo"),
+  let mut x = Value::Record(Record {
+    head: Symbol::from("Foo"),
     props: vec![
-      Value::Record {
-        head: String::from("Bar"),
+      Value::Record(Record {
+        head: Symbol::from("Bar"),
         props: vec![
-          Value::Record {
-            head: String::from("Baz"),
+          Value::Record(Record {
+            head: Symbol::from("Baz"),
             props: vec![Value::Prim(Prim::Integer(2)), Value::Prim(Prim::Integer(3))],
-          },
+          }),
           Value::Prim(Prim::Integer(1)),
-          Value::Record {
-            head: String::from("Qux"),
+          Value::Record(Record {
+            head: Symbol::from("Qux"),
             props: vec![Value::Prim(Prim::Integer(4))],
-          },
+          }),
         ],
-      },
+      }),
       Value::Prim(Prim::Integer(0)),
     ],
-  };
+  });
   for i in 0..5 {
     let mut cur_idx = i;
     for prop in x.breadth_first_mut() {
       if let Value::Prim(Prim::Integer(idx)) = prop {
         if *idx >= 0 {
           assert_eq!(cur_idx, *idx);
-          *prop = Value::Record {
-            head: String::from("Lower"),
+          *prop = Value::Record(Record {
+            head: Symbol::from("Lower"),
             props: vec![Value::Prim(Prim::Integer(-(*idx + 1)))],
-          };
+          });
           cur_idx = cur_idx + 1;
         }
       }

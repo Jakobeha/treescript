@@ -1,8 +1,9 @@
 extern crate serde;
 use crate::session::Session;
-use crate::value::{Prim, Symbol, Value};
+use crate::value::{Record, Symbol, Value};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::rc::Weak;
@@ -33,13 +34,6 @@ pub enum ReduceResult {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum Consume {
-  Bind(usize),
-  Prim(Prim),
-  Record(String),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum GroupLoc {
   Global(Symbol),
   Local(usize),
@@ -55,7 +49,7 @@ pub struct GroupRef {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Guard {
-  pub input: Vec<Consume>,
+  pub input: Value,
   pub output: Value,
   pub nexts: Vec<GroupRef>,
 }
@@ -68,7 +62,6 @@ pub struct Reducer {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupDefSerial {
-  pub head: String,
   pub vprops: Vec<usize>,
   pub gprops: Vec<usize>,
   pub reducers: Vec<Reducer>,
@@ -79,7 +72,7 @@ pub struct GroupDef {
   pub vprops: Vec<usize>,
   pub gprops: Vec<usize>,
   pub reducers: Vec<Reducer>,
-  pub env: Weak<Vec<GroupDef>>,
+  pub env: Weak<HashMap<Symbol, GroupDef>>,
 }
 
 trait Succeedable {
@@ -211,59 +204,58 @@ impl GroupDef {
     }
   }
 
-  fn resolve(&self, group_idx: usize, group_gprops: &Vec<GroupRef>) -> GroupDef {
-    let mut group = self.env.upgrade().unwrap()[group_idx].clone();
-    dprint!("PRINT_REDUCE", "Resolving {:?} [", group_idx);
+  fn resolve(&self, group_head: &Symbol, group_gprops: &Vec<GroupRef>) -> GroupDef {
+    let mut group = self.env.upgrade().unwrap()[group_head].clone();
+    dprint!("PRINT_REDUCE", "Resolving {:?} [", group_head);
     group.subst_gprops(group_gprops);
-    dprintln!("PRINT_REDUCE", "] done resolving {:?}", group_idx);
+    dprintln!("PRINT_REDUCE", "] done resolving {:?}", group_head);
     return group;
   }
 
-  fn apply_function(&self, session: &mut Session, x: &Value, head: &String) -> ReduceResult {
-    match session.call_fun_val(&head, &x) {
+  fn apply_function(&self, session: &mut Session, x: &Value, head: &Symbol) -> ReduceResult {
+    match session.call_fun(&head, &x) {
       None => return ReduceResult::Fail,
       Some(out) => return ReduceResult::Success(out),
     };
   }
 
-  fn apply_consume(
-    &self,
-    stack: &mut Vec<Value>,
-    binds: &mut BindFrame,
-    consume: &Consume,
-  ) -> bool {
-    let consumed = stack.pop().unwrap();
-    match consume.clone() {
-      Consume::Prim(in_prim) => {
-        return consumed == Value::Prim(in_prim);
+  fn _consume(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
+    match input {
+      Value::Prim(_) => {
+        return x == input;
       }
-      Consume::Record(in_head) => {
-        if let Value::Record {
-          head: consumed_head,
-          props: mut consumed_props,
-        } = consumed
+      Value::Record(Record {
+        head: in_head,
+        props: in_props,
+      }) => {
+        if let Value::Record(Record {
+          head: x_head,
+          props: x_props,
+        }) = x
         {
-          if consumed_head == in_head {
-            consumed_props.reverse();
-            stack.append(&mut consumed_props);
-            return true;
-          } else {
+          if x_head != in_head {
             return false;
           }
+          for (x_prop, in_prop) in Iterator::zip(x_props.iter(), in_props.iter()) {
+            if !self.consume(binds, x_prop, in_prop) {
+              return false;
+            }
+          }
+          return true;
         } else {
           return false;
         }
       }
-      Consume::Bind(idx) => {
-        if idx == 0 {
+      Value::Splice(idx) => {
+        if *idx == 0 {
           return true;
         } else {
-          let bind = binds.index_mut(idx);
+          let bind = binds.index_mut(*idx);
           if bind == &Option::None {
-            dprint!("PRINT_REDUCE", "={}", &consumed);
-            *bind = Option::Some(consumed);
+            dprint!("PRINT_REDUCE", "={}", &x);
+            *bind = Option::Some(x.clone());
             return true;
-          } else if bind == &Option::Some(consumed) {
+          } else if bind.as_ref() == Option::Some(x) {
             return true;
           } else {
             dprint!("PRINT_REDUCE", "!{}", bind.as_ref().unwrap());
@@ -271,21 +263,11 @@ impl GroupDef {
           }
         }
       }
-    }
+    };
   }
 
-  fn consume(&self, binds: &mut BindFrame, x: &Value, consumes: &Vec<Consume>) -> bool {
-    dprint!("PRINT_REDUCE", "Consuming [");
-    let mut stack = vec![x.clone()];
-    for consume in consumes {
-      dprint!("PRINT_REDUCE", "{:?}", consume);
-      if !self.apply_consume(&mut stack, binds, &consume) {
-        dprintln!("PRINT_REDUCE", "...] Failed");
-        return false;
-      }
-    }
-    dprintln!("PRINT_REDUCE", "] Succeeded");
-    return true;
+  fn consume(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
+    dprint_wrap!("PRINT_REDUCE", "Consume", self._consume(binds, x, input));
   }
 
   fn apply_produce(&self, binds: &BindFrame, output: &Value) -> Value {
@@ -304,10 +286,10 @@ impl GroupDef {
     next: &GroupRef,
   ) -> ReduceResult {
     match &next.loc {
-      GroupLoc::Global(idx) => {
+      GroupLoc::Global(head) => {
         let next = next.map_values(|val| self.apply_produce(binds, val));
         return self
-          .resolve(*idx, &next.gprops)
+          .resolve(head, &next.gprops)
           .transform_nested(session, next.vprops, &x);
       }
       GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),

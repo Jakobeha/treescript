@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Record, Value};
 use std::io;
 use std::io::Write;
 
@@ -11,7 +11,7 @@ impl<'a, W: Write> Printer<'a, W> {
     match x {
       Value::Splice(idx) => return write!(self.output, "splice {} ", idx),
       Value::Prim(prim) => return write!(self.output, "{} {} ", prim.type_str(), prim),
-      Value::Record { head, props } => {
+      Value::Record(Record { head, props }) => {
         if let Err(err) = write!(self.output, "{} {} ", head, props.len()) {
           return Err(err);
         }

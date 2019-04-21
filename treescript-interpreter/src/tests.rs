@@ -1,7 +1,7 @@
 extern crate rmp_serde;
-use crate::program::ProgramSerial;
-use crate::reduce::{Consume, GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
-use crate::value::{Prim, Value};
+use crate::program::{DeclSet, ProgramSerial, RecordDecl};
+use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
+use crate::value::{Prim, Record, Symbol, Value};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -17,72 +17,131 @@ fn test_resources_path(module: &str) -> PathBuf {
 #[test]
 fn test_serialize_prog() {
   let prog = ProgramSerial {
-    libraries: Default::default(),
-    groups: vec![
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![],
-        reducers: vec![Reducer {
-          main: Guard {
-            input: vec![Consume::Bind(1)],
-            output: Value::Splice(1),
-            nexts: vec![GroupRef {
-              loc: GroupLoc::Global(1),
-              vprops: vec![],
-              gprops: vec![GroupRef {
-                loc: GroupLoc::Global(2),
-                vprops: vec![],
-                gprops: vec![],
-              }],
-            }],
-          },
-          guards: vec![],
-        }],
+    path: String::from("Serialize"),
+    import_decls: vec![],
+    record_decls: vec![
+      RecordDecl {
+        head: String::from("Foo"),
+        props: vec![String::from("foo")],
       },
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![1],
-        reducers: vec![
-          Reducer {
-            main: Guard {
-              input: vec![Consume::Prim(Prim::String(String::from("bar")))],
-              output: Value::Record {
-                head: String::from("Foo"),
-                props: vec![Value::Splice(1)],
+      RecordDecl {
+        head: String::from("Bar"),
+        props: vec![],
+      },
+    ],
+    exports: DeclSet {
+      records: vec![(String::from("Bar"), 0), (String::from("Foo"), 1)],
+      groups: vec![
+        (String::from("Bar"), (0, 0)),
+        (String::from("Foo"), (0, 1)),
+        (String::from("Main"), (0, 0)),
+      ],
+      functions: vec![],
+    },
+    groups: vec![
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Bar"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![],
+          reducers: vec![],
+        },
+      ),
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Foo"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![1],
+          reducers: vec![
+            Reducer {
+              main: Guard {
+                input: Value::Prim(Prim::String(String::from("bar"))),
+                output: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Foo"),
+                  },
+                  props: vec![Value::Splice(1)],
+                }),
+                nexts: vec![],
               },
-              nexts: vec![],
-            },
-            guards: vec![Guard {
-              input: vec![Consume::Bind(1)],
-              output: Value::Prim(Prim::Integer(5)),
-              nexts: vec![GroupRef {
-                loc: GroupLoc::Local(1),
-                vprops: vec![],
-                gprops: vec![],
+              guards: vec![Guard {
+                input: Value::Splice(1),
+                output: Value::Prim(Prim::Integer(5)),
+                nexts: vec![GroupRef {
+                  loc: GroupLoc::Local(1),
+                  vprops: vec![],
+                  gprops: vec![],
+                }],
               }],
-            }],
-          },
-          Reducer {
-            main: Guard {
-              input: vec![
-                Consume::Record(String::from("Foo")),
-                Consume::Record(String::from("Bar")),
-              ],
-              output: Value::Record {
-                head: String::from("Bar"),
-                props: vec![],
+            },
+            Reducer {
+              main: Guard {
+                input: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Foo"),
+                  },
+                  props: vec![Value::Record(Record {
+                    head: Symbol {
+                      module: String::from("Serialize"),
+                      local: String::from("Bar"),
+                    },
+                    props: vec![],
+                  })],
+                }),
+                output: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Bar"),
+                  },
+                  props: vec![],
+                }),
+                nexts: vec![],
               },
-              nexts: vec![],
+              guards: vec![],
+            },
+          ],
+        },
+      ),
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Main"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![],
+          reducers: vec![Reducer {
+            main: Guard {
+              input: Value::Splice(1),
+              output: Value::Splice(1),
+              nexts: vec![GroupRef {
+                loc: GroupLoc::Global(Symbol {
+                  module: String::from("Serialize"),
+                  local: String::from("Foo"),
+                }),
+                vprops: vec![],
+                gprops: vec![GroupRef {
+                  loc: GroupLoc::Global(Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Bar"),
+                  }),
+                  vprops: vec![],
+                  gprops: vec![],
+                }],
+              }],
             },
             guards: vec![],
-          },
-        ],
-      },
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![],
-        reducers: vec![],
-      },
+          }],
+        },
+      ),
     ],
   };
 

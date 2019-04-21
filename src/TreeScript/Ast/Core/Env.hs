@@ -152,3 +152,12 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
           }
         )
       Just idx -> (idx, env)
+
+mkLocalSymbol :: (Monad m) => an -> T.Text -> ImportT m (Symbol an)
+mkLocalSymbol ann lcl = do
+  mpath <- importEnvModulePath <$> getImportEnv
+  pure Symbol
+    { symbolAnn = ann
+    , symbolModule = mpath
+    , symbol = lcl
+    }

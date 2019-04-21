@@ -22,7 +22,6 @@ import qualified TreeScript.Misc.Ext.Text as T
 import TreeScript.Plugin
 
 import Control.Monad
-import Control.Monad.Logger
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Bifunctor
@@ -398,41 +397,42 @@ parseGroupPropDecl (S.GenPropertyRecord val)
 parseGroupPropDecl (S.GenPropertyGroup grp)
   = mkFail $ desugarError (getAnn grp) "expected group property declaration, got group"
 
-parseEmptyGroupDef :: S.GroupDecl Range -> ImportSessionRes (GroupDef T.Text GVBindEnv Range)
-parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng head') props))
+parseEmptyGroupDef :: S.GroupDecl Range -> ImportSessionRes (Symbol (), GroupDef T.Text GVBindEnv Range)
+parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) props))
   = case loc of
       S.GroupLocGlobal _ -> do
         (props', bindEnv)
           <- runStateT (traverseDropFatals parseGroupPropDecl props) emptyGVBindEnv
         let (vprops, gprops) = partitionTuple $ catMaybes props'
-        pure GroupDef
+        head' <- mkLocalSymbol () lhead
+        pure (head', GroupDef
           { groupDefAnn = rng
-          , groupDefHead = head'
           , groupDefValueProps = vprops
           , groupDefGroupProps = gprops
           , groupDefReducers = []
           , groupDefPropEnv = bindEnv
-          }
+          })
       S.GroupLocLocal _ -> mkFail $ desugarError headRng "can't declare a lowercase group, lowercase groups are group properties"
       S.GroupLocFunction _ -> mkFail $ desugarError headRng "can't declare a function, functions are provided by libraries"
 
-parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (GroupDef T.Text GVBindEnv Range))
+parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (Symbol (), GroupDef T.Text GVBindEnv Range))
 parseRestGroupDefs decl [] = (N.:| []) <$> parseEmptyGroupDef decl
 parseRestGroupDefs decl (S.TopLevelImportDecl _ : xs) = parseRestGroupDefs decl xs
 parseRestGroupDefs decl (S.TopLevelRecordDecl _ : xs) = parseRestGroupDefs decl xs
 parseRestGroupDefs decl (S.TopLevelReducer red : xs) = do
-  GroupDef yRng yHead yValueProps yGroupProps yReds yBindEnv N.:| ys <- parseRestGroupDefs decl xs
+  (yHead, GroupDef yRng yValueProps yGroupProps yReds yBindEnv) N.:| ys <- parseRestGroupDefs decl xs
   red' <- parseReducer yBindEnv red
   let yRng' = getAnn red <> yRng
       yReds' = red' : yReds
-  pure $ GroupDef yRng' yHead yValueProps yGroupProps yReds' yBindEnv N.:| ys
+  pure $ (yHead, GroupDef yRng' yValueProps yGroupProps yReds' yBindEnv) N.:| ys
 parseRestGroupDefs decl (S.TopLevelGroupDecl decl' : xs)
   = (N.<|) <$> parseEmptyGroupDef decl <*> parseRestGroupDefs decl' xs
 
-parseAllGroupDefs :: [S.TopLevel Range] -> ImportSessionRes [GroupDef T.Text GVBindEnv Range]
-parseAllGroupDefs [] = pure []
+parseAllGroupDefs :: [S.TopLevel Range] -> ImportSessionRes (M.Map (Symbol ()) (GroupDef T.Text GVBindEnv Range))
+parseAllGroupDefs [] = pure M.empty
 parseAllGroupDefs (S.TopLevelGroupDecl x : xs)
-  = N.toList <$> parseRestGroupDefs x xs
+  -- SOON: Catch duplicate errors
+  = M.fromList . N.toList <$> parseRestGroupDefs x xs
 parseAllGroupDefs (_ : _) = error "expected group declaration when parsing group definitions"
 
 notGroupedReducerError :: Reducer Range -> Error

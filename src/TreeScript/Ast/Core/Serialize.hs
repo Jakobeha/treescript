@@ -42,6 +42,7 @@ class Serial' f where
   fromMsgp' :: Object -> Maybe (f a)
   skipMsgp' :: Proxy f -> Bool
   skipMsgp' _ = isJust (fromMsgp' ObjectNil :: Maybe (f a))
+  toMsgpIfProd :: f a -> Maybe [Object]
 
 class SerialProd f where
   toMsgpProd :: f a -> [Object]
@@ -54,23 +55,28 @@ class (SumSize f) => SerialSum f where
   toMsgpSum :: Int -> Int -> f a -> Object
   fromMsgpSum :: Int -> Int -> Object -> Maybe (f a)
 
+class (Serial' f) => SerialSumPart f where
+  toMsgpSumPart :: f a -> Object
+  fromMsgpSumPart :: Object -> Maybe (f a)
+
 instance Serial' V1 where
   toMsgp' = undefined
   fromMsgp' _ = Nothing
+  toMsgpIfProd _ = Nothing
 
 instance Serial' U1 where
   toMsgp' U1 = ObjectNil
   fromMsgp' ObjectNil = Just U1
   fromMsgp' _ = Nothing
+  toMsgpIfProd _ = Nothing
 
 instance (Serial' a, SerialProd b) => Serial' (a :*: b) where
-  toMsgp' xs =
-    case filter (/= ObjectNil) $ toMsgpProd xs of
-      [] -> ObjectNil
-      ys -> ObjectArray ys
+  toMsgp' xs = prodArray $ toMsgpProd xs
   fromMsgp' ObjectNil = (:*:) <$> fromMsgp' ObjectNil <*> fromMsgpProd []
+  -- TODO: fromMsgp
   fromMsgp' (ObjectArray xs) = fromMsgpProd xs
   fromMsgp' _ = Nothing
+  toMsgpIfProd = Just . toMsgpProd
 
 instance (SerialSum f, SerialSum g) => Serial' (f :+: g) where
   toMsgp' = toMsgpSum 0 size
@@ -86,19 +92,25 @@ instance (SerialSum f, SerialSum g) => Serial' (f :+: g) where
     where code' = fromIntegral code
           size = unTagged (sumSize :: Tagged (f :+: g) Int)
   fromMsgp' _ = Nothing
+  toMsgpIfProd _ = Nothing
 
 instance Serial' a => Serial' (M1 t c a) where
   toMsgp' (M1 x) = toMsgp' x
   fromMsgp' x = M1 <$> fromMsgp' x
+  toMsgpIfProd _ = Nothing
 
 instance Serial a => Serial' (K1 i a) where
   toMsgp' (K1 x) = toMsgp x
   fromMsgp' x = K1 <$> fromMsgp x
+  toMsgpIfProd _ = Nothing
 
 -- Product type packing.
 
 instance (Serial' a, SerialProd b) => SerialProd (a :*: b) where
-  toMsgpProd (x :*: xs) = toMsgp' x : toMsgpProd xs
+  toMsgpProd (x :*: xs)
+    = case toMsgpIfProd x of
+        Nothing -> toMsgp' x : toMsgpProd xs
+        Just ys -> ys ++ toMsgpProd xs
   fromMsgpProd xs
     = fromMsgpProdNil <|> fromMsgProdReg xs
     where fromMsgpProdNil = (:*:) <$> fromMsgp' ObjectNil <*> fromMsgpProd xs
@@ -125,11 +137,11 @@ instance (SerialSum a, SerialSum b) => SerialSum (a :+: b) where
     where sizeL = size `shiftR` 1
           sizeR = size - sizeL
 
-instance (Serial' a) => SerialSum (C1 c a) where
+instance (SerialSumPart a) => SerialSum (C1 c a) where
   toMsgpSum code _ x
     | skipMsgp' (Proxy :: Proxy a) = ObjectInt $ fromIntegral code
-    | otherwise = ObjectArray [ObjectInt $ fromIntegral code, toMsgp' x]
-  fromMsgpSum _ _ = fromMsgp'
+    | otherwise = ObjectArray [ObjectInt $ fromIntegral code, toMsgpSumPart x]
+  fromMsgpSum _ _ = fromMsgpSumPart
 
 -- Sum size.
 
@@ -141,6 +153,23 @@ instance (SumSize a, SumSize b) => SumSize (a :+: b) where
 
 instance SumSize (C1 c a) where
   sumSize = Tagged 1
+
+-- Sum part.
+
+instance SerialSumPart U1 where
+  toMsgpSumPart U1 = ObjectNil
+  fromMsgpSumPart ObjectNil = Just U1
+  fromMsgpSumPart _ = Nothing
+
+instance (Serial' a) => SerialSumPart (M1 t c a) where
+  toMsgpSumPart (M1 x) = ObjectArray [toMsgp' x]
+  fromMsgpSumPart (ObjectArray [x]) = fromMsgp' x
+  fromMsgpSumPart _ = Nothing
+
+instance (Serial' a, SerialProd b) => SerialSumPart (a :*: b) where
+  toMsgpSumPart xs = ObjectArray $ toMsgpProd xs
+  fromMsgpSumPart (ObjectArray xs) = fromMsgpProd xs
+  fromMsgpSumPart _ = Nothing
 
 -- Builtins.
 
@@ -167,7 +196,7 @@ instance (Serial a) => Serial [a] where
   fromMsgp _ = Nothing
 
 instance (Serial a, Serial b) => (Serial (a, b)) where
-  toMsgp (x, y) = ObjectArray [toMsgp x, toMsgp y]
+  toMsgp (x, y) = prodArray [toMsgp x, toMsgp y]
   fromMsgp ObjectNil = (,) <$> fromMsgp ObjectNil <*> fromMsgp ObjectNil
   fromMsgp (ObjectArray [x])
       = ((,) <$> fromMsgp x <*> fromMsgp ObjectNil)
@@ -179,6 +208,14 @@ instance (Serial k, Serial v) => Serial (M.Map k v) where
   toMsgp = toMsgp . M.toAscList
   fromMsgp = fmap M.fromDistinctAscList . fromMsgp
   skipMsgp _ = False
+
+prodArray :: [Object] -> Object
+prodArray xs
+  = case filter (/= ObjectNil) xs of
+      [] -> ObjectNil
+      [y] -> y
+      ys -> ObjectArray ys
+
 
 serialize :: Serial a => a -> B.ByteString
 serialize = pack . toMsgp

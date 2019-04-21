@@ -148,7 +148,6 @@ data Reducer an
 data GroupDef e1 e2 an
   = GroupDef
   { groupDefAnn :: an
-  , groupDefHead :: T.Text
   , groupDefValueProps :: [(e1, Bind an)]
   , groupDefGroupProps :: [(e1, Bind an)]
   , groupDefReducers :: [Reducer an]
@@ -165,7 +164,7 @@ data Program e1 e2 an
   , programImportDecls :: [ImportDecl an]
   , programRecordDecls :: [RecordDecl an]
   , programExports :: DeclSet
-  , programGroups :: [GroupDef e1 e2 an]
+  , programGroups :: M.Map (Symbol ()) (GroupDef e1 e2 an)
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 instance Semigroup DeclSet where
@@ -279,17 +278,6 @@ instance Printable (Reducer an) where
     where printNext next' = " " <> pprint next'
           printGuard guard = ",\n  " <> pprint guard
 
-instance (e1 ~ T.Text) => Printable (GroupDef e1 e2 an) where
-  -- TODO: Print env
-  pprint (GroupDef _ head' vprops gprops reds _)
-    = T.unlines $ printDecl : map pprint reds
-    where printDecl
-            = "&"
-            <> head'
-            <> printProps (map (printGroupDefProp "\\") vprops ++ map (printGroupDefProp "&") gprops)
-            <> "."
-          printGroupDefProp pre (txt, (Bind _ idx)) = pre <> txt <> "=" <> pprint idx
-
 instance (e1 ~ T.Text) => Printable (Program e1 e2 an) where
   pprint (Program _ mpath idecls rdecls _ grps)
      = T.unlines
@@ -298,7 +286,18 @@ instance (e1 ~ T.Text) => Printable (Program e1 e2 an) where
     ++ [T.empty]
     ++ map pprint rdecls
     ++ [T.empty]
-    ++ map pprint grps
+    ++ map (uncurry printGroupDef) (M.toList grps)
+
+-- TODO: Print env
+printGroupDef :: Symbol () -> GroupDef T.Text e2 an -> T.Text
+printGroupDef head' (GroupDef _ vprops gprops reds _)
+  = T.unlines $ printDecl : map pprint reds
+  where printDecl
+          = "&"
+          <> pprint head'
+          <> printProps (map (printGroupDefProp "\\") vprops ++ map (printGroupDefProp "&") gprops)
+          <> "."
+        printGroupDefProp pre (txt, (Bind _ idx)) = pre <> txt <> "=" <> pprint idx
 
 -- | How much of the module path will be printed.
 modulePathPrintLength :: Int

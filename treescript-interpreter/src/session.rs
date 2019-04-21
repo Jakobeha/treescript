@@ -3,7 +3,7 @@ extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
 use crate::util::{AtomicFile, AtomicFileCommit};
-use crate::value::Value;
+use crate::value::{Record, Symbol, Value};
 use app_dirs::{AppDataType, AppInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -118,7 +118,7 @@ impl Library {
     );
   }
 
-  fn call_fun(&mut self, name: String, args: Vec<Value>) -> Option<Value> {
+  fn call_fun(&mut self, name: &String, args: &Value) -> Option<Value> {
     let process = self
       .process
       .as_mut()
@@ -136,10 +136,10 @@ impl Library {
         .expect("can't call function - process input not available"),
     };
     printer
-      .print_value(Value::Record {
-        head: name,
-        props: args,
-      })
+      .print_value(Value::Record(Record {
+        head: Symbol::from(name),
+        props: vec![args.clone()],
+      }))
       .expect("can't call function - couldn't send input to library process");
     return parser.scan_value();
   }
@@ -258,23 +258,15 @@ impl Session {
     }
   }
 
-  fn call_fun(&mut self, lib: &String, name: String, args: Vec<Value>) -> Option<Value> {
-    let lib = self
-      .libs
-      .get_mut(lib)
-      .expect(format!("failed to call function - library not setup: {}", lib).as_str());
-    return lib.call_fun(name, args);
-  }
-
-  pub fn call_fun_val(&mut self, head: &String, args_val: &Value) -> Option<Value> {
-    if let Some((lib, name)) = Value::record_head_to_fun(head) {
-      return self.call_fun(&lib, name, args_val.to_args());
-    } else {
-      panic!(
-        "Can't extract function lib and name from record head: {}",
-        head
+  pub fn call_fun(&mut self, head: &Symbol, args: &Value) -> Option<Value> {
+    let lib = self.libs.get_mut(&head.module).expect(
+      format!(
+        "failed to call function - library not setup: {}",
+        head.module
       )
-    }
+      .as_str(),
+    );
+    return lib.call_fun(&head.local, args);
   }
 
   pub fn stop(&mut self) {

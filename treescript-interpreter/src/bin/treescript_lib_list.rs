@@ -1,6 +1,6 @@
 use treescript_interpreter::lib_process::{BasicLibProcessError, Config, LibProcess};
 use treescript_interpreter::session::LibrarySpec;
-use treescript_interpreter::value::Value;
+use treescript_interpreter::value::{Record, Value};
 
 struct Lib;
 
@@ -11,8 +11,8 @@ impl Lib {
     items: &Value,
     rest: &Value,
   ) -> Result<Value, BasicLibProcessError> {
-    if let Value::Record { head, props } = rest {
-      match head.as_str() {
+    if let Value::Record(Record { head, props }) = rest {
+      match head.to_string().as_str() {
         "Nil" => return Ok(Value::nil()),
         "Cons" => {
           let mut y = f.clone();

@@ -223,7 +223,7 @@ bindsInValue = foldValue bindsInValue1
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
 allGroupDefReducers :: [GroupRef an] -> GroupDef e1 e2 an -> [Reducer an]
-allGroupDefReducers gprops (GroupDef _ _ _ gpropIdxs reds _)
+allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds _)
     = map (mapGroupsInReducer (substGroupProp1 gpropSubsts)) reds
   where gpropSubsts = zip (map (bindIdx . snd) gpropIdxs) gprops
 
@@ -234,13 +234,13 @@ allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
 
 remGroupBindEnv :: GroupDef e1 e2 an -> GroupDef () () an
-remGroupBindEnv (GroupDef ann head' vprops gprops reds _)
-  = GroupDef ann head' (map remText vprops) (map remText gprops) reds ()
+remGroupBindEnv (GroupDef ann vprops gprops reds _)
+  = GroupDef ann (map remText vprops) (map remText gprops) reds ()
   where remText (_, x) = ((), x)
 
 remProgBindEnv :: Program e1 e2 an -> Program () () an
 remProgBindEnv (Program ann mpath idecls rdecls exps grps)
-  = Program ann mpath idecls rdecls exps $ map remGroupBindEnv grps
+  = Program ann mpath idecls rdecls exps $ remGroupBindEnv <$> grps
 
 remExtra :: Program e1 e2 an -> Program () () ()
 remExtra = remProgBindEnv . (() <$)
