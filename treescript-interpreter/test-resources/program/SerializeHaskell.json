@@ -1,6 +1,33 @@
 [
     "Serialize",
-    [],
+    [
+        [
+            "Scheme_Lang",
+            "Scheme",
+            [
+                [
+                    [
+                        "Atom",
+                        1
+                    ],
+                    [
+                        "SCons",
+                        2
+                    ],
+                    [
+                        "SNil",
+                        0
+                    ],
+                    [
+                        "Symbol",
+                        1
+                    ]
+                ],
+                [],
+                []
+            ]
+        ]
+    ],
     [
         [
             "Foo",
@@ -172,8 +199,8 @@
                                 [
                                     [
                                         [
-                                            "Serialize",
-                                            "Bar"
+                                            "Scheme_Lang",
+                                            "SCons"
                                         ],
                                         []
                                     ]

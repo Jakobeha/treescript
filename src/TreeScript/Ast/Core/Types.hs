@@ -183,16 +183,16 @@ instance Monoid DeclSet where
     , declSetFunctions = mempty
     }
 
--- | Takes path of left, unless empty (to satisfy @Monoid@).
+-- | Takes path and exports of left, unless empty (to satisfy @Monoid@).
 -- TODO Fix all right program paths.
 instance (Semigroup an) => Semigroup (Program e1 e2 an) where
   Program xAnn xPath xIdecls xRdecls xExps xGrps <> Program yAnn yPath yIdecls yRdecls yExps yGrps
     = Program
     { programAnn = xAnn <> yAnn
     , programPath = path
-    , programImportDecls = xIdecls <> yIdecls
-    , programRecordDecls = xRdecls <> yRdecls
-    , programExports = xExps <> yExps
+    , programImportDecls = xIdecls
+    , programRecordDecls = xRdecls
+    , programExports = xExps
     , programGroups = xGrps <> yGrps
     }
     where path

@@ -7,6 +7,6 @@ Bar[].
 &Foo[&foo].
 "bar" -> Foo[\foo],
   \foo <- 5 &foo[];
-Foo[Bar[]] -> Bar[];
+Foo[Bar[]] -> Scheme_SCons[];
 
 &Bar[].

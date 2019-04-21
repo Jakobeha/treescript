@@ -13,14 +13,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct LanguageSpec {
-  name: String,
-  extension: String,
-}
-
 pub struct Language {
-  pub name: String,
   pub extension: String,
   dir: PathBuf,
 }
@@ -38,7 +31,6 @@ struct Library {
 
 pub struct Session {
   langs: Vec<Language>,
-  lang_idxs_by_name: HashMap<String, usize>,
   lang_idxs_by_ext: HashMap<String, usize>,
   libs: HashMap<String, Library>,
   root_dir: PathBuf,
@@ -47,22 +39,9 @@ pub struct Session {
 impl Language {
   fn new(dir: DirEntry) -> Language {
     let dir_name = dir.file_name();
-    let inferred_name = dir_name.to_string_lossy();
     let dir_path = dir.path();
-    let mut spec_path = dir_path.clone();
-    spec_path.push("spec.yaml");
-    let spec_file = File::open(spec_path).expect(
-      format!(
-        "failed to read language specification for '{}'",
-        inferred_name
-      )
-      .as_str(),
-    );
-    let spec: LanguageSpec = serde_yaml::from_reader(spec_file)
-      .expect(format!("invalid language specification for '{}'", inferred_name).as_str());
     return Language {
-      name: spec.name,
-      extension: spec.extension,
+      extension: String::from(dir_name.to_string_lossy()),
       dir: dir_path,
     };
   }
@@ -74,7 +53,7 @@ impl Language {
       .stdin(in_code)
       .stdout(Stdio::piped())
       .spawn()
-      .expect(format!("failed to start parser for language: {}", self.name).as_str())
+      .expect(format!("failed to start parser for language: {}", self.extension).as_str())
       .stdout
       .unwrap();
   }
@@ -86,7 +65,7 @@ impl Language {
       .stdin(Stdio::piped())
       .stdout(out_code)
       .spawn()
-      .expect(format!("failed to start printer for language: {}", self.name).as_str())
+      .expect(format!("failed to start printer for language: {}", self.extension).as_str())
       .stdin
       .unwrap();
   }
@@ -176,11 +155,6 @@ impl Session {
       .map(|lang_dir| lang_dir.expect("failed to find a language"))
       .filter(|lang_dir| lang_dir.file_name() != ".DS_Store");
     let langs: Vec<Language> = lang_dirs.map(|lang_dir| Language::new(lang_dir)).collect();
-    let lang_idxs_by_name = langs
-      .iter()
-      .enumerate()
-      .map(|(idx, lang)| (lang.name.clone(), idx))
-      .collect();
     let lang_idxs_by_ext = langs
       .iter()
       .enumerate()
@@ -188,7 +162,6 @@ impl Session {
       .collect();
     return Session {
       langs: langs,
-      lang_idxs_by_name: lang_idxs_by_name,
       lang_idxs_by_ext: lang_idxs_by_ext,
       libs: libs
         .into_iter()
@@ -198,14 +171,7 @@ impl Session {
     };
   }
 
-  pub fn lang_with_name(&self, name: &String) -> Option<&Language> {
-    return self
-      .lang_idxs_by_name
-      .get(name)
-      .map(|idx| &self.langs[*idx]);
-  }
-
-  fn lang_with_ext(&self, ext: &String) -> Option<&Language> {
+  pub fn lang_with_ext(&self, ext: &String) -> Option<&Language> {
     return self.lang_idxs_by_ext.get(ext).map(|idx| &self.langs[*idx]);
   }
 

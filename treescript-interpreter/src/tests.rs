@@ -1,5 +1,5 @@
 extern crate rmp_serde;
-use crate::program::{DeclSet, ProgramSerial, RecordDecl};
+use crate::program::{DeclSet, ImportDecl, ProgramSerial, RecordDecl};
 use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
 use crate::value::{Prim, Record, Symbol, Value};
 use std::fs::File;
@@ -18,7 +18,20 @@ fn test_resources_path(module: &str) -> PathBuf {
 fn test_serialize_prog() {
   let prog = ProgramSerial {
     path: String::from("Serialize"),
-    import_decls: vec![],
+    import_decls: vec![ImportDecl {
+      path: String::from("Scheme_Lang"),
+      qual: String::from("Scheme"),
+      exports: DeclSet {
+        records: vec![
+          (String::from("Atom"), 1),
+          (String::from("SCons"), 2),
+          (String::from("SNil"), 0),
+          (String::from("Symbol"), 1),
+        ],
+        groups: vec![],
+        functions: vec![],
+      },
+    }],
     record_decls: vec![
       RecordDecl {
         head: String::from("Foo"),
@@ -98,8 +111,8 @@ fn test_serialize_prog() {
                 }),
                 output: Value::Record(Record {
                   head: Symbol {
-                    module: String::from("Serialize"),
-                    local: String::from("Bar"),
+                    module: String::from("Scheme_Lang"),
+                    local: String::from("SCons"),
                   },
                   props: vec![],
                 }),
