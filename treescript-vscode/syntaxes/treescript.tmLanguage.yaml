@@ -7,12 +7,16 @@ patterns:
 repository:
   symbols:
     patterns:
+    - include: "#import"
     - include: "#tupleRecordHead"
     - include: "#recordHead"
     - include: "#propKey"
     - include: "#bind"
     - include: "#function"
     - include: "#group"
+  import:
+    name: keyword.control.import.treescript
+    match: '#([a-z]\w*)'
   tupleRecordHead:
     name: meta.record-head.tuple.treescript
     match: '(T)\['
@@ -31,7 +35,7 @@ repository:
       '1': { name: entity.name.tag.treescript }
   function:
     name: support.class.group.function.treescript
-    match: '#([A-Za-z]?\w*)'
+    match: '#([A-Z]\w*)'
   group:
     name: support.class.group.regular.treescript
     match: '&([A-Za-z]?\w*)'

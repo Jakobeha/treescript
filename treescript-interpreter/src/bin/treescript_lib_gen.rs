@@ -1,6 +1,6 @@
 #![feature(try_trait)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Try;
 use std::option::NoneError;
 use treescript_interpreter::lib_process::{BasicLibProcessError, Config, LibProcess};
@@ -82,8 +82,8 @@ impl LibGen {
 impl LibProcess for LibGen {
   type Error = BasicLibProcessError;
 
-  fn dependencies() -> Vec<LibrarySpec> {
-    return Vec::new();
+  fn dependencies() -> HashMap<String, LibrarySpec> {
+    return HashMap::new();
   }
 
   fn configure(&mut self, config: Config) {

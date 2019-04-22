@@ -14,6 +14,7 @@ module TreeScript.Ast.Core.Types
 import TreeScript.Ast.Core.Serialize
 import TreeScript.Misc
 
+import qualified Data.ByteString.Lazy as B
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import GHC.Generics
@@ -154,6 +155,12 @@ data GroupDef e1 e2 an
   , groupDefPropEnv :: e2
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | A foreign program this script uses.
+data Library
+  = LibraryCmdBinary B.ByteString
+  | LibraryJavaScript T.Text
+  deriving (Eq, Ord, Read, Show, Generic, Serial)
+
 -- | TODO Make import and record decls a removable type param.
 
 -- | A full TreeScript program.
@@ -165,6 +172,7 @@ data Program e1 e2 an
   , programRecordDecls :: [RecordDecl an]
   , programExports :: DeclSet
   , programGroups :: M.Map (Symbol ()) (GroupDef e1 e2 an)
+  , programLibraries :: M.Map ModulePath Library
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 instance Semigroup DeclSet where
@@ -186,7 +194,7 @@ instance Monoid DeclSet where
 -- | Takes path and exports of left, unless empty (to satisfy @Monoid@).
 -- TODO Fix all right program paths.
 instance (Semigroup an) => Semigroup (Program e1 e2 an) where
-  Program xAnn xPath xIdecls xRdecls xExps xGrps <> Program yAnn yPath yIdecls yRdecls yExps yGrps
+  Program xAnn xPath xIdecls xRdecls xExps xGrps xLibs <> Program yAnn yPath _ _ _ yGrps yLibs
     = Program
     { programAnn = xAnn <> yAnn
     , programPath = path
@@ -194,6 +202,7 @@ instance (Semigroup an) => Semigroup (Program e1 e2 an) where
     , programRecordDecls = xRdecls
     , programExports = xExps
     , programGroups = xGrps <> yGrps
+    , programLibraries = xLibs <> yLibs
     }
     where path
             | xPath == "" = yPath
@@ -209,6 +218,7 @@ instance (Monoid an) => Monoid (Program e1 e2 an) where
     , programRecordDecls = mempty
     , programExports = mempty
     , programGroups = mempty
+    , programLibraries = mempty
     }
 
 instance Printable DeclSet where
@@ -278,8 +288,12 @@ instance Printable (Reducer an) where
     where printNext next' = " " <> pprint next'
           printGuard guard = ",\n  " <> pprint guard
 
+instance Printable Library where
+  pprint (LibraryCmdBinary _) = "<command-line binary>"
+  pprint (LibraryJavaScript txt) = pprint txt
+
 instance (e1 ~ T.Text) => Printable (Program e1 e2 an) where
-  pprint (Program _ mpath idecls rdecls _ grps)
+  pprint (Program _ mpath idecls rdecls _ grps libs)
      = T.unlines
      $ ["#module " <> mpath <> ";"]
     ++ map pprint idecls
@@ -287,6 +301,7 @@ instance (e1 ~ T.Text) => Printable (Program e1 e2 an) where
     ++ map pprint rdecls
     ++ [T.empty]
     ++ map (uncurry printGroupDef) (M.toList grps)
+    ++ map (uncurry printLibrary) (M.toList libs)
 
 -- TODO: Print env
 printGroupDef :: Symbol () -> GroupDef T.Text e2 an -> T.Text
@@ -298,6 +313,9 @@ printGroupDef head' (GroupDef _ vprops gprops reds _)
           <> printProps (map (printGroupDefProp "\\") vprops ++ map (printGroupDefProp "&") gprops)
           <> "."
         printGroupDefProp pre (txt, (Bind _ idx)) = pre <> txt <> "=" <> pprint idx
+
+printLibrary :: ModulePath -> Library -> T.Text
+printLibrary path lib = "--- " <> path <> "\n" <> pprint lib
 
 -- | How much of the module path will be printed.
 modulePathPrintLength :: Int
@@ -364,10 +382,13 @@ hole ann idxAnn idx
   , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
   }
 
-desugarError :: Range -> T.Text -> Error
-desugarError rng msg
-  = addRangeToErr rng $ Error
+desugarError_ :: T.Text -> Error
+desugarError_ msg
+  = Error
   { errorStage = StageDesugar
   , errorRange = Nothing
   , errorMsg = msg
   }
+
+desugarError :: Range -> T.Text -> Error
+desugarError rng = addRangeToErr rng . desugarError_

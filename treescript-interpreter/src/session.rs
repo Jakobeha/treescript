@@ -2,13 +2,16 @@ extern crate app_dirs;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
+use crate::util;
 use crate::util::{AtomicFile, AtomicFileCommit};
 use crate::value::{Record, Symbol, Value};
 use app_dirs::{AppDataType, AppInfo};
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
-use std::fs::{DirEntry, File};
+use std::fs::{DirEntry, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -19,21 +22,23 @@ pub struct Language {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LibrarySpec {
-  code_name: String,
-  dir_name: String,
+pub enum LibrarySpec {
+  CmdBinary(ByteBuf),
+  JavaScript(String),
 }
 
-struct Library {
-  name: String,
-  process: Option<Child>,
+pub enum Library {
+  CmdBinary {
+    path: PathBuf,
+    process: Option<Child>,
+  },
 }
 
 pub struct Session {
   langs: Vec<Language>,
   lang_idxs_by_ext: HashMap<String, usize>,
   libs: HashMap<String, Library>,
-  root_dir: PathBuf,
+  tmp_lib_dir: PathBuf,
 }
 
 impl Language {
@@ -72,65 +77,134 @@ impl Language {
 }
 
 impl Library {
-  fn new(name: String) -> Library {
-    return Library {
-      name: name,
-      process: Option::None,
+  fn new(name: &String, spec: LibrarySpec, tmp_dir: &PathBuf) -> Library {
+    match spec {
+      LibrarySpec::CmdBinary(bytes) => {
+        let mut path = tmp_dir.clone();
+        path.push(name);
+        let mut file = OpenOptions::new()
+          .write(true)
+          .create_new(true)
+          .open(&path)
+          .expect(format!("failed to start create file for binary lib: {}", name).as_str());
+        file
+          .write_all(bytes.as_slice())
+          .expect(format!("failed to write binary lib to file: {}", name).as_str());
+        util::allow_execute(&path)
+          .expect(format!("failed to set binary lib's perms to executable: {}", name).as_str());
+        return Library::CmdBinary {
+          path: path,
+          process: Option::None,
+        };
+      }
+      LibrarySpec::JavaScript(_) => panic!("TODO Handle JavaScript libraries"),
     };
   }
 
-  fn start(&mut self, path: &Option<PathBuf>, libs_dir: &PathBuf) {
-    assert!(
-      self.process.is_none(),
-      "can't start session - already started"
-    );
-    let mut lib_path = libs_dir.clone();
-    lib_path.push(self.name.clone());
-    lib_path.push("exec");
-    self.process = Option::Some(
-      Command::new(lib_path.as_os_str())
-        .args(path.into_iter())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect(format!("failed to start library process: {}", self.name).as_str()),
-    );
+  fn start(&mut self, prog_path: &Option<PathBuf>) {
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        assert!(
+          process.is_none(),
+          "can't start library process, already started: {}",
+          name
+        );
+        *process = Option::Some(
+          Command::new(path.as_os_str())
+            .args(prog_path.into_iter())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect(format!("failed to start library process: {}", name).as_str()),
+        );
+      }
+    }
   }
 
-  fn call_fun(&mut self, name: &String, args: &Value) -> Option<Value> {
-    let process = self
-      .process
-      .as_mut()
-      .expect("can't call function - not started");
-    let mut parser = Parser {
-      input: process
-        .stdout
-        .as_mut()
-        .expect("can't call function - process output not available"),
+  fn call_fun(&mut self, fun: &String, args: Vec<Value>) -> Option<Value> {
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        let process = process
+          .as_mut()
+          .expect(format!("can't call function, library process not started: {}", name).as_str());
+        let mut parser = Parser {
+          input: process.stdout.as_mut().expect(
+            format!(
+              "can't call function, library process output not available: {}",
+              name,
+            )
+            .as_str(),
+          ),
+        };
+        let mut printer = Printer {
+          output: process.stdin.as_mut().expect(
+            format!(
+              "can't call function, library process input not available: {}",
+              name,
+            )
+            .as_str(),
+          ),
+        };
+        printer
+          .print_value(Value::Record(Record {
+            head: Symbol::from(fun),
+            props: args,
+          }))
+          .expect(
+            format!(
+              "can't call function, couldn't send input to library process: {}",
+              name,
+            )
+            .as_str(),
+          );
+        return parser.scan_value();
+      }
     };
-    let mut printer = Printer {
-      output: process
-        .stdin
-        .as_mut()
-        .expect("can't call function - process input not available"),
-    };
-    printer
-      .print_value(Value::Record(Record {
-        head: Symbol::from(name),
-        props: vec![args.clone()],
-      }))
-      .expect("can't call function - couldn't send input to library process");
-    return parser.scan_value();
   }
 
   fn stop(&mut self) {
-    let mut process = self
-      .process
-      .take()
-      .expect("can't stop session - not started");
-    process
-      .kill()
-      .expect(format!("library process exited early: {}", self.name).as_str());
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        let mut process = process
+          .take()
+          .expect(format!("can't stop library session, not started: {}", name).as_str());
+        process
+          .kill()
+          .expect(format!("library process exited early: {}", name).as_str());
+      }
+    };
+  }
+
+  fn pre_drop(&mut self) {
+    match self {
+      Library::CmdBinary { path, process } => {
+        if let Some(mut process) = process.take() {
+          let _ = process.kill();
+        }
+        let _ = fs::remove_file(path);
+      }
+    }
+  }
+}
+
+impl Drop for Session {
+  fn drop(&mut self) {
+    for lib in self.libs.values_mut() {
+      lib.pre_drop();
+    }
+    let _ = fs::remove_dir(&self.tmp_lib_dir);
   }
 }
 
@@ -146,9 +220,8 @@ impl Session {
     .expect("failed to get user session directory");
   }
 
-  pub fn new(libs: Vec<LibrarySpec>) -> Session {
-    let root_dir = Session::root_dir();
-    let mut langs_dir = root_dir.clone();
+  pub fn new(libs: HashMap<String, LibrarySpec>) -> Session {
+    let mut langs_dir = Session::root_dir();
     langs_dir.push("languages");
     let lang_dirs = fs::read_dir(langs_dir)
       .expect("failed to find languages")
@@ -160,14 +233,20 @@ impl Session {
       .enumerate()
       .map(|(idx, lang)| (lang.extension.clone(), idx))
       .collect();
+    let tmp_lib_dir = AtomicFile::temp_path(std::env::temp_dir());
+    fs::create_dir(&tmp_lib_dir)
+      .expect("failed to create temporary directory for session libraries");
     return Session {
       langs: langs,
       lang_idxs_by_ext: lang_idxs_by_ext,
       libs: libs
         .into_iter()
-        .map(|lib| (lib.code_name, Library::new(lib.dir_name)))
+        .map(|(name, spec)| {
+          let lib = Library::new(&name, spec, &tmp_lib_dir);
+          return (name, lib);
+        })
         .collect(),
-      root_dir: root_dir,
+      tmp_lib_dir: tmp_lib_dir,
     };
   }
 
@@ -217,10 +296,8 @@ impl Session {
   }
 
   pub fn start(&mut self, path: &Option<PathBuf>) {
-    let mut libs_dir = self.root_dir.clone();
-    libs_dir.push("libraries");
     for lib in self.libs.values_mut() {
-      lib.start(&path, &libs_dir);
+      lib.start(path);
     }
   }
 
@@ -232,7 +309,7 @@ impl Session {
       )
       .as_str(),
     );
-    return lib.call_fun(&head.local, args);
+    return lib.call_fun(&head.local, args.to_args());
   }
 
   pub fn stop(&mut self) {

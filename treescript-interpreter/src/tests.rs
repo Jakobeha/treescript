@@ -1,6 +1,7 @@
 extern crate rmp_serde;
 use crate::program::{DeclSet, ImportDecl, ProgramSerial, RecordDecl};
 use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
+use crate::session::LibrarySpec;
 use crate::value::{Prim, Record, Symbol, Value};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -49,7 +50,7 @@ fn test_serialize_prog() {
         (String::from("Foo"), (0, 1)),
         (String::from("Main"), (0, 0)),
       ],
-      functions: vec![],
+      functions: vec![(String::from("Foo"), 2)],
     },
     groups: vec![
       (
@@ -156,6 +157,12 @@ fn test_serialize_prog() {
         },
       ),
     ],
+    libraries: vec![(
+      String::from("Serialize"),
+      LibrarySpec::JavaScript(String::from(
+        "lib.Foo = function(_foo, bar) { return bar; };\n",
+      )),
+    )],
   };
 
   let vec = rmp_serde::to_vec(&prog).unwrap();

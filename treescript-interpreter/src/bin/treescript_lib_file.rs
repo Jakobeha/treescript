@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use treescript_interpreter::lib_process::{BasicLibProcessError, Config, LibProcess};
 use treescript_interpreter::session::LibrarySpec;
@@ -48,8 +49,8 @@ impl LibFile {
 impl LibProcess for LibFile {
   type Error = BasicLibProcessError;
 
-  fn dependencies() -> Vec<LibrarySpec> {
-    return Vec::new();
+  fn dependencies() -> HashMap<String, LibrarySpec> {
+    return HashMap::new();
   }
 
   fn configure(&mut self, config: Config) {

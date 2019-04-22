@@ -1,6 +1,8 @@
 Foo[foo].
 Bar[].
 
+#Foo[foo, bar].
+
 &Main[].
 \x -> \x &Foo[&Bar[]];
 

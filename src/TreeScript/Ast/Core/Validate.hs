@@ -83,7 +83,7 @@ unboundErrs (GroupDef _ vprops gprops reds _)
 -- TODO: Validate imports
 
 validationErrs :: ImportEnv -> Program e1 e2 Range -> [Error]
-validationErrs imps (Program _ mpath _ decls _ groups)
+validationErrs imps (Program _ mpath _ decls _ groups _)
    = duplicateDeclErrs (M.keysSet importedRecordDecls) decls
   ++ concatMap unboundErrs groups
   where importedRecordDecls = declSetRecords $ importEnvImportedLocals imps

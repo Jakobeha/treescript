@@ -190,6 +190,10 @@ instance Serial T.Text where
   toMsgp = toObject
   fromMsgp = fromObject
 
+instance Serial B.ByteString where
+  toMsgp = ObjectBin . B.toStrict
+  fromMsgp = fromObject
+
 instance (Serial a) => Serial [a] where
   toMsgp = ObjectArray . map toMsgp
   fromMsgp (ObjectArray xs) = traverse fromMsgp xs

@@ -96,7 +96,7 @@ Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
        ;
 Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocGlobal $1) $2 (annd $3) }
       | '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocLocal $1) $2 (annd $3) }
-      | '#' UpperSym { Group ($1 <> getAnn $2) (GroupLocFunction $1) $2 [] }
+      | '#' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocFunction $1) $2 (annd $3) }
       ;
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }

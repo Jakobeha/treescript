@@ -351,7 +351,7 @@ impl GroupDef {
   }
 
   fn guard_all(&self, session: &mut Session, binds: &mut BindFrame, guards: &Vec<Guard>) -> bool {
-    for guard in guards {
+    for guard in guards.iter().rev() {
       let guard_res = self.guard(session, binds, &guard);
       if !guard_res {
         return false;

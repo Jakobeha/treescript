@@ -7,6 +7,7 @@ use crate::value::{Record, Symbol, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -37,20 +38,20 @@ pub struct ProgramSerial {
   pub record_decls: Vec<RecordDecl>,
   pub exports: DeclSet,
   pub groups: Vec<(Symbol, GroupDefSerial)>,
+  pub libraries: Vec<(String, LibrarySpec)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Program {
   path: String,
-  pub libraries: Vec<LibrarySpec>,
   pub groups: Rc<HashMap<Symbol, GroupDef>>,
+  pub libraries: HashMap<String, LibrarySpec>,
 }
 
 impl From<ProgramSerial> for Program {
   fn from(serial: ProgramSerial) -> Program {
     let mut program = Program {
       path: serial.path,
-      libraries: vec![], // SOON
       groups: Rc::new(
         serial
           .groups
@@ -58,6 +59,7 @@ impl From<ProgramSerial> for Program {
           .map(|(head, sub_group)| (head, GroupDef::from_no_env(sub_group)))
           .collect(),
       ),
+      libraries: HashMap::from_iter(serial.libraries),
     };
 
     unsafe {

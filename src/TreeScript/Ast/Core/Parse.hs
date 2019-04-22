@@ -112,6 +112,36 @@ parseImportQual :: Maybe (S.Symbol Range) -> T.Text
 parseImportQual Nothing = ""
 parseImportQual (Just (S.Symbol _ qual)) = qual
 
+findLibrary :: ImportSessionRes (Maybe Library)
+findLibrary = do
+  ienv <- getImportEnv
+  let root = importEnvRoot ienv
+      mpath = importEnvModulePath ienv
+      path = moduleFilePath root mpath
+      jsPath = path <.> "js"
+      liftLibIO
+        = overErrors (prependMsgToErr ("couldn't get library for " <> T.pack path))
+        . liftIOAndCatch StageDesugar
+  cmdBinExists <- liftLibIO $ doesFileExist path
+  jsExists <- liftLibIO $ doesFileExist jsPath
+  when (cmdBinExists && jsExists) $
+    tellError $ desugarError_ "both a command-line binary and javascript library exist for this program"
+  if cmdBinExists then
+    Just . LibraryCmdBinary <$> liftLibIO (B.readFile path)
+  else if jsExists then
+    Just . LibraryJavaScript <$> liftLibIO (T.readFile jsPath)
+  else
+    pure Nothing
+
+findLibraries :: ImportSessionRes (M.Map ModulePath Library)
+findLibraries = do
+  lib <- findLibrary
+  case lib of
+    Nothing -> pure M.empty
+    Just lib' -> do
+      mpath <- importEnvModulePath <$> getImportEnv
+      pure $ M.singleton mpath lib'
+
 getProgModule :: Range -> ModulePath -> FilePath -> ImportSessionRes (Program () () ())
 getProgModule rng mpath path = do
   -- SOON: Replace program's path with mpath
@@ -255,10 +285,11 @@ parseGroupDecl :: S.GroupDecl Range -> SessionRes (Either GroupDeclCompact Funct
 parseGroupDecl (S.GroupDecl _ (S.Group _ loc (S.Symbol hrng head') props))
   = case loc of
       S.GroupLocGlobal _ -> pure $ Left $ GroupDeclCompact head' nvps ngps
-      S.GroupLocFunction _ -> pure $ Right $ FunctionDeclCompact head' nvps -- TODO: Types and checking more stuff
+      S.GroupLocFunction _ -> pure $ Right $ FunctionDeclCompact head' nsps -- TODO: Types and checking more stuff
       S.GroupLocLocal lrng -> mkFail $ desugarError (lrng <> hrng) "can't declare local (lowercase) group"
   where nvps = length $ filter (\case S.GenPropertyRecord (S.ValueBind _) -> True; _ -> False) props
         ngps = length $ filter (\case S.GenPropertySubGroup _ -> True; _ -> False) props
+        nsps = length $ filter (\case S.GenPropertyDecl _ -> True; _ -> False) props
 
 parsePrim :: S.Primitive Range -> GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int)
@@ -413,7 +444,7 @@ parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) prop
           , groupDefPropEnv = bindEnv
           })
       S.GroupLocLocal _ -> mkFail $ desugarError headRng "can't declare a lowercase group, lowercase groups are group properties"
-      S.GroupLocFunction _ -> mkFail $ desugarError headRng "can't declare a function, functions are provided by libraries"
+      S.GroupLocFunction _ -> mkFail $ desugarError headRng "can't declare a function after declaring groups"
 
 parseRestGroupDefs :: S.GroupDecl Range -> [S.TopLevel Range] -> ImportSessionRes (N.NonEmpty (Symbol (), GroupDef T.Text GVBindEnv Range))
 parseRestGroupDefs decl [] = (N.:| []) <$> parseEmptyGroupDef decl
@@ -443,7 +474,7 @@ notGroupedReducerError red
 parseRaw :: FilePath -> ModulePath -> S.Program Range -> SessionRes ((Program T.Text GVBindEnv Range, ImportEnv), Program () () ())
 parseRaw root mpath (S.Program rng topLevels) = do
   let (topLevelsOutGroups, topLevelsInGroups)
-        = break (\case S.TopLevelGroupDecl _ -> True; _ -> False) topLevels
+        = break (\case S.TopLevelGroupDecl (S.GroupDecl _ (S.Group _ (S.GroupLocGlobal _) _ _)) -> True; _ -> False) topLevels
       -- TODO: Verify order of declarations
       idecls = mapMaybe (\case S.TopLevelImportDecl x -> Just x; _ -> Nothing) topLevels
       rdecls = mapMaybe (\case S.TopLevelRecordDecl x -> Just x; _ -> Nothing) topLevels
@@ -456,6 +487,7 @@ parseRaw root mpath (S.Program rng topLevels) = do
     mapM_ parseImportDecl idecls
     reds' <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
     groups <- parseAllGroupDefs topLevelsInGroups
+    libs <- findLibraries
     impEnv <- getImportEnv
     let idecls' = importEnvImportDecls impEnv
     -- TODO: Syntax sugar a main group
@@ -467,6 +499,7 @@ parseRaw root mpath (S.Program rng topLevels) = do
       , programRecordDecls = rdecls'
       , programExports = exps
       , programGroups = groups
+      , programLibraries = libs
       }, impEnv)
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Preserves extra so the program can be further analyzed.

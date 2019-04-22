@@ -2,6 +2,7 @@ use crate::parse::Parser;
 use crate::print::Printer;
 use crate::session::{LibrarySpec, Session};
 use crate::value::{Record, Value};
+use std::collections::HashMap;
 use std::env;
 use std::fmt::Debug;
 use std::io;
@@ -35,7 +36,7 @@ pub trait LibProcessError: Debug + From<io::Error> {
 pub trait LibProcess {
   type Error: LibProcessError;
 
-  fn dependencies() -> Vec<LibrarySpec>;
+  fn dependencies() -> HashMap<String, LibrarySpec>;
   fn configure(&mut self, config: Config);
   fn call_fun(&mut self, fun: String, args: Vec<Value>) -> Result<Value, Self::Error>;
 

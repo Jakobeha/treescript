@@ -239,8 +239,8 @@ remGroupBindEnv (GroupDef ann vprops gprops reds _)
   where remText (_, x) = ((), x)
 
 remProgBindEnv :: Program e1 e2 an -> Program () () an
-remProgBindEnv (Program ann mpath idecls rdecls exps grps)
-  = Program ann mpath idecls rdecls exps $ remGroupBindEnv <$> grps
+remProgBindEnv (Program ann mpath idecls rdecls exps grps libs)
+  = Program ann mpath idecls rdecls exps (remGroupBindEnv <$> grps) libs
 
 remExtra :: Program e1 e2 an -> Program () () ()
 remExtra = remProgBindEnv . (() <$)

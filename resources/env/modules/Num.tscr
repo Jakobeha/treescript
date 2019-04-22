@@ -1,0 +1,6 @@
+#Add[l, r].
+#Subtract[l, r].
+#Multiply[l, r].
+#Divide[l, r].
+#GreaterThan[l, r].
+#LessThan[l, r].
