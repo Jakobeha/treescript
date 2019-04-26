@@ -1,4 +1,4 @@
-#![feature(refcell_map_split, generators, generator_trait)]
+#![feature(bind_by_move_pattern_guards, refcell_map_split, generators, generator_trait, try_from)]
 
 extern crate clap;
 #[macro_use]
@@ -7,6 +7,7 @@ mod parse;
 mod print;
 mod program;
 mod reduce;
+mod resources;
 mod session;
 mod util;
 mod value;

@@ -2,17 +2,20 @@ extern crate app_dirs;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
+use crate::resources;
 use crate::util;
 use crate::util::{AtomicFile, AtomicFileCommit};
 use crate::value::{Record, Symbol, Value};
 use app_dirs::{AppDataType, AppInfo};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
+use serde_json::Value as JsValue;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::fs::{DirEntry, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
@@ -30,6 +33,10 @@ pub enum LibrarySpec {
 pub enum Library {
   CmdBinary {
     path: PathBuf,
+    process: Option<Child>,
+  },
+  JavaScript {
+    code: String,
     process: Option<Child>,
   },
 }
@@ -94,10 +101,16 @@ impl Library {
           .expect(format!("failed to set binary lib's perms to executable: {}", name).as_str());
         return Library::CmdBinary {
           path: path,
-          process: Option::None,
+          process: None,
         };
       }
-      LibrarySpec::JavaScript(_) => panic!("TODO Handle JavaScript libraries"),
+      LibrarySpec::JavaScript(lib_txt) => {
+        let ffi_txt = resources::js_ffi().expect("failed to get JS ffi module");
+        return Library::JavaScript {
+          code: ffi_txt + "\nObject.assign(this, ffi);\n" + lib_txt.as_str(),
+          process: None,
+        };
+      }
     };
   }
 
@@ -113,7 +126,7 @@ impl Library {
           "can't start library process, already started: {}",
           name
         );
-        *process = Option::Some(
+        *process = Some(
           Command::new(path.as_os_str())
             .args(prog_path.into_iter())
             .stdin(Stdio::piped())
@@ -121,6 +134,30 @@ impl Library {
             .spawn()
             .expect(format!("failed to start library process: {}", name).as_str()),
         );
+      }
+      Library::JavaScript { code, process } => {
+        assert!(
+          process.is_none(),
+          "can't start JS library process, already started"
+        );
+        let mut p = Command::new("node")
+          .stdin(Stdio::piped())
+          .stdout(Stdio::piped())
+          .stderr(Stdio::inherit())
+          .spawn()
+          .expect("failed to start JS library process");
+        dprintln!("PRINT_SESSION", "Started JS session");
+        write!(p.stdin.as_mut().unwrap(), "{}\n", code)
+          .expect("failed to write initial code to JS library process");
+        if let Some(prog_path) = prog_path {
+          write!(
+            p.stdin.as_mut().unwrap(),
+            "var progPath = {};\n",
+            prog_path.to_string_lossy()
+          )
+          .expect("failed to write program path to JS library process");
+        }
+        *process = Some(p);
       }
     }
   }
@@ -167,6 +204,49 @@ impl Library {
           );
         return parser.scan_value();
       }
+      Library::JavaScript { code: _, process } => {
+        let process = process
+          .as_mut()
+          .expect("can't call function, JS library process not started");
+        let args = args
+          .into_iter()
+          .map(|arg| {
+            serde_json::to_string::<JsValue>(
+              &arg
+                .try_into()
+                .expect(format!("can't all function, bad input args: {}", fun).as_str()),
+            )
+            .unwrap()
+          })
+          .collect::<Vec<String>>()
+          .join(", ");
+        write!(
+          process.stdin.as_mut().unwrap(),
+          "callFfi({}, {});\n",
+          fun,
+          args
+        )
+        .expect(format!("can't all function, couldn't send input: {}", fun).as_str());
+        dprintln!("PRINT_SESSION", "> callFfi({}, {});\n", fun, args);
+        let out = serde_json::from_str::<JsValue>(
+          BufReader::new(process.stdout.as_mut().unwrap())
+            .lines()
+            .next()
+            .expect(format!("can't all function, no output: {}", fun).as_str())
+            .expect(format!("can't all function, error getting output: {}", fun).as_str())
+            .as_str(),
+        )
+        .expect(format!("can't all function, invalid output: {}", fun).as_str());
+        // Want to still fail on undefined
+        if out.is_null() {
+          return None;
+        } else {
+          return Some(
+            Value::try_from(out)
+              .expect(format!("can't all function, bad output: {}", fun).as_str()),
+          );
+        }
+      }
     };
   }
 
@@ -184,6 +264,12 @@ impl Library {
           .kill()
           .expect(format!("library process exited early: {}", name).as_str());
       }
+      Library::JavaScript { code: _, process } => {
+        let mut process = process
+          .take()
+          .expect("can't stop JS library session, not started");
+        process.kill().expect("JS library process exited early");
+      }
     };
   }
 
@@ -194,6 +280,11 @@ impl Library {
           let _ = process.kill();
         }
         let _ = fs::remove_file(path);
+      }
+      Library::JavaScript { code: _, process } => {
+        if let Some(mut process) = process.take() {
+          let _ = process.kill();
+        }
       }
     }
   }

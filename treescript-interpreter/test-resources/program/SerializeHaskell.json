@@ -283,7 +283,7 @@
             [
                 1,
                 [
-                    "lib.Foo = function(_foo, bar) { return bar; };\n"
+                    "Foo = function(_foo, bar) { return bar; };\n"
                 ]
             ]
         ]

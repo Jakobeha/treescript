@@ -1,11 +1,16 @@
 extern crate serde;
 use crate::util::GeneratorIterator;
 use serde::{Deserialize, Serialize};
+use serde_json;
+use serde_json::{Map, Number, Value as JsValue};
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
 use std::ops::Generator;
 use std::slice::{Iter, IterMut};
+use try_map::FlipResultExt;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Float(pub f32);
@@ -398,6 +403,85 @@ impl Value {
       }
     }
     return false;
+  }
+}
+
+impl TryFrom<JsValue> for Prim {
+  type Error = ();
+
+  fn try_from(x: JsValue) -> Result<Prim, ()> {
+    match x {
+      JsValue::Number(x) if x.is_i64() => return Ok(Prim::Integer(x.as_i64().unwrap() as i32)),
+      JsValue::Number(x) if x.is_f64() => return Ok(Prim::Float(Float(x.as_f64().unwrap() as f32))),
+      JsValue::String(x) => return Ok(Prim::String(x)),
+      _ => return Err(()),
+    };
+  }
+}
+
+impl TryInto<JsValue> for Prim {
+  type Error = ();
+
+  fn try_into(self) -> Result<JsValue, ()> {
+    match self {
+      Prim::Integer(x) => return Ok(JsValue::Number(Number::from(x))),
+      Prim::Float(Float(x)) => return Ok(JsValue::Number(Number::from_f64(x as f64).ok_or(())?)),
+      Prim::String(x) => return Ok(JsValue::String(x)),
+    };
+  }
+}
+
+impl TryFrom<JsValue> for Value {
+  type Error = ();
+
+  fn try_from(x: JsValue) -> Result<Value, ()> {
+    match x {
+      x @ JsValue::Number(_) | x @ JsValue::String(_) => return Ok(Value::Prim(Prim::try_from(x)?)),
+      JsValue::Object(js_props) => {
+        let head = Symbol::from(js_props.get("head").ok_or(())?.as_str().ok_or(())?);
+        let props = js_props
+          .get("props")
+          .ok_or(())?
+          .as_array()
+          .ok_or(())?
+          .iter()
+          .map(|prop| Value::try_from(prop.clone()))
+          .collect::<Vec<Result<Value, ()>>>()
+          .flip()?;
+        return Ok(Value::Record(Record {
+          head: head,
+          props: props,
+        }));
+      }
+      _ => return Err(()),
+    };
+  }
+}
+
+impl TryInto<JsValue> for Value {
+  type Error = ();
+
+  fn try_into(self) -> Result<JsValue, ()> {
+    match self {
+      Value::Prim(prim) => return Ok(prim.try_into()?),
+      Value::Record(Record { head, props }) => {
+        let js_props: Map<String, JsValue> = Map::from_iter(vec![
+          (String::from("head"), JsValue::String(head.to_string())),
+          (
+            String::from("props"),
+            JsValue::Array(
+              props
+                .into_iter()
+                .map(|prop| prop.try_into() as Result<JsValue, ()>)
+                .collect::<Vec<Result<JsValue, ()>>>()
+                .flip()?,
+            ),
+          ),
+        ]);
+        return Ok(JsValue::Object(js_props));
+      }
+      Value::Splice(_) => return Err(()),
+    };
   }
 }
 

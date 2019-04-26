@@ -1,7 +1,0 @@
-name: Var
-functions:
-- name: Get
-  args: 1
-- name: Set
-  args: 2
-records: []

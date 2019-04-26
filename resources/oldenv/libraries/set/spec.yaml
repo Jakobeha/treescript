@@ -1,7 +1,0 @@
-name: Set
-functions:
-- name: Has
-  args: 2
-- name: Add
-  args: 1
-records: []

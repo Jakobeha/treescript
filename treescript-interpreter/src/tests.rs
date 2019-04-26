@@ -160,7 +160,7 @@ fn test_serialize_prog() {
     libraries: vec![(
       String::from("Serialize"),
       LibrarySpec::JavaScript(String::from(
-        "lib.Foo = function(_foo, bar) { return bar; };\n",
+        "Foo = function(_foo, bar) { return bar; };\n",
       )),
     )],
   };

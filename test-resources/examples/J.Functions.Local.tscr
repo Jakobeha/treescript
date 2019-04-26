@@ -1,0 +1,4 @@
+#IndexPath[var].
+
+&Main[].
+scm'(index-path of \y in \x)' -> T[\x, \y] #IndexPath[];

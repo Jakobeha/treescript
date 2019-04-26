@@ -227,11 +227,8 @@ instance TreePrintable GroupLoc where
   treePrint _ _ (GroupLocFunction _) = "#"
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ loc head' sgs)
-    = par loc <> par head' <> printProps loc sgs
-    where printProps (GroupLocFunction _) [] = ""
-          printProps (GroupLocFunction _) _ = error "functions with properties not valid"
-          printProps _ ps = "[" <> mintercalate ", " (map par ps) <> "]"
+  treePrint par _ (Group _ loc head' props)
+    = par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)
@@ -239,7 +236,7 @@ instance TreePrintable GroupDecl where
 
 instance TreePrintable Record where
   treePrint par _ (Record _ head' props)
-    = par head' <> "[" <> mintercalate ", " (map par props) <> "]"
+    = par head' <> printProps (map par props)
 
 instance TreePrintable BindTarget where
   treePrint _ _ (BindTargetNone _) = "_"
@@ -287,3 +284,6 @@ instance TreePrintable TopLevel where
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
+
+printProps :: (PrintOut o) => [o] -> o
+printProps ps = "[" <> mintercalate ", " ps <> "]"

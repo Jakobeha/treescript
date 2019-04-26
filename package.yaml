@@ -21,10 +21,10 @@ description:         Please see the README on GitHub at <https://github.com/jako
 extra-source-files:
 - README.md
 - ChangeLog.md
-- resources/env/**
+- resources/**
 - src/TreeScript/Ast/Lex/Parse.x
 - src/TreeScript/Ast/Sugar/Parse.y
-- test-resources/examples/**
+- test-resources/**
 
 extra-doc-files:
 - doc/**

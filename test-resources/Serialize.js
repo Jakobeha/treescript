@@ -1,1 +1,1 @@
-lib.Foo = function(_foo, bar) { return bar; };
+Foo = function(_foo, bar) { return bar; };
