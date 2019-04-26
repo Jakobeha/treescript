@@ -172,7 +172,7 @@ traverseValuesInReducer f (Reducer ann main guards)
   <*> traverse (traverseValuesInGuard f) guards
 
 -- | Reducers in all groups.
-allProgramReducers :: Program e1 e2 an -> [Reducer an]
+allProgramReducers :: Program e1 e2 e3 e4 an -> [Reducer an]
 allProgramReducers = concatMap groupDefReducers . programGroups
 
 substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
@@ -210,7 +210,7 @@ maxNumBindsInReducers :: [Reducer an] -> Int
 maxNumBindsInReducers stmts = maximum $ 0 : map maxNumBindsInReducer stmts
 
 -- | The maximum number of binds used by the main reducers in the program - the maximum index in any used bind.
-maxNumBindsInProgram :: Program e1 e2 an -> Int
+maxNumBindsInProgram :: Program e1 e2 e3 e4 an -> Int
 maxNumBindsInProgram = maxNumBindsInReducers . allProgramReducers
 
 bindsInValue1 :: Value an -> S.Set Int
@@ -233,14 +233,10 @@ allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
   = allGroupDefReducers gprops $ groups M.! remAnns name
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
 
-remGroupBindEnv :: GroupDef e1 e2 an -> GroupDef () () an
-remGroupBindEnv (GroupDef ann vprops gprops reds _)
-  = GroupDef ann (map remText vprops) (map remText gprops) reds ()
-  where remText (_, x) = ((), x)
-
-remProgBindEnv :: Program e1 e2 an -> Program () () an
-remProgBindEnv (Program ann mpath idecls rdecls exps grps libs)
-  = Program ann mpath idecls rdecls exps (remGroupBindEnv <$> grps) libs
-
-remExtra :: Program e1 e2 an -> Program () () ()
-remExtra = remProgBindEnv . (() <$)
+remExtra :: PRProgram -> PFProgram
+remExtra = remProgExtra . (() <$)
+  where remProgExtra (Program () mpath _ _ exps grps libs)
+          = Program () mpath () () exps (remGroupExtra <$> grps) libs
+        remGroupExtra (GroupDef () vprops gprops reds _)
+          = GroupDef () (map remBid vprops) (map remBid gprops) reds ()
+        remBid (_, x) = ((), x)

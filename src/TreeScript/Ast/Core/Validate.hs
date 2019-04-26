@@ -6,7 +6,6 @@ module TreeScript.Ast.Core.Validate
   ) where
 
 import TreeScript.Ast.Core.Analyze
-import TreeScript.Ast.Core.Env
 import TreeScript.Ast.Core.Types
 import TreeScript.Misc
 import TreeScript.Plugin
@@ -82,14 +81,14 @@ unboundErrs (GroupDef _ vprops gprops reds _)
 
 -- TODO: Validate imports
 
-validationErrs :: ImportEnv -> Program e1 e2 Range -> [Error]
+validationErrs :: ImportEnv -> PRProgram -> [Error]
 validationErrs imps (Program _ mpath _ decls _ groups _)
    = duplicateDeclErrs (M.keysSet importedRecordDecls) decls
   ++ concatMap unboundErrs groups
   where importedRecordDecls = declSetRecords $ importEnvImportedLocals imps
 
 -- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.
-validate :: SessionRes ((Program e1 e2 Range, ImportEnv), Program () () ()) -> SessionRes (Program e1 e2 Range, Program () () ())
+validate :: SessionRes ((PRProgram, ImportEnv), PFProgram) -> SessionRes (PRProgram, PFProgram)
 validate res = do
   ((x, imps), imods) <- res
   tellErrors $ sort $ validationErrs imps x

@@ -11,7 +11,6 @@ module TreeScript.Ast.Core.Parse
 
 import TreeScript.Ast.Core.Analyze
 import TreeScript.Ast.Core.Validate
-import TreeScript.Ast.Core.Env
 import TreeScript.Ast.Core.Serialize
 import TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Flat as F
@@ -142,7 +141,7 @@ findLibraries = do
       mpath <- importEnvModulePath <$> getImportEnv
       pure $ M.singleton mpath lib'
 
-getProgModule :: Range -> ModulePath -> FilePath -> ImportSessionRes (Program () () ())
+getProgModule :: Range -> ModulePath -> FilePath -> ImportSessionRes PFProgram
 getProgModule rng mpath path = do
   -- SOON: Replace program's path with mpath
   let msgPrefix = "couldn't import program: " <> T.pack path <> " - "
@@ -154,7 +153,7 @@ getProgModule rng mpath path = do
     Nothing -> mkFail $ desugarError rng $ msgPrefix <> "bad format"
     Just pmod' -> pure pmod'
 
-getScriptModule :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes (Program () () ())
+getScriptModule :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes PFProgram
 getScriptModule rng mroot mpath path = do
   res <- lift $ lift $ runResultT $ parseLocal mroot mpath path
   case res of
@@ -165,7 +164,7 @@ getScriptModule rng mroot mpath path = do
         tellError $ desugarError rng $ "errors in script: " <> T.pack path <> "\n" <> T.unlines (map (T.bullet . pprint) errs)
       pure x
 
-getDirModules :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes [Program () () ()]
+getDirModules :: Range -> FilePath -> ModulePath -> FilePath -> ImportSessionRes [PFProgram]
 getDirModules rng mroot mpath path = do
   let liftModIO
         = overErrors (addRangeToErr rng . prependMsgToErr ("couldn't get directory contents: " <> T.pack path))
@@ -176,7 +175,7 @@ getDirModules rng mroot mpath path = do
 
 -- | If the path doesn't refer to a module, will return the error instead of failing.
 -- Still fails if the path refers to a bad module.
-tryGetModule :: Range -> FilePath -> ModulePath -> ImportSessionRes (Either Error [Program () () ()])
+tryGetModule :: Range -> FilePath -> ModulePath -> ImportSessionRes (Either Error [PFProgram])
 tryGetModule rng mroot mpath = do
   ienv <- getImportEnv
   let impaths = importEnvImportedModules ienv
@@ -471,7 +470,7 @@ notGroupedReducerError red
   = desugarError (getAnn red) "reducer not in group"
 
 -- | Parses, only adds errors when they get in the way of parsing, not when they allow parsing but would cause problems later.
-parseRaw :: FilePath -> ModulePath -> S.Program Range -> SessionRes ((Program T.Text GVBindEnv Range, ImportEnv), Program () () ())
+parseRaw :: FilePath -> ModulePath -> S.Program Range -> SessionRes ((PRProgram, ImportEnv), PFProgram)
 parseRaw root mpath (S.Program rng topLevels) = do
   let (topLevelsOutGroups, topLevelsInGroups)
         = break (\case S.TopLevelGroupDecl (S.GroupDecl _ (S.Group _ (S.GroupLocGlobal _) _ _)) -> True; _ -> False) topLevels
@@ -503,17 +502,17 @@ parseRaw root mpath (S.Program rng topLevels) = do
       }, impEnv)
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Preserves extra so the program can be further analyzed.
-parse1 :: FilePath -> ModulePath -> S.Program Range -> SessionRes (Program T.Text GVBindEnv Range, Program () () ())
+parse1 :: FilePath -> ModulePath -> S.Program Range -> SessionRes (PRProgram, PFProgram)
 parse1 root mpath = validate . parseRaw root mpath
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Strips extra and combines with imports.
-parse1Local :: FilePath -> ModulePath -> S.Program Range -> SessionRes (Program () () ())
+parse1Local :: FilePath -> ModulePath -> S.Program Range -> SessionRes PFProgram
 parse1Local root mpath prev = do
   (full, imods) <- parse1 root mpath prev
   pure $ remExtra full <> imods
 
 -- | Compile a source into a @Program@. Strips extra.
-parseLocal :: FilePath -> ModulePath -> FilePath -> SessionRes (Program () () ())
+parseLocal :: FilePath -> ModulePath -> FilePath -> SessionRes PFProgram
 parseLocal root mpath
     = parse1Local root mpath
   <=< ResultT . pure . S.parse
@@ -521,7 +520,7 @@ parseLocal root mpath
   <=< liftIOAndCatch StageReadInput . T.readFile
 
 -- | Compile a source into a @Program@. Strips extra.
-parse :: FilePath -> SessionRes (Program () () ())
+parse :: FilePath -> SessionRes PFProgram
 parse path = parseLocal root mpath path
   where (root, lpath) = splitFileName $ dropExtension path
         mpath = T.replace "/" "_" $ T.pack lpath

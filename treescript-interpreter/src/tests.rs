@@ -1,5 +1,5 @@
 extern crate rmp_serde;
-use crate::program::{DeclSet, ImportDecl, ProgramSerial, RecordDecl};
+use crate::program::{DeclSet, ProgramSerial};
 use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
 use crate::session::LibrarySpec;
 use crate::value::{Prim, Record, Symbol, Value};
@@ -19,30 +19,6 @@ fn test_resources_path(module: &str) -> PathBuf {
 fn test_serialize_prog() {
   let prog = ProgramSerial {
     path: String::from("Serialize"),
-    import_decls: vec![ImportDecl {
-      path: String::from("Scheme_Lang"),
-      qual: String::from("Scheme"),
-      exports: DeclSet {
-        records: vec![
-          (String::from("Atom"), 1),
-          (String::from("SCons"), 2),
-          (String::from("SNil"), 0),
-          (String::from("Symbol"), 1),
-        ],
-        groups: vec![],
-        functions: vec![],
-      },
-    }],
-    record_decls: vec![
-      RecordDecl {
-        head: String::from("Foo"),
-        props: vec![String::from("foo")],
-      },
-      RecordDecl {
-        head: String::from("Bar"),
-        props: vec![],
-      },
-    ],
     exports: DeclSet {
       records: vec![(String::from("Bar"), 0), (String::from("Foo"), 1)],
       groups: vec![
@@ -159,9 +135,7 @@ fn test_serialize_prog() {
     ],
     libraries: vec![(
       String::from("Serialize"),
-      LibrarySpec::JavaScript(String::from(
-        "Foo = function(_foo, bar) { return bar; };\n",
-      )),
+      LibrarySpec::JavaScript(String::from("Foo = function(_foo, bar) { return bar; };\n")),
     )],
   };
 

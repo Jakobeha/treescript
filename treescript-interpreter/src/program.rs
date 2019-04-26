@@ -19,23 +19,8 @@ pub struct DeclSet {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ImportDecl {
-  pub path: String,
-  pub qual: String,
-  pub exports: DeclSet,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RecordDecl {
-  pub head: String,
-  pub props: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
   pub path: String,
-  pub import_decls: Vec<ImportDecl>,
-  pub record_decls: Vec<RecordDecl>,
   pub exports: DeclSet,
   pub groups: Vec<(Symbol, GroupDefSerial)>,
   pub libraries: Vec<(String, LibrarySpec)>,

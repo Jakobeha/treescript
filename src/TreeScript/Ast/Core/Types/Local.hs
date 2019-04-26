@@ -8,12 +8,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Environments and monads used to parse and validate the @Core@ AST.
-module TreeScript.Ast.Core.Env
-  ( module TreeScript.Ast.Core.Env
+-- | Types for the @Local@ phase.
+module TreeScript.Ast.Core.Types.Local
+  ( module TreeScript.Ast.Core.Types.Local
   ) where
 
-import TreeScript.Ast.Core.Types
+import TreeScript.Ast.Core.Types.Gen
 import TreeScript.Misc
 import TreeScript.Plugin
 
@@ -27,6 +27,10 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 
+-- | AST except with local binds.
+type PLProgram = Program [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv Range
+type PLGroupDef = GroupDef T.Text GVBindEnv Range
+
 data ImportEnv
   = ImportEnv
   { importEnvRoot :: FilePath
@@ -39,7 +43,7 @@ data ImportEnv
   , importEnvImportDecls :: [ImportDecl Range]
   }
 
-newtype ImportT m a = ImportT (StateT ImportEnv (WriterT (Program () () ()) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
+newtype ImportT m a = ImportT (StateT ImportEnv (WriterT PFProgram m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
@@ -70,7 +74,7 @@ type GVBindSessionRes a = StateT (GVEnv BindEnv) (ImportT (ResultT (ReaderT Sess
 
 class (Monad m) => MonadImport m where
   getImportEnv :: m ImportEnv
-  addImportedModule :: Range -> T.Text -> Program () () () -> m ()
+  addImportedModule :: Range -> T.Text -> PFProgram -> m ()
 
 instance (Monad m) => MonadImport (ImportT m) where
   getImportEnv = ImportT get
@@ -108,7 +112,7 @@ importEnvAllDecls (ImportEnv _ _ locs _ imps _) = M.insertWith (<>) "" [locs] im
 importEnvImportedLocals :: ImportEnv -> DeclSet
 importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
 
-runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, Program () () ())
+runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, PFProgram)
 runImportT root mpath mexps (ImportT x) = runWriterT $ (`evalStateT` initEnv) x
   where initEnv
           = ImportEnv
