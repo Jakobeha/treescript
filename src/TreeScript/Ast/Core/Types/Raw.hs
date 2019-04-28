@@ -10,5 +10,4 @@ import TreeScript.Misc
 import qualified Data.Text as T
 
 -- | Final AST except with all extra information.
-type PRProgram = Program [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv Range
-type PRGroupDef = GroupDef T.Text GVBindEnv
+type PR a = a [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv CastRef Range

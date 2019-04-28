@@ -8,7 +8,7 @@
 
 -- | Specialized @MessagePack@ serialization for @Core@ ASTs.
 -- Hacked from https://github.com/msgpack/msgpack-haskell/blob/master/msgpack/src/Data/MessagePack/Generic.hs
-module TreeScript.Ast.Core.Serialize
+module TreeScript.Ast.Core.Classes.Serial
   ( Serial (..)
   , serialize
   , deserialize
@@ -25,7 +25,7 @@ import Data.Proxy
 import qualified Data.Text as T
 import GHC.Generics
 
-newtype Tagged (s :: * -> *) b = Tagged { unTagged :: b }
+newtype Tagged (s :: * -> *) b = Tagged{ unTagged :: b }
 
 class Serial a where
   toMsgp :: a -> Object

@@ -28,8 +28,7 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 
 -- | AST except with local binds.
-type PLProgram = Program [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv Range
-type PLGroupDef = GroupDef T.Text GVBindEnv Range
+type PL a = a [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv () Range
 
 data ImportEnv
   = ImportEnv
@@ -43,7 +42,7 @@ data ImportEnv
   , importEnvImportDecls :: [ImportDecl Range]
   }
 
-newtype ImportT m a = ImportT (StateT ImportEnv (WriterT PFProgram m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
+newtype ImportT m a = ImportT (StateT ImportEnv (WriterT (PF Program) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
@@ -74,7 +73,7 @@ type GVBindSessionRes a = StateT (GVEnv BindEnv) (ImportT (ResultT (ReaderT Sess
 
 class (Monad m) => MonadImport m where
   getImportEnv :: m ImportEnv
-  addImportedModule :: Range -> T.Text -> PFProgram -> m ()
+  addImportedModule :: Range -> T.Text -> PF Program -> m ()
 
 instance (Monad m) => MonadImport (ImportT m) where
   getImportEnv = ImportT get
@@ -112,7 +111,7 @@ importEnvAllDecls (ImportEnv _ _ locs _ imps _) = M.insertWith (<>) "" [locs] im
 importEnvImportedLocals :: ImportEnv -> DeclSet
 importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
 
-runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, PFProgram)
+runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, PF Program)
 runImportT root mpath mexps (ImportT x) = runWriterT $ (`evalStateT` initEnv) x
   where initEnv
           = ImportEnv
@@ -157,11 +156,24 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
         )
       Just idx -> (idx, env)
 
-mkLocalSymbol :: (Monad m) => an -> T.Text -> ImportT m (Symbol an)
-mkLocalSymbol ann lcl = do
+mkLocalSymbol :: (Monad m) => T.Text -> ImportT m (PF Symbol)
+mkLocalSymbol lcl = do
   mpath <- importEnvModulePath <$> getImportEnv
   pure Symbol
-    { symbolAnn = ann
+    { symbolAnn = ()
     , symbolModule = mpath
     , symbol = lcl
     }
+
+hole :: Range -> Range -> Int -> PL Value
+hole ann idxAnn idx
+  = ValueRecord Record
+  { recordAnn = ann
+  , recordType = ()
+  , recordHead = Symbol
+      { symbolAnn = ann
+      , symbolModule = ""
+      , symbol = "Hole"
+      }
+  , recordProps = [ValuePrimitive $ PrimInteger idxAnn () idx]
+  }

@@ -7,7 +7,7 @@ module TreeScript.Ast.Core.Compile
   , exportRaw
   ) where
 
-import TreeScript.Ast.Core.Serialize
+import TreeScript.Ast.Core.Classes
 import TreeScript.Ast.Core.Types
 import TreeScript.Misc
 import TreeScript.Plugin
@@ -16,19 +16,22 @@ import qualified Data.ByteString.Lazy.Char8 as B
 import System.Posix.Files
 import System.Posix.Types
 
+-- SOON Remove
+import TreeScript.Ast.Core.TypeCast
+
 -- | Serialize the program, and add a shebang which makes it run as an executable.
-export :: PFProgram -> B.ByteString
+export :: PF Program -> B.ByteString
 export prog = "#! /usr/bin/env treescript-interpreter\n" <> serialize prog
 
 exportFileMode :: FileMode
 exportFileMode = CMode 0o755 -- Everyone can read and execute, owner can write
 
 -- | Serialize the program as an executable into the output path.
-exportFile :: FilePath -> PFProgram -> SessionRes ()
+exportFile :: FilePath -> PF Program -> SessionRes ()
 exportFile outPath prog = liftIOAndCatch StageWriteCompiled $ do
   B.writeFile outPath $ export prog
   setFileMode outPath exportFileMode
 
 -- | Serialize the program's data into the output path, for testing.
-exportRaw :: FilePath -> PFProgram -> SessionRes ()
+exportRaw :: FilePath -> PF Program -> SessionRes ()
 exportRaw outPath = liftIOAndCatch StageWriteCompiled . B.writeFile outPath . serialize

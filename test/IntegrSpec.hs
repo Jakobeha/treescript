@@ -83,7 +83,7 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
-      forExampleCore :: TestFile -> ((C.PRProgram, C.PFProgram) -> IO ()) -> IO ()
+      forExampleCore :: TestFile -> ((C.PR C.Program, C.PF C.Program) -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
@@ -161,7 +161,7 @@ spec = do
               assertProperFailure testInfo sugarRes
         it "Desugars" $ \_ ->
           forExampleSugar file $ \sugarSrc -> do
-            coreRes <- runSessionResVirtual exampleEnv $ C.parse1 examplesDir (fileName srcFile) sugarSrc
+            coreRes <- runSessionResVirtual exampleEnv $ C.parse1Raw examplesDir (fileName srcFile) sugarSrc
             when (testInfoPrintCore testInfo) $ do
               T.putStrLn $ fileName srcFile <> ":"
               T.putStrLn $ pprint $ fst <$> coreRes

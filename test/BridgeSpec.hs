@@ -40,7 +40,7 @@ spec = do
           assertNoErrors errs
     it "Can deserialize" $ do
       text <- B.readFile outputMsgpack
-      let res :: Maybe (C.PFProgram)
+      let res :: Maybe (C.PF C.Program)
           res = C.deserialize text
       case res of
         Nothing -> assertFailureText "couldn't deserialize"
