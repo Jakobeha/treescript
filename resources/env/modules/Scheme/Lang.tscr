@@ -1,4 +1,6 @@
-Symbol[id].
-Atom[x].
+Symbol[@string].
+Atom[@atom].
 SNil[].
-SCons[car, cdr].
+SCons[@sexpr, @sexpr].
+
+@sexpr <- @Symbol|@Atom|@SNil|@SCons;

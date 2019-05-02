@@ -1,6 +1,6 @@
 extern crate rmp_serde;
-use crate::program::{DeclSet, ProgramSerial};
-use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
+use crate::program::ProgramSerial;
+use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Next, Reducer};
 use crate::session::LibrarySpec;
 use crate::value::{Prim, Record, Symbol, Value};
 use std::fs::File;
@@ -19,15 +19,7 @@ fn test_resources_path(module: &str) -> PathBuf {
 fn test_serialize_prog() {
   let prog = ProgramSerial {
     path: String::from("Serialize"),
-    exports: DeclSet {
-      records: vec![(String::from("Bar"), 0), (String::from("Foo"), 1)],
-      groups: vec![
-        (String::from("Bar"), (0, 0)),
-        (String::from("Foo"), (0, 1)),
-        (String::from("Main"), (0, 0)),
-      ],
-      functions: vec![(String::from("Foo"), 2)],
-    },
+    casts: vec![],
     groups: vec![
       (
         Symbol {
@@ -64,11 +56,11 @@ fn test_serialize_prog() {
               guards: vec![Guard {
                 input: Value::Splice(1),
                 output: Value::Prim(Prim::Integer(5)),
-                nexts: vec![GroupRef {
+                nexts: vec![Next::GroupRef(GroupRef {
                   loc: GroupLoc::Local(1),
                   vprops: vec![],
                   gprops: vec![],
-                }],
+                })],
               }],
             },
             Reducer {
@@ -112,7 +104,7 @@ fn test_serialize_prog() {
             main: Guard {
               input: Value::Splice(1),
               output: Value::Splice(1),
-              nexts: vec![GroupRef {
+              nexts: vec![Next::GroupRef(GroupRef {
                 loc: GroupLoc::Global(Symbol {
                   module: String::from("Serialize"),
                   local: String::from("Foo"),
@@ -126,7 +118,7 @@ fn test_serialize_prog() {
                   vprops: vec![],
                   gprops: vec![],
                 }],
-              }],
+              })],
             },
             guards: vec![],
           }],

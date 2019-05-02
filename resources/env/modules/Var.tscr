@@ -1,2 +1,2 @@
-#Get[var].
-#Set[var, val].
+#Get[@any] -> @any.
+#Set[@any, @any].

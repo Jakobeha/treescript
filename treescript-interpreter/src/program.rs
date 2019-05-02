@@ -1,7 +1,7 @@
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{GroupDef, GroupDefSerial, ReduceResult};
+use crate::reduce::{GroupDef, GroupDefSerial, GroupEnv, ReduceResult, Reducer};
 use crate::session::{LibrarySpec, Session};
 use crate::value::{Record, Symbol, Value};
 use serde::{Deserialize, Serialize};
@@ -12,24 +12,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DeclSet {
-  pub records: Vec<(String, usize)>,
-  pub groups: Vec<(String, (usize, usize))>,
-  pub functions: Vec<(String, usize)>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
   pub path: String,
-  pub exports: DeclSet,
+  pub casts: Vec<Reducer>,
   pub groups: Vec<(Symbol, GroupDefSerial)>,
   pub libraries: Vec<(String, LibrarySpec)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Program {
-  path: String,
-  pub groups: Rc<HashMap<Symbol, GroupDef>>,
+  pub path: String,
+  pub group_env: Rc<GroupEnv>,
   pub libraries: HashMap<String, LibrarySpec>,
 }
 
@@ -37,23 +30,24 @@ impl From<ProgramSerial> for Program {
   fn from(serial: ProgramSerial) -> Program {
     let mut program = Program {
       path: serial.path,
-      groups: Rc::new(
-        serial
+      group_env: Rc::new(GroupEnv {
+        casts: serial.casts,
+        groups: serial
           .groups
           .into_iter()
           .map(|(head, sub_group)| (head, GroupDef::from_no_env(sub_group)))
           .collect(),
-      ),
+      }),
       libraries: HashMap::from_iter(serial.libraries),
     };
 
     unsafe {
-      let groups = Rc::into_raw(program.groups);
-      let groups = groups as *mut HashMap<Symbol, GroupDef>;
-      let groups_iter = (&mut *groups).values_mut();
-      program.groups = Rc::from_raw(groups);
+      let group_env = Rc::into_raw(program.group_env);
+      let group_env = group_env as *mut GroupEnv;
+      let groups_iter = (&mut *group_env).groups.values_mut();
+      program.group_env = Rc::from_raw(group_env);
       for group in groups_iter {
-        group.env = Rc::downgrade(&program.groups);
+        group.env = Rc::downgrade(&program.group_env);
       }
     }
     return program;
@@ -74,9 +68,13 @@ impl Program {
     return Session::new(self.libraries.clone());
   }
 
+  pub fn groups(&self) -> &HashMap<Symbol, GroupDef> {
+    return &self.group_env.groups;
+  }
+
   pub fn inferred_lang(&self) -> Option<&String> {
     return self
-      .groups
+      .groups()
       .values()
       .flat_map(|group| group.reducers.iter())
       .map(|reducer| &reducer.main.input)
@@ -90,7 +88,7 @@ impl Program {
 
   fn main_group(&self) -> &GroupDef {
     return self
-      .groups
+      .groups()
       .get(&Symbol::main_group(self.path.clone()))
       .expect("program ill-formed - needs \"Main\" group");
   }

@@ -12,7 +12,7 @@ repository:
     - include: "#recordHead"
     - include: "#recordType"
     - include: "#transparentRecordType"
-    - include: "#atomType"
+    - include: "#primOrAliasType"
     - include: "#bind"
     - include: "#function"
     - include: "#group"
@@ -29,13 +29,13 @@ repository:
     match: '[A-Z]\w*'
   recordType:
     name: entity.name.type.record.treescript
-    match: '@[A-Z]\w*'
+    match: '@(?:[A-Z]\w*_)?[A-Z]\w*(?!_)'
   transparentRecordType:
     name: keyword.control.type.transparent-record.treescript
     match: '@[a-z]\w*(?=\[)'
-  atomType:
-    name: variable.parameter.type.atom.treescript
-    match: '@[a-z]\w*'
+  primOrAliasType:
+    name: variable.parameter.type.prim-or-alias.treescript
+    match: '@(?:[A-Z]\w*_)?[a-z]\w*'
   bind:
     name: keyword.operator.bind.treescript
     match: '\\(_|[0-9]+|[a-z]\w*)'

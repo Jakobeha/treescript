@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Types for the @Core@ AST, includes @Final@ (bare) phase.
 module TreeScript.Ast.Core.Types.Gen
@@ -16,10 +17,13 @@ import TreeScript.Misc
 
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import qualified Data.Text as T
 import GHC.Generics
 
 data Term a where
+  TTypePart :: Term TypePart
+  TType :: Term Type
   TPrim :: Term Primitive
   TSymbol :: Term Symbol
   TRecord :: Term Record
@@ -33,36 +37,52 @@ data Term a where
   TProgram :: Term Program
 
 -- | Final AST, stripped of all extra information.
-type PF a = a () () () () CastRef ()
+type PFA a an = a () () () () () () CastRef an
+type PF a = PFA a ()
 
--- | Declares a type of record but doesn't specifify property values.
-data RecordDeclCompact
-  = RecordDeclCompact
-  { recordDeclCompactHead :: T.Text
-  , recordDeclCompactNumProps :: Int
-  } deriving (Eq, Ord, Read, Show)
+-- | A non-record type part.
+data PrimType
+  = PrimTypeAny
+  | PrimTypeInteger
+  | PrimTypeFloat
+  | PrimTypeString
+  deriving (Eq, Ord, Read, Show, Generic, Serial)
 
--- | Declares a type of group but doesn't specifify property values.
-data GroupDeclCompact
-  = GroupDeclCompact
-  { groupDeclCompactHead :: T.Text
-  , groupDeclCompactNumValueProps :: Int
-  , groupDeclCompactNumGroupProps :: Int
-  } deriving (Eq, Ord, Read, Show)
+-- | Whether the record is a regular or special type.
+data RecordKind
+  = RecordKindTuple
+  | RecordKindCons
+  | RecordKindRegular T.Text
+  deriving (Eq, Ord, Read, Show, Generic, Serial)
 
--- | Declares a type of function but doesn't specifify property values.
-data FunctionDeclCompact
-  = FunctionDeclCompact
-  { functionDeclCompactHead :: T.Text
-  , functionDeclCompactNumProps :: Int
-  } deriving (Eq, Ord, Read, Show)
+-- | Part of a value type (which is a union).
+data TypePart a1 a2 a3 a4 a5 a6 t an
+  = TypePartPrim an PrimType
+  | TypePartRecord an (Symbol a1 a2 a3 a4 a5 a6 t an)
+  | TypePartTuple an [Type a1 a2 a3 a4 a5 a6 t an]
+  | TypePartList an (Type a1 a2 a3 a4 a5 a6 t an)
+  deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | A value type.
+data Type a1 a2 a3 a4 a5 a6 t an
+  = Type
+  { typeAnn :: an
+  , typeParts :: [TypePart a1 a2 a3 a4 a5 a6 t an]
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | References a type cast: a single reducer applied to a value like a function.
+data CastRef
+  = CastRef
+  { castRefIdx :: Int
+  } deriving (Eq, Ord, Read, Show, Generic) -- SOON add serial
 
 -- | Declares what nodes a language or library enables.
 data DeclSet
   = DeclSet
-  { declSetRecords :: M.Map T.Text Int
+  { declSetRecords :: M.Map T.Text (Maybe [PF Type])
+  , declSetFunctions :: M.Map T.Text ([PF Type], PF Type)
   , declSetGroups :: M.Map T.Text (Int, Int)
-  , declSetFunctions :: M.Map T.Text Int
+  , declSetAliases :: M.Map T.Text (PF Type)
   } deriving (Eq, Ord, Read, Show, Generic, Serial)
 
 -- | Determines which module a symbol is located, so 2 symbols with the same name don't conflict.
@@ -82,32 +102,50 @@ data RecordDecl an
   = RecordDecl
   { recordDeclAnn :: an
   , recordDeclHead :: T.Text
-  , recordDeclProps :: [T.Text]
+  , recordDeclProps :: [PFA Type an]
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | References a type cast: a single reducer applied to a value like a function.
-data CastRef
-  = CastRef
-  { castRefPath :: ModulePath
-  , castRefIdx :: Int
+-- | Declares a type of group but doesn't specifify property values.
+data GroupDecl
+  = GroupDecl
+  { groupDeclHead :: T.Text
+  , groupDeclNumValueProps :: Int
+  , groupDeclNumGroupProps :: Int
   } deriving (Eq, Ord, Read, Show)
 
+-- | Declares a function.
+data FunctionDecl an
+  = FunctionDecl
+  { functionDeclAnn :: an
+  , functionDeclHead :: T.Text
+  , functionDeclProps :: [PFA Type an]
+  , functionDeclOutput :: PFA Type an
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a type alias.
+data TypeAlias an
+  = TypeAlias
+  { typeAliasAnn :: an
+  , typeAliasAlias :: T.Text
+  , typeAliasType :: PFA Type an
+  } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Raw backend code. Represents a number, string, etc. as well as an external function or splice. A leaf in the AST.
-data Primitive a1 a2 a3 a4 t an
+data Primitive a1 a2 a3 a4 a5 a6 t an
   = PrimInteger an t Int
   | PrimFloat an t Float
   | PrimString an t T.Text
   deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Type of symbol (used in resolution).
-data SymbolType
-  = SymbolTypeRecord
-  | SymbolTypeGroup
-  | SymbolTypeFunction
-  deriving (Eq, Ord, Read, Show, Generic, Serial)
+data SymbolType a where
+  SymbolTypeRecord :: SymbolType (Maybe [PF Type])
+  SymbolTypeGroup :: SymbolType (Int, Int)
+  SymbolTypeFunction :: SymbolType ([PF Type], PF Type)
+  SymbolTypeAlias :: SymbolType (PF Type)
 
 -- | An identifier, such as a record head or property key.
-data Symbol a1 a2 a3 a4 t an
+data Symbol a1 a2 a3 a4 a5 a6 t an
   = Symbol
   { symbolAnn :: an
   , symbolModule :: ModulePath
@@ -115,16 +153,16 @@ data Symbol a1 a2 a3 a4 t an
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
-data Record a1 a2 a3 a4 t an
+data Record a1 a2 a3 a4 a5 a6 t an
   = Record
   { recordAnn :: an
   , recordType :: t
-  , recordHead :: Symbol a1 a2 a3 a4 t an
-  , recordProps :: [Value a1 a2 a3 a4 t an]
+  , recordHead :: Symbol a1 a2 a3 a4 a5 a6 t an
+  , recordProps :: [Value a1 a2 a3 a4 a5 a6 t an]
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | In an input value, assigns an index identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be '0' in an input value, in which case the value is discarded, but not in an output value.
-data Bind a1 a2 a3 a4 t an
+data Bind a1 a2 a3 a4 a5 a6 t an
   = Bind
   { bindAnn :: an
   , bindType :: t
@@ -132,53 +170,53 @@ data Bind a1 a2 a3 a4 t an
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Type of data in TreeScript.
-data Value a1 a2 a3 a4 t an
-  = ValuePrimitive (Primitive a1 a2 a3 a4 t an)
-  | ValueRecord (Record a1 a2 a3 a4 t an)
-  | ValueBind (Bind a1 a2 a3 a4 t an)
+data Value a1 a2 a3 a4 a5 a6 t an
+  = ValuePrimitive (Primitive a1 a2 a3 a4 a5 a6 t an)
+  | ValueRecord (Record a1 a2 a3 a4 a5 a6 t an)
+  | ValueBind (Bind a1 a2 a3 a4 a5 a6 t an)
   deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | The type and identifier of a group.
-data GroupLoc a1 a2 a3 a4 t an
-  = GroupLocGlobal an (Symbol a1 a2 a3 a4 t an)
+data GroupLoc a1 a2 a3 a4 a5 a6 t an
+  = GroupLocGlobal an (Symbol a1 a2 a3 a4 a5 a6 t an)
   | GroupLocLocal an Int
-  | GroupLocFunction an (Symbol a1 a2 a3 a4 t an)
+  | GroupLocFunction an (Symbol a1 a2 a3 a4 a5 a6 t an)
   deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
-data GroupRef a1 a2 a3 a4 t an
+data GroupRef a1 a2 a3 a4 a5 a6 t an
   = GroupRef
   { groupRefAnn :: an
-  , groupRefLoc :: GroupLoc a1 a2 a3 a4 t an
-  , groupRefValueProps :: [Value a1 a2 a3 a4 t an]
-  , groupRefGroupProps :: [GroupRef a1 a2 a3 a4 t an]
+  , groupRefLoc :: GroupLoc a1 a2 a3 a4 a5 a6 t an
+  , groupRefValueProps :: [Value a1 a2 a3 a4 a5 a6 t an]
+  , groupRefGroupProps :: [GroupRef a1 a2 a3 a4 a5 a6 t an]
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches a value against a different value. Like a "let" statement.
-data Guard a1 a2 a3 a4 t an
+data Guard a1 a2 a3 a4 a5 a6 t an
   = Guard
   { guardAnn :: an
-  , guardInput :: Value a1 a2 a3 a4 t an
-  , guardOutput :: Value a1 a2 a3 a4 t an
-  , guardNexts :: [GroupRef a1 a2 a3 a4 t an]
+  , guardInput :: Value a1 a2 a3 a4 a5 a6 t an
+  , guardOutput :: Value a1 a2 a3 a4 a5 a6 t an
+  , guardNexts :: [GroupRef a1 a2 a3 a4 a5 a6 t an]
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a value into a different value. Like a case in a "match" statement.
-data Reducer a1 a2 a3 a4 t an
+data Reducer a1 a2 a3 a4 a5 a6 t an
   = Reducer
   { reducerAnn :: an
-  , reducerMain :: Guard a1 a2 a3 a4 t an
-  , reducerSubGuards :: [Guard a1 a2 a3 a4 t an]
+  , reducerMain :: Guard a1 a2 a3 a4 a5 a6 t an
+  , reducerSubGuards :: [Guard a1 a2 a3 a4 a5 a6 t an]
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Defines a group of reducers, which can be referenced by other reducers.
-data GroupDef a1 a2 a3 a4 t an
+data GroupDef a1 a2 a3 a4 a5 a6 t an
   = GroupDef
   { groupDefAnn :: an
-  , groupDefValueProps :: [(a3, Int)]
-  , groupDefGroupProps :: [(a3, Int)]
-  , groupDefReducers :: [Reducer a1 a2 a3 a4 t an]
-  , groupDefPropEnv :: a4
+  , groupDefValueProps :: [(a5, Int)]
+  , groupDefGroupProps :: [(a5, Int)]
+  , groupDefReducers :: [Reducer a1 a2 a3 a4 a5 a6 t an]
+  , groupDefPropEnv :: a6
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A foreign program this script uses.
@@ -188,14 +226,17 @@ data Library
   deriving (Eq, Ord, Read, Show, Generic, Serial)
 
 -- | A full TreeScript program.
-data Program a1 a2 a3 a4 t an
+data Program a1 a2 a3 a4 a5 a6 t an
   = Program
   { programAnn :: an
   , programPath :: ModulePath
   , programImportDecls :: a1
   , programRecordDecls :: a2
+  , programFunctionDecls :: a3
+  , programTypeAliases :: a4
   , programExports :: DeclSet
-  , programGroups :: M.Map (PF Symbol) (GroupDef a1 a2 a3 a4 t an)
+  , programCastReducers :: [Reducer a1 a2 a3 a4 a5 a6 t an]
+  , programGroups :: M.Map (PF Symbol) (GroupDef a1 a2 a3 a4 a5 a6 t an)
   , programLibraries :: M.Map ModulePath Library
   } deriving (Eq, Ord, Read, Show, Generic, Serial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -218,31 +259,36 @@ instance PrintableBid T.Text where
   printBid txt = txt <> "="
 
 instance Semigroup DeclSet where
-  DeclSet xRecs xGrps xFuns <> DeclSet yRecs yGrps yFuns
+  DeclSet xRecs xFuns xGrps xAlis <> DeclSet yRecs yFuns yGrps yAlis
     = DeclSet
     { declSetRecords = xRecs <> yRecs
-    , declSetGroups = xGrps <> yGrps
     , declSetFunctions = xFuns <> yFuns
+    , declSetGroups = xGrps <> yGrps
+    , declSetAliases = xAlis <> yAlis
     }
 
 instance Monoid DeclSet where
   mempty
     = DeclSet
     { declSetRecords = mempty
-    , declSetGroups = mempty
     , declSetFunctions = mempty
+    , declSetGroups = mempty
+    , declSetAliases = mempty
     }
 
 -- | Takes path and exports of left, unless empty (to satisfy @Monoid@).
 -- TODO Fix all right program paths.
-instance (Semigroup a1, Semigroup a2, Semigroup an) => Semigroup (Program a1 a2 a3 a4 t an) where
-  Program xAnn xPath xIdecls xRdecls xExps xGrps xLibs <> Program yAnn yPath _ _ _ yGrps yLibs
+instance (Semigroup an) => Semigroup (Program a1 a2 a3 a4 a5 a6 t an) where
+  Program xAnn xPath xIdecls xRdecls xFdecls xAlis xExps xCastReds xGrps xLibs <> Program yAnn yPath _ _ _ _ _ yCastReds yGrps yLibs
     = Program
     { programAnn = xAnn <> yAnn
     , programPath = path
     , programImportDecls = xIdecls
     , programRecordDecls = xRdecls
+    , programFunctionDecls = xFdecls
+    , programTypeAliases = xAlis
     , programExports = xExps
+    , programCastReducers = xCastReds <> yCastReds
     , programGroups = xGrps <> yGrps
     , programLibraries = xLibs <> yLibs
     }
@@ -250,18 +296,30 @@ instance (Semigroup a1, Semigroup a2, Semigroup an) => Semigroup (Program a1 a2 
             | xPath == "" = yPath
             | otherwise = xPath
 
--- | No path.
-instance (Monoid a1, Monoid a2, Monoid an) => Monoid (Program a1 a2 a3 a4 t an) where
+-- | Has undefineds where it doesn't satisfy @Monoid@ rules.
+instance (Monoid an) => Monoid (Program a1 a2 a3 a4 a5 a6 t an) where
   mempty
     = Program
     { programAnn = mempty
-    , programPath = ""
-    , programImportDecls = mempty
-    , programRecordDecls = mempty
+    , programPath = undefined
+    , programImportDecls = undefined
+    , programRecordDecls = undefined
+    , programFunctionDecls = undefined
+    , programTypeAliases = undefined
     , programExports = mempty
+    , programCastReducers = mempty
     , programGroups = mempty
     , programLibraries = mempty
     }
+
+instance FunctorAst TypePart where
+  mapA f (TypePartPrim ann prm) = TypePartPrim (mapAAnn f ann) prm
+  mapA f (TypePartRecord ann sym) = TypePartRecord (mapAAnn f ann) (mapA f sym)
+  mapA f (TypePartTuple ann elms) = TypePartTuple (mapAAnn f ann) (map (mapA f) elms)
+  mapA f (TypePartList ann elm) = TypePartList (mapAAnn f ann) (mapA f elm)
+
+instance FunctorAst Type where
+  mapA f (Type ann parts) = Type (mapAAnn f ann) (map (mapA f) parts)
 
 instance FunctorAst Primitive where
   mapA f (PrimInteger ann typ x)
@@ -358,19 +416,39 @@ instance FunctorAst GroupDef where
     where mapProp (bid, idx) = (mapABid f bid, idx)
 
 instance FunctorAst Program where
-  mapA f (Program ann path idecls rdecls exps grps libs)
+  mapA f (Program ann path idecls rdecls fdecls alis exps castReds grps libs)
     = Program
     ( mapAAnn f ann )
     ( path )
     ( mapAIdecls f idecls )
     ( mapARdecls f rdecls )
+    ( mapAFdecls f fdecls )
+    ( mapAAliases f alis )
     ( exps )
+    ( mapA f <$> castReds )
     ( mapA f <$> grps )
     ( libs )
 
+instance Printable PrimType where
+  pprint PrimTypeAny = "any"
+  pprint PrimTypeInteger = "int"
+  pprint PrimTypeFloat = "float"
+  pprint PrimTypeString = "string"
+
+instance Printable (TypePart a1 a2 a3 a4 a5 a6 t an) where
+  pprint (TypePartPrim _ x) = "@" <> pprint x
+  pprint (TypePartRecord _ name) = "@" <> pprint name
+  pprint (TypePartTuple _ props) = "@t" <> printProps (map pprint props)
+  pprint (TypePartList _ prop) = "@list[" <> pprint prop <> "]"
+
+instance Printable (Type a1 a2 a3 a4 a5 a6 t an) where
+  pprint (Type _ parts)
+    = T.intercalate "|" (map pprint parts)
+
 instance Printable DeclSet where
-  pprint (DeclSet repxs gexps fexps)
-     = foldMap (",\n  " <>) (M.keys repxs)
+  pprint (DeclSet alis rexps gexps fexps)
+     = foldMap (",\n  @" <>) (M.keys alis)
+    <> foldMap (",\n  " <>) (M.keys rexps)
     <> foldMap (",\n  &" <>) (M.keys gexps)
     <> foldMap (",\n  #" <>) (M.keys fexps)
 
@@ -383,46 +461,54 @@ instance Printable (ImportDecl an) where
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props)
-    = head' <> printProps props
+    = head' <> printProps (map pprint props) <> "."
+
+instance Printable (FunctionDecl an) where
+  pprint (FunctionDecl _ head' props ret)
+    = "#" <> head' <> printProps (map pprint props) <> " -> " <> pprint ret <> "."
+
+instance Printable (TypeAlias an) where
+  pprint (TypeAlias _ ali typ) = "@" <> pprint ali <> " -> " <> pprint typ <> ";"
 
 instance Printable CastRef where
   pprint (CastRef mdl idx) = mdl <> ":" <> pprint idx
 
-instance (Printable t) => Printable (Primitive a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (Primitive a1 a2 a3 a4 a5 a6 t an) where
   pprint (PrimInteger _ typ int) = pprint typ <> pprint int
   pprint (PrimFloat _ typ float) = pprint typ <> pprint float
   pprint (PrimString _ typ str) = pprint typ <> pprint str
 
-instance Printable (Symbol a1 a2 a3 a4 t an) where
+instance Printable (Symbol a1 a2 a3 a4 a5 a6 t an) where
   pprint (Symbol _ md txt)
     | md == "" = txt
     | otherwise = md <> "_" <> txt
 
-instance (Printable t) => Printable (Record a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (Record a1 a2 a3 a4 a5 a6 t an) where
   pprint (Record _ typ head' props)
      = pprint typ
     <> pprint head'
     <> "["
     <> T.intercalate ", " (map pprint props) <> "]"
 
-instance (Printable t) => Printable (Bind a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (Bind a1 a2 a3 a4 a5 a6 t an) where
   pprint (Bind _ typ idx) = pprint typ <> "\\" <> pprint idx
 
-instance (Printable t) => Printable (Value a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (Value a1 a2 a3 a4 a5 a6 t an) where
   pprint (ValuePrimitive prim) = pprint prim
   pprint (ValueRecord record) = pprint record
   pprint (ValueBind bind) = pprint bind
 
-instance Printable (GroupLoc a1 a2 a3 a4 t an) where
+instance Printable (GroupLoc a1 a2 a3 a4 a5 a6 t an) where
   pprint (GroupLocGlobal _ sym) = "&" <> pprint sym
   pprint (GroupLocLocal _ idx) = "&" <> pprint idx
   pprint (GroupLocFunction _ sym) = "#" <> pprint sym
 
-instance (Printable t) => Printable (GroupRef a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (GroupRef a1 a2 a3 a4 a5 a6 t an) where
   pprint (GroupRef _ loc vprops gprops)
-    = pprint loc <> printProps (map pprint vprops ++ map pprint gprops)
+     = pprint loc
+    <> printProps (map pprint vprops ++ map pprint gprops)
 
-instance (Printable t) => Printable (Guard a1 a2 a3 a4 t an) where
+instance (Printable t) => Printable (Guard a1 a2 a3 a4 a5 a6 t an) where
   pprint (Guard _ input output nexts)
      = pprint input
     <> " <- "
@@ -430,10 +516,34 @@ instance (Printable t) => Printable (Guard a1 a2 a3 a4 t an) where
     <> foldMap printNext nexts
     where printNext next' = " " <> pprint next'
 
-instance (Printable t) => Printable (Reducer a1 a2 a3 a4 t an) where
-  pprint (Reducer _ (Guard _ input output nexts) guards)
+instance (Printable t) => Printable (Reducer a1 a2 a3 a4 a5 a6 t an) where
+  pprint = printReducer "->"
+
+instance Printable Library where
+  pprint (LibraryCmdBinary _) = "<command-line binary>"
+  pprint (LibraryJavaScript txt) = pprint txt
+
+instance (PrintableArr a1, PrintableArr a2, PrintableArr a3, PrintableArr a4, PrintableBid a5, Printable t) => Printable (Program a1 a2 a3 a4 a5 a6 t an) where
+  pprint (Program _ mpath idecls rdecls fdecls alis _ castReds grps libs)
+     = T.unlines
+     $ ["#module " <> mpath <> ";"]
+    ++ printArr idecls
+    ++ printArr rdecls
+    ++ printArr fdecls
+    ++ printArr alis
+    ++ map (printReducer "=>") castReds
+    ++ map (uncurry printGroupDef) (M.toList grps)
+    ++ map (uncurry printLibrary) (M.toList libs)
+
+printProps :: [T.Text] -> T.Text
+printProps props = "[" <> T.intercalate ", " props <> "]"
+
+printReducer :: (Printable t) => T.Text -> Reducer a1 a2 a3 a4 a5 a6 t an -> T.Text
+printReducer typ (Reducer _ (Guard _ input output nexts) guards)
      = pprint input
-    <> " -> "
+    <> " "
+    <> pprint typ
+    <> " "
     <> pprint output
     <> foldMap printNext nexts
     <> foldMap printGuard guards
@@ -441,21 +551,8 @@ instance (Printable t) => Printable (Reducer a1 a2 a3 a4 t an) where
     where printNext next' = " " <> pprint next'
           printGuard guard = ",\n  " <> pprint guard
 
-instance Printable Library where
-  pprint (LibraryCmdBinary _) = "<command-line binary>"
-  pprint (LibraryJavaScript txt) = pprint txt
-
-instance (PrintableArr a1, PrintableArr a2, PrintableBid a3, Printable t) => Printable (Program a1 a2 a3 a4 t an) where
-  pprint (Program _ mpath idecls rdecls _ grps libs)
-     = T.unlines
-     $ ["#module " <> mpath <> ";"]
-    ++ printArr idecls
-    ++ printArr rdecls
-    ++ map (uncurry printGroupDef) (M.toList grps)
-    ++ map (uncurry printLibrary) (M.toList libs)
-
 -- TODO: Print env
-printGroupDef :: (PrintableBid a3, Printable t) => PF Symbol -> GroupDef a1 a2 a3 a4 t an -> T.Text
+printGroupDef :: (PrintableBid a5, Printable t) => PF Symbol -> GroupDef a1 a2 a3 a4 a5 a6 t an -> T.Text
 printGroupDef head' (GroupDef _ vprops gprops reds _)
   = T.unlines $ printDecl : map pprint reds
   where printDecl
@@ -472,21 +569,30 @@ printLibrary path lib = "--- " <> path <> "\n" <> pprint lib
 modulePathPrintLength :: Int
 modulePathPrintLength = 5
 
-printProps :: [T.Text] -> T.Text
-printProps props = "[" <> T.intercalate ", " props <> "]"
+-- | Type with 1 part
+mkSType :: PFA TypePart an -> PFA Type an
+mkSType part = Type (getAnn part) [part]
 
-mkDeclSet :: [RecordDeclCompact] -> [GroupDeclCompact] -> [FunctionDeclCompact] -> DeclSet
-mkDeclSet rdecls gdecls fdecls
+anyType :: an -> PFA Type an
+anyType ann = mkSType $ TypePartPrim ann PrimTypeAny
+
+mkDeclSet :: [RecordDecl ()] -> [T.Text] -> [GroupDecl] -> [FunctionDecl ()] -> [TypeAlias ()] -> DeclSet
+mkDeclSet ordecls trdecls gdecls fdecls alis
   = DeclSet
-  { declSetRecords = M.fromList $ map (\(RecordDeclCompact head' nps) -> (head', nps)) rdecls
-  , declSetGroups = M.fromList $ map (\(GroupDeclCompact head' nvps ngps) -> (head', (nvps, ngps))) gdecls
-  , declSetFunctions = M.fromList $ map (\(FunctionDeclCompact head' nps) -> (head', nps)) fdecls
+  { declSetRecords
+      = M.fromList
+      $ map (\(RecordDecl () head' nps) -> (head', Just nps)) ordecls
+     ++ map (, Nothing) trdecls
+  , declSetGroups = M.fromList $ map (\(GroupDecl head' nvps ngps) -> (head', (nvps, ngps))) gdecls
+  , declSetFunctions = M.fromList $ map (\(FunctionDecl () head' nps ret) -> (head', (nps, ret))) fdecls
+  , declSetAliases = M.fromList $ map (\(TypeAlias () ali typ) -> (ali, typ)) alis
   }
 
-declSetContains :: SymbolType -> T.Text -> DeclSet -> Bool
-declSetContains SymbolTypeRecord local = M.member local . declSetRecords
-declSetContains SymbolTypeGroup local = M.member local . declSetGroups
-declSetContains SymbolTypeFunction local = M.member local . declSetFunctions
+declSetLookup :: SymbolType a -> T.Text -> DeclSet -> Maybe a
+declSetLookup SymbolTypeRecord local = (M.!? local) . declSetRecords
+declSetLookup SymbolTypeGroup local = (M.!? local) . declSetGroups
+declSetLookup SymbolTypeFunction local = (M.!? local) . declSetFunctions
+declSetLookup SymbolTypeAlias local = (M.!? local) . declSetAliases
 
 -- | Specifies that a record declaration can take any number of properties.
 varNumProps :: Int
@@ -500,26 +606,34 @@ mkBuiltinSymbol txt
   , symbol = txt
   }
 
-compactRecordDecl :: RecordDecl an -> RecordDeclCompact
-compactRecordDecl (RecordDecl _ head' props)
-  = RecordDeclCompact
-  { recordDeclCompactHead = head'
-  , recordDeclCompactNumProps = length props
-  }
-
 builtinDecls :: DeclSet
 builtinDecls
   = mkDeclSet
-  [ RecordDeclCompact "T" varNumProps
-  , RecordDeclCompact "Unit" 0
-  , RecordDeclCompact "True" 0
-  , RecordDeclCompact "False" 0
-  , RecordDeclCompact "Nil" 0
-  , RecordDeclCompact "None" 0
-  , RecordDeclCompact "Some" 1
-  , RecordDeclCompact "Cons" 2
-  , RecordDeclCompact "Hole" 1
-  ] [] []
+  [ RecordDecl () "Unit" []
+  , RecordDecl () "True" []
+  , RecordDecl () "False" []
+  , RecordDecl () "None" []
+  , RecordDecl () "Nil" []
+  , RecordDecl () "Hole" [Type () [TypePartPrim () PrimTypeInteger]]
+  ]
+  ( S.toList transparentDecls )
+  []
+  []
+  [ TypeAlias () "num" $ Type () [TypePartPrim () PrimTypeInteger, TypePartPrim () PrimTypeFloat]
+  , TypeAlias () "prim" $ Type () [TypePartPrim () PrimTypeInteger, TypePartPrim () PrimTypeFloat, TypePartPrim () PrimTypeString]
+  , TypeAlias () "bool" $ Type () [TypePartRecord () $ mkBuiltinSymbol "True", TypePartRecord () $ mkBuiltinSymbol "False"]
+  , TypeAlias () "atom" $ Type () [TypePartPrim () PrimTypeInteger, TypePartPrim () PrimTypeFloat, TypePartPrim () PrimTypeString, TypePartRecord () $ mkBuiltinSymbol "True", TypePartRecord () $ mkBuiltinSymbol "False"]
+  ]
+
+transparentDecls :: S.Set T.Text
+transparentDecls = S.fromList ["T", "Cons"]
+
+-- | Whether the record is regular or a special kind.
+recordKind :: T.Text -> RecordKind
+recordKind head'
+  | head' == "T" = RecordKindTuple
+  | head' == "Cons" = RecordKindCons
+  | otherwise = RecordKindRegular head'
 
 desugarError_ :: T.Text -> Error
 desugarError_ msg

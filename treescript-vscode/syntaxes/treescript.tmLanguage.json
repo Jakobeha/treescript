@@ -29,7 +29,7 @@
 					"include": "#transparentRecordType"
 				},
 				{
-					"include": "#atomType"
+					"include": "#primOrAliasType"
 				},
 				{
 					"include": "#bind"
@@ -61,15 +61,15 @@
 		},
 		"recordType": {
 			"name": "entity.name.type.record.treescript",
-			"match": "@[A-Z]\\w*"
+			"match": "@(?:[A-Z]\\w*_)?[A-Z]\\w*(?!_)"
 		},
 		"transparentRecordType": {
 			"name": "keyword.control.type.transparent-record.treescript",
 			"match": "@[a-z]\\w*(?=\\[)"
 		},
-		"atomType": {
-			"name": "variable.parameter.type.atom.treescript",
-			"match": "@[a-z]\\w*"
+		"primOrAliasType": {
+			"name": "variable.parameter.type.prim-or-alias.treescript",
+			"match": "@(?:[A-Z]\\w*_)?[a-z]\\w*"
 		},
 		"bind": {
 			"name": "keyword.operator.bind.treescript",

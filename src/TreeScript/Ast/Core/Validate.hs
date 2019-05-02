@@ -80,9 +80,10 @@ unboundErrs (GroupDef _ vprops gprops reds _)
 -- TODO: Validate imports
 
 -- | Reports syntax errors which didn't affect parsing but would cause problems during compilation.
-validate :: ImportEnv -> PR Program -> [Error]
-validate imps (Program _ mpath _ decls _ groups _)
+validate :: GlobalEnv -> PR Program -> [Error]
+validate imps (Program _ mpath _ rdecls _ _ _ castReds groups _)
    = sort
-   $ duplicateDeclErrs (M.keysSet importedRecordDecls) decls
+   $ duplicateDeclErrs (M.keysSet importedRecordDecls) rdecls
+  ++ concatMap (unboundErrsReducer emptyLocalEnv) castReds
   ++ concatMap unboundErrs groups
-  where importedRecordDecls = declSetRecords $ importEnvImportedLocals imps
+  where importedRecordDecls = declSetRecords $ globalEnvImportedLocals imps

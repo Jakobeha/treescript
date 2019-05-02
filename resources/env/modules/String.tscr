@@ -1,2 +1,2 @@
-#Append[l, r].
-#ToCamel[x].
+#Append[@string, @string] -> @string.
+#ToCamel[@string] -> @string.

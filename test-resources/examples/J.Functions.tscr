@@ -1,6 +1,6 @@
 Add[@int|@float].
 LT[@int|@float].
-Subst[@Scheme_Cons|@Scheme_Nil|@Scheme_Symbol|@Scheme_Atom, @Scheme_Cons|@Scheme_Nil|@Scheme_Symbol|@Scheme_Atom, @Scheme_Cons|@Scheme_Nil|@Scheme_Symbol|@Scheme_Atom].
+Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
 
 &Main[].
 \x -> \x &Recurse[&All[]] &Main[];

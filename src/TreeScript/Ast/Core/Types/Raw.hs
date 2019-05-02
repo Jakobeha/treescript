@@ -10,4 +10,4 @@ import TreeScript.Misc
 import qualified Data.Text as T
 
 -- | Final AST except with all extra information.
-type PR a = a [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv CastRef Range
+type PR a = a [ImportDecl Range] [RecordDecl Range] [FunctionDecl Range] [TypeAlias Range] T.Text GVBindEnv CastRef Range

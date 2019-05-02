@@ -1,22 +1,12 @@
 desugars?: false
 errors:
 - "while desugaring / validating - at 3:1-3:13 - duplicate record declaration: Succ"
-- "while desugaring / validating - at 3:7-3:11 - unknown atom type: prev"
+- "while desugaring / validating - at 3:6-3:11 - unknown type (not an alias or prim): prev"
 - "while desugaring / validating - at 5:1-5:31 - duplicate record declaration: Add"
 - "while desugaring / validating - at 5:5-5:22 - list type must have 1 property, got 2"
 - "while desugaring / validating - at 5:24-5:29 - expected type, got value"
-- "while desugaring / validating - at 8:1-8:8 - record has wrong number of properties: expected 0, got 1"
-- "while desugaring / validating - at 9:1-9:11 - record has wrong number of properties: expected 1, got 0"
 - "while desugaring / validating - at 9:6-9:10 - expected value, got type"
 - "while desugaring / validating - at 9:19-9:21 - unmatched bind in output"
-- "while desugaring / validating - at 10:23-10:56 - undeclared record: Subtract"
-- "while desugaring / validating - at 10:32-10:42 - undeclared record: Neg"
-- "while desugaring / validating - at 10:44-10:55 - undeclared record: Neg"
-- 'while desugaring / validating - at 3:1-3:12 - duplicate record declaration: Succ'
-- 'while desugaring / validating - at 5:1-5:17 - duplicate record declaration: Add'
-- 'while desugaring / validating - at 5:10-5:15 - expected lowercase symbol, got value'
-- 'while desugaring / validating - at 9:6-9:7 - expected value, got lowercase symbol'
-- 'while desugaring / validating - at 9:16-9:18 - unmatched bind in output'
-- 'while desugaring / validating - at 10:23-10:31 - unknown (not local or imported): Subtract'
-- 'while desugaring / validating - at 10:32-10:35 - unknown (not local or imported): Neg'
-- 'while desugaring / validating - at 10:44-10:47 - unknown (not local or imported): Neg'
+- "while desugaring / validating - at 10:23-10:31 - unknown (not local or imported): Subtract"
+- "while desugaring / validating - at 10:32-10:35 - unknown (not local or imported): Neg"
+- "while desugaring / validating - at 10:44-10:47 - unknown (not local or imported): Neg"

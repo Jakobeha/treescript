@@ -1,7 +1,9 @@
 Foo[@int].
 Bar[].
 
-#Foo[foo, bar].
+@foo <- @bool;
+
+#Foo[@Foo, @t[@string, @Bar]] -> @foo.
 
 &Main[].
 \x -> \x &Foo[&Bar[]];

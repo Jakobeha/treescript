@@ -404,6 +404,21 @@ impl Value {
     }
     return false;
   }
+
+  pub fn sub_at_path(&self, path: &Vec<usize>) -> &Value {
+    let mut x = self;
+    for idx in path {
+      if let Value::Record(Record { head: _, props }) = x {
+        x = &props[*idx];
+      } else {
+        panic!(
+          "Value doesn't contain path: {} doesn't contain {:?}",
+          self, path
+        );
+      }
+    }
+    return x;
+  }
 }
 
 impl TryFrom<JsValue> for Prim {

@@ -66,8 +66,7 @@ data Symbol an
 
 -- | Part of a type which could be a union.
 data TypePart an
-  = TypePartAtom an (Symbol an)
-  | TypePartRecord an (Symbol an)
+  = TypePartSymbol an (Symbol an)
   | TypePartTransparent an (Record an)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
@@ -77,6 +76,14 @@ data Type an
   { typeAnn :: an
   , typeParts :: [TypePart an]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a type alias.
+data TypeAlias an
+  = TypeAlias
+  { typeAliasAnn :: an
+  , typeAliasAlias :: Symbol an
+  , typeAliasType :: Type an
+  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A subgroup property.
 data SubGroupProperty an
@@ -114,6 +121,7 @@ data GroupDecl an
   = GroupDecl
   { groupDeclAnn :: an
   , groupDeclGroup :: Group an
+  , groupDeclFunReturn :: Maybe (Type an)
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
@@ -188,8 +196,9 @@ data Reducer an
 data TopLevel an
   = TopLevelImportDecl (ImportDecl an)
   | TopLevelRecordDecl (RecordDecl an)
-  | TopLevelReducer (Reducer an)
   | TopLevelGroupDecl (GroupDecl an)
+  | TopLevelTypeAlias (TypeAlias an)
+  | TopLevelReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -234,12 +243,14 @@ instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
 
 instance TreePrintable TypePart where
-  treePrint par _ (TypePartAtom _ sym) = "@" <> par sym
-  treePrint par _ (TypePartRecord _ sym) = "@" <> par sym
+  treePrint par _ (TypePartSymbol _ sym) = "@" <> par sym
   treePrint par _ (TypePartTransparent _ x) = "@" <> par x
 
 instance TreePrintable Type where
   treePrint par _ (Type _ parts) = mintercalate "|" $ map par parts
+
+instance TreePrintable TypeAlias where
+  treePrint par _ (TypeAlias _ ali typ) = "@" <> par ali <> " <- " <> par typ <> ";"
 
 instance TreePrintable SubGroupProperty where
   treePrint par _ (SubGroupProperty _ sym) = "&" <> par sym
@@ -260,8 +271,10 @@ instance TreePrintable Group where
     = par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
-  treePrint par _ (GroupDecl _ group)
-    = par group <> "."
+  treePrint par _ (GroupDecl _ group fret)
+    = par group <> printFunRet fret <> "."
+    where printFunRet Nothing = ""
+          printFunRet (Just fret') = " -> " <> par fret'
 
 instance TreePrintable Record where
   treePrint par _ (Record _ head' props)
@@ -314,8 +327,9 @@ instance TreePrintable Reducer where
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelImportDecl decl) = par decl
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelReducer red) = par red
   treePrint par _ (TopLevelGroupDecl decl) = par decl
+  treePrint par _ (TopLevelTypeAlias ali) = par ali
+  treePrint par _ (TopLevelReducer red) = par red
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels

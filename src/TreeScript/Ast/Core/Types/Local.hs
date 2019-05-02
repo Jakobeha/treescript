@@ -28,21 +28,21 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 
 -- | AST except with local binds.
-type PL a = a [ImportDecl Range] [RecordDecl Range] T.Text GVBindEnv () Range
+type PL a = a [ImportDecl Range] [RecordDecl Range] [FunctionDecl Range] [TypeAlias Range] T.Text GVBindEnv () Range
 
-data ImportEnv
-  = ImportEnv
-  { importEnvRoot :: FilePath
-  , importEnvModulePath :: ModulePath
-  , importEnvLocalDecls :: (ModulePath, DeclSet)
+data GlobalEnv
+  = GlobalEnv
+  { globalEnvRoot :: FilePath
+  , globalEnvModulePath :: ModulePath
+  , globalEnvLocalDecls :: DeclSet
   -- | Includes builtins.
-  , importEnvImportedModules :: S.Set ModulePath
+  , globalEnvImportedModules :: S.Set ModulePath
   -- | Includes builtins.
-  , importEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
-  , importEnvImportDecls :: [ImportDecl Range]
+  , globalEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
+  , globalEnvImportDecls :: [ImportDecl Range]
   }
 
-newtype ImportT m a = ImportT (StateT ImportEnv (WriterT (PF Program) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
+newtype GlobalT m a = GlobalT (StateT GlobalEnv (WriterT (PF Program) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
 
 -- | What reducers get from their parent group, or output values / groups from their reducer.
 data LocalEnv
@@ -65,63 +65,76 @@ data GVEnv a
 
 type GVBindEnv = GVEnv BindEnv
 
-type ImportSessionRes a = ImportT (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type ImportSessionRes a = GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
-type BindSessionRes a = StateT BindEnv (ImportT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type BindSessionRes a = StateT BindEnv (GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 
-type GVBindSessionRes a = StateT (GVEnv BindEnv) (ImportT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
+type GVBindSessionRes a = StateT (GVEnv BindEnv) (GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 
-class (Monad m) => MonadImport m where
-  getImportEnv :: m ImportEnv
+class (Monad m) => MonadGlobal m where
+  getGlobalEnv :: m GlobalEnv
   addImportedModule :: Range -> T.Text -> PF Program -> m ()
+  putLocals :: DeclSet -> m ()
 
-instance (Monad m) => MonadImport (ImportT m) where
-  getImportEnv = ImportT get
+instance (Monad m) => MonadGlobal (GlobalT m) where
+  getGlobalEnv = GlobalT get
   addImportedModule rng qual mdl = do
     let decl = ImportDecl rng (programPath mdl) qual (programExports mdl)
-    ImportT $ lift $ tell mdl
-    ImportT $ modify $ importEnvInsertDecl decl
+    GlobalT $ lift $ tell mdl
+    GlobalT $ modify $ globalEnvInsertDecl decl
+  putLocals exps
+    = GlobalT $ modify
+    $ \genv -> genv{ globalEnvLocalDecls = exps }
 
-instance (MonadImport m) => MonadImport (StateT s m) where
-  getImportEnv = lift getImportEnv
+instance (MonadGlobal m) => MonadGlobal (StateT s m) where
+  getGlobalEnv = lift getGlobalEnv
   addImportedModule rng qual = lift . addImportedModule rng qual
+  putLocals = lift . putLocals
 
-instance (MonadReader r m) => MonadReader r (ImportT m) where
-  ask = ImportT ask
-  reader = ImportT . reader
-  local f (ImportT x) = ImportT $ local f x
+instance (MonadReader r m) => MonadReader r (GlobalT m) where
+  ask = GlobalT ask
+  reader = GlobalT . reader
+  local f (GlobalT x) = GlobalT $ local f x
 
-instance MonadTrans ImportT where
-  lift = ImportT . lift . lift
+instance MonadTrans GlobalT where
+  lift = GlobalT . lift . lift
 
-importEnvInsertDecl :: ImportDecl Range -> ImportEnv -> ImportEnv
-importEnvInsertDecl decl@(ImportDecl _ ipath qual exps) (ImportEnv root mpath locs imods imps idecls)
-  = ImportEnv
-  { importEnvRoot = root
-  , importEnvModulePath = mpath
-  , importEnvLocalDecls = locs
-  , importEnvImportedModules = S.insert ipath imods
-  , importEnvImportedDecls = M.insertWith (<>) qual [(ipath, exps)] imps
-  , importEnvImportDecls = decl : idecls
+globalEnvInsertDecl :: ImportDecl Range -> GlobalEnv -> GlobalEnv
+globalEnvInsertDecl decl@(ImportDecl _ ipath qual exps) (GlobalEnv root mpath locs imods imps idecls)
+  = GlobalEnv
+  { globalEnvRoot = root
+  , globalEnvModulePath = mpath
+  , globalEnvLocalDecls = locs
+  , globalEnvImportedModules = S.insert ipath imods
+  , globalEnvImportedDecls = M.insertWith (<>) qual [(ipath, exps)] imps
+  , globalEnvImportDecls = decl : idecls
   }
 
-importEnvAllDecls :: ImportEnv -> M.Map T.Text [(ModulePath, DeclSet)]
-importEnvAllDecls (ImportEnv _ _ locs _ imps _) = M.insertWith (<>) "" [locs] imps
+globalEnvAllDecls :: GlobalEnv -> M.Map T.Text [(ModulePath, DeclSet)]
+globalEnvAllDecls (GlobalEnv _ mpath locs _ imps _)
+  = M.insertWith (<>) "" [(mpath, locs)] imps
 
-importEnvImportedLocals :: ImportEnv -> DeclSet
-importEnvImportedLocals = foldMap snd . fold . (M.!? "") . importEnvImportedDecls
+globalEnvImportedLocals :: GlobalEnv -> DeclSet
+globalEnvImportedLocals = foldMap snd . fold . (M.!? "") . globalEnvImportedDecls
 
-runImportT :: (Monad m) => FilePath -> ModulePath -> DeclSet -> ImportT m a -> m (a, PF Program)
-runImportT root mpath mexps (ImportT x) = runWriterT $ (`evalStateT` initEnv) x
+runGlobalT :: (Monad m) => FilePath -> ModulePath -> GlobalT m a -> m (a, PF Program)
+runGlobalT root mpath (GlobalT x) = runWriterT $ (`evalStateT` initEnv) x
   where initEnv
-          = ImportEnv
-          { importEnvRoot = root
-          , importEnvModulePath = mpath
-          , importEnvLocalDecls = (mpath, mexps)
-          , importEnvImportedModules = S.singleton ""
-          , importEnvImportedDecls = M.fromList [("", [("", builtinDecls)])]
-          , importEnvImportDecls = []
+          = GlobalEnv
+          { globalEnvRoot = root
+          , globalEnvModulePath = mpath
+          , globalEnvLocalDecls = mempty
+          , globalEnvImportedModules = S.singleton ""
+          , globalEnvImportedDecls = M.fromList [("", [("", builtinDecls)])]
+          , globalEnvImportDecls = []
           }
+
+emptyLocalEnv :: LocalEnv
+emptyLocalEnv
+  = LocalEnv
+  { localEnvBinds = S.empty
+  , localEnvGroups = S.empty
+  }
 
 localEnvInsertBinds :: S.Set Int -> LocalEnv -> LocalEnv
 localEnvInsertBinds binds env
@@ -156,9 +169,9 @@ bindEnvLookup bind env@(BindEnv binds nextFree)
         )
       Just idx -> (idx, env)
 
-mkLocalSymbol :: (Monad m) => T.Text -> ImportT m (PF Symbol)
+mkLocalSymbol :: (Monad m) => T.Text -> GlobalT m (PF Symbol)
 mkLocalSymbol lcl = do
-  mpath <- importEnvModulePath <$> getImportEnv
+  mpath <- globalEnvModulePath <$> getGlobalEnv
   pure Symbol
     { symbolAnn = ()
     , symbolModule = mpath

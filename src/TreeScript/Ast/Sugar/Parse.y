@@ -55,8 +55,9 @@ NonEmptyProgram : TopLevel { [$1] }
                 ;
 TopLevel : ImportDecl { TopLevelImportDecl $1 }
          | RecordDecl { TopLevelRecordDecl $1 }
-         | Reducer { TopLevelReducer $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
+         | TypeAlias { TopLevelTypeAlias $1 }
+         | Reducer { TopLevelReducer $1 }
          ;
 ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
            { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 $3 (Just $5) }
@@ -65,6 +66,10 @@ ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
            ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
+GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 Nothing }
+          | Group '->' Type '.' { GroupDecl (getAnn $1 <> $2 <> getAnn $3 <> $4) $1 (Just $3) }
+TypeAlias : '@' LowerSym '<-' Type ';' { TypeAlias ($1 <> getAnn $2 <> getAnn $4) $2 $4 }
+          ;
 Reducer : ReducerBase Guards ';'
         { Reducer (sconcat $ getAnn (snd $1) N.<| $3 N.:| map getAnn $2) (fst $1) (snd $1) (reverse $2) }
         ;
@@ -74,7 +79,6 @@ ReducerBase : Value ReducerType Value Groups
 ReducerType : '->' { ReducerTypeReg $1 }
             | '=>' { ReducerTypeCast $1 }
             ;
-GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
 Guards : { [] }
        | NonEmptyGuards { $1 }
        ;
@@ -121,8 +125,8 @@ Type : TypeParts { Type (sconcat $ N.map getAnn $1) (reverse $ N.toList $1) }
 TypeParts : TypePart { $1 N.:| [] }
           | TypeParts '|' TypePart { $3 N.<| $1 }
           ;
-TypePart : '@' LowerSym { TypePartAtom ($1 <> getAnn $2) $2 }
-         | '@' UpperSym { TypePartRecord ($1 <> getAnn $2) $2 }
+TypePart : '@' LowerSym { TypePartSymbol ($1 <> getAnn $2) $2 }
+         | '@' UpperSym { TypePartSymbol ($1 <> getAnn $2) $2 }
          | '@' TransparentTypePart { TypePartTransparent ($1 <> getAnn $2) $2 }
          ;
 TransparentTypePart : LowerSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }

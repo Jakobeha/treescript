@@ -48,10 +48,22 @@ pub struct GroupRef {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Cast {
+  pub inner_path: Vec<usize>,
+  pub idx: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Next {
+  Cast(Cast),
+  GroupRef(GroupRef),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Guard {
   pub input: Value,
   pub output: Value,
-  pub nexts: Vec<GroupRef>,
+  pub nexts: Vec<Next>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -72,7 +84,13 @@ pub struct GroupDef {
   pub vprops: Vec<usize>,
   pub gprops: Vec<usize>,
   pub reducers: Vec<Reducer>,
-  pub env: Weak<HashMap<Symbol, GroupDef>>,
+  pub env: Weak<GroupEnv>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupEnv {
+  pub casts: Vec<Reducer>,
+  pub groups: HashMap<Symbol, GroupDef>,
 }
 
 trait Succeedable {
@@ -153,6 +171,15 @@ impl GroupRef {
   }
 }
 
+impl Next {
+  fn subst_gprop(&mut self, old: usize, new: &GroupRef) {
+    match self {
+      Next::Cast(_) => (),
+      Next::GroupRef(x) => x.subst_gprop(old, new),
+    };
+  }
+}
+
 impl Guard {
   fn subst_gprop(&mut self, old: usize, new: &GroupRef) {
     for next in self.nexts.iter_mut() {
@@ -204,8 +231,12 @@ impl GroupDef {
     }
   }
 
+  fn resolve_cast(&self, idx: usize) -> Reducer {
+    return self.env.upgrade().unwrap().casts[idx].clone();
+  }
+
   fn resolve(&self, group_head: &Symbol, group_gprops: &Vec<GroupRef>) -> GroupDef {
-    let mut group = self.env.upgrade().unwrap()[group_head].clone();
+    let mut group = self.env.upgrade().unwrap().groups[group_head].clone();
     dprint!("PRINT_REDUCE", "Resolving {:?} [", group_head);
     group.subst_gprops(group_gprops);
     dprintln!("PRINT_REDUCE", "] done resolving {:?}", group_head);
@@ -283,17 +314,29 @@ impl GroupDef {
     session: &mut Session,
     binds: &BindFrame,
     x: &Value,
-    next: &GroupRef,
+    next: &Next,
   ) -> ReduceResult {
-    match &next.loc {
-      GroupLoc::Global(head) => {
-        let next = next.map_values(|val| self.apply_produce(binds, val));
-        return self
-          .resolve(head, &next.gprops)
-          .transform_nested(session, next.vprops, &x);
+    match next {
+      Next::Cast(next) => {
+        return self.reduce(
+          session,
+          &BindFrame::new(),
+          x.sub_at_path(&next.inner_path),
+          &self.resolve_cast(next.idx),
+        );
       }
-      GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),
-      GroupLoc::Function(head) => return self.apply_function(session, x, head),
+      Next::GroupRef(next) => {
+        match &next.loc {
+          GroupLoc::Global(head) => {
+            let next = next.map_values(|val| self.apply_produce(binds, val));
+            return self
+              .resolve(head, &next.gprops)
+              .transform_nested(session, next.vprops, &x);
+          }
+          GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),
+          GroupLoc::Function(head) => return self.apply_function(session, x, head),
+        };
+      }
     };
   }
 
@@ -302,7 +345,7 @@ impl GroupDef {
     session: &mut Session,
     binds: &BindFrame,
     x: &Value,
-    next: &GroupRef,
+    next: &Next,
   ) -> ReduceResult {
     dprint_wrap!(
       "PRINT_REDUCE",
@@ -316,7 +359,7 @@ impl GroupDef {
     session: &mut Session,
     binds: &BindFrame,
     x: &Value,
-    nexts: &Vec<GroupRef>,
+    nexts: &Vec<Next>,
   ) -> ReduceResult {
     let mut out = x.clone();
     for next in nexts {
@@ -333,7 +376,7 @@ impl GroupDef {
     session: &mut Session,
     binds: &BindFrame,
     output: &Value,
-    nexts: &Vec<GroupRef>,
+    nexts: &Vec<Next>,
   ) -> ReduceResult {
     let out = self.apply_produce(binds, &output);
     return self.advance_all(session, binds, &out, &nexts);

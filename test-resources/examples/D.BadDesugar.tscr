@@ -1,6 +1,6 @@
 Zero[].
 Succ[@Zero|@Succ].
-Succ[@prev]. //Duplicate record. Bad atom type
+Succ[@prev]. //Duplicate record. Bad lowercase type
 Add[@Zero|@Succ, @Zero|@Succ].
 Add[@list[@any, @any], Rhs[]]. //List type with 2 args. Declaration with value property. Duplicate record
 

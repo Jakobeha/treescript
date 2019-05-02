@@ -199,6 +199,13 @@ instance (Serial a) => Serial [a] where
   fromMsgp (ObjectArray xs) = traverse fromMsgp xs
   fromMsgp _ = Nothing
 
+instance (Serial a) => Serial (Maybe a) where
+  toMsgp (Just x) = ObjectArray [toMsgp x]
+  toMsgp Nothing = ObjectArray []
+  fromMsgp (ObjectArray [x]) = Just <$> fromMsgp x
+  fromMsgp (ObjectArray []) = Just Nothing
+  fromMsgp _ = Nothing
+
 instance (Serial a, Serial b) => (Serial (a, b)) where
   toMsgp (x, y) = prodArray [toMsgp x, toMsgp y]
   fromMsgp ObjectNil = (,) <$> fromMsgp ObjectNil <*> fromMsgp ObjectNil

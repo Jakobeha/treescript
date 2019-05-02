@@ -14,10 +14,10 @@ import Data.MessagePack
 import qualified Data.Text as T
 
 dummy :: CastRef
-dummy = CastRef "SOON" (-1)
+dummy = CastRef (-1)
 
 castCheckTypes :: PL Program -> SessionRes (PR Program)
-castCheckTypes = pure . mapA (MapA id id id id (\() -> dummy) id)
+castCheckTypes = pure . mapA (MapA id id id id id id (\() -> dummy) id)
 
 -- SOON
 instance Serial CastRef where

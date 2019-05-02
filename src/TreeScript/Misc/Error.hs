@@ -31,6 +31,7 @@ import TreeScript.Misc.Loc
 import TreeScript.Misc.Print
 
 import Control.Monad.Catch
+import qualified Control.Monad.Fail as F
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -181,7 +182,7 @@ instance (Monoid m, Monad u, MonadResult u) => MonadResult (WriterT m u) where
                   fillState (Just (res, m')) = (Just res, m')
 
 instance (MonadReader r u) => MonadReader r (ResultT u) where
-  ask = ResultT $ pure <$> ask
+  ask = ResultT $ asks pure
   local f (ResultT x) = ResultT $ local f x
 
 instance (MonadLogger u) => MonadLogger (ResultT u) where
@@ -192,6 +193,9 @@ instance (MonadIO u) => MonadIO (ResultT u) where
 
 instance (MonadLoggerIO u) => MonadLoggerIO (ResultT u) where
   askLoggerIO = ResultT $ pure <$> askLoggerIO
+
+instance (F.MonadFail u) => F.MonadFail (ResultT u) where
+  fail = ResultT . fmap pure . F.fail
 
 instance (MonadThrow u) => MonadThrow (ResultT u) where
   throwM = ResultT . fmap pure . throwM

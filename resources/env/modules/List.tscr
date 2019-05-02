@@ -1,1 +1,1 @@
-#Map[f, x].
+#Map[@any, @list[@any]] -> @list[@any].

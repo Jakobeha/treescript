@@ -1,2 +1,2 @@
-#IsEqual[l, r].
-#Matches[l, r].
+#IsEqual[@any, @any] -> @bool.
+#Matches[@any, @any] -> @bool.

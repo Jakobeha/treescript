@@ -1,6 +1,6 @@
-#Add[l, r].
-#Subtract[l, r].
-#Multiply[l, r].
-#Divide[l, r].
-#GreaterThan[l, r].
-#LessThan[l, r].
+#Add[@num, @num] -> @num.
+#Subtract[@num, @num] -> @num.
+#Multiply[@num, @num] -> @num.
+#Divide[@num, @num] -> @num.
+#GreaterThan[@num, @num] -> @num.
+#LessThan[@num, @num] -> @num.
