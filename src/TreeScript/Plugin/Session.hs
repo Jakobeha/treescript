@@ -4,6 +4,7 @@
 -- | Integrates plugins into compilation and other actions.
 module TreeScript.Plugin.Session
   ( Settings (..)
+  , Language (..)
   , SessionEnv (..)
   , Session
   , SessionRes
@@ -14,22 +15,19 @@ module TreeScript.Plugin.Session
   , runPreSessionRes
   , runSessionResReal
   , langWithExt
-  , libraryWithName
   ) where
 
 import TreeScript.Plugin.CmdProgram
-import TreeScript.Plugin.Language
-import TreeScript.Plugin.Library
 import TreeScript.Misc
 
 import Control.Monad.Logger hiding (LogLevel (..))
 import qualified Control.Monad.Logger as L (LogLevel (..))
 import Control.Monad.Reader
+import Data.Char
 import Data.List
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Data.Yaml
-import qualified Filesystem.Path.CurrentOS as P
-import qualified Shelly as S
 import System.Directory
 import System.FilePath
 
@@ -43,15 +41,21 @@ data LogLevel
 data Settings
   = Settings
   { settingsLogLevel :: LogLevel
-  , settingsOverwriteWithDefault :: Bool
   } deriving (Eq, Ord, Read, Show)
+
+-- | Describes a language and provides programs to parse and print it.
+data Language
+  = Language
+  { languageParser :: CmdProgram
+  , languagePrinter :: CmdProgram
+  } deriving (Read, Show)
 
 -- | General global data for every session.
 data SessionEnv
   = SessionEnv
   { sessionEnvSettings :: Settings
-  , sessionEnvLanguages :: [Language]
-  , sessionEnvLibraries :: [Library]
+  , sessionEnvLanguages :: M.Map T.Text Language
+  , sessionEnvBuiltinModsPath :: FilePath
   }
 
 type PreSessionRes a = forall r. ResultT (ReaderT r (LoggingT IO)) a
@@ -72,7 +76,6 @@ instance FromJSON LogLevel where
 instance FromJSON Settings where
   parseJSON = withObject "Settings" $ \x -> Settings
     <$> x .: "logLevel"
-    <*> x .: "overwriteWithDefault"
 
 logLevelToMonadLogLevel :: LogLevel -> L.LogLevel
 logLevelToMonadLogLevel LogLevelDebug = L.LevelDebug
@@ -83,15 +86,14 @@ defaultSettings :: Settings
 defaultSettings
   = Settings
   { settingsLogLevel = LogLevelDebug
-  , settingsOverwriteWithDefault = False
   }
 
 emptySessionEnv :: SessionEnv
 emptySessionEnv
   = SessionEnv
   { sessionEnvSettings = defaultSettings
-  , sessionEnvLanguages = []
-  , sessionEnvLibraries = []
+  , sessionEnvLanguages = M.empty
+  , sessionEnvBuiltinModsPath = ""
   }
 
 mkPluginLoadError :: T.Text -> Error
@@ -113,35 +115,19 @@ mkPluginUseError msg
 liftLoadIO :: IO a -> PreSessionRes a
 liftLoadIO = liftIOAndCatch StagePluginLoad
 
-setupInitialPlugins :: FilePath -> PreSessionRes ()
-setupInitialPlugins pluginPath = do
-  logDebugN "Setting up initial plugins."
-  liftLoadIO $ S.shelly $ S.cp_r "resources/env" $ P.decodeString pluginPath
-
 getRealPluginPath :: PreSessionRes FilePath
-getRealPluginPath = do
-  path <- liftLoadIO $ getRealAppDataDirectory "treescript"
-  pluginsWereSetup <- liftLoadIO $ doesPathExist path
-  unless pluginsWereSetup $ do
-    logDebugN "Local plugins not created yet."
-    setupInitialPlugins path
-  pure path
+getRealPluginPath = liftLoadIO $ getRealAppDataDirectory "treescript"
 
-mkLanguage :: FilePath -> String -> PreSessionRes Language
-mkLanguage pluginPath name = do
-  let path = pluginPath </> name
-      specPath = path </> "spec.yaml"
+mkLanguage :: FilePath -> String -> PreSessionRes (T.Text, Language)
+mkLanguage pluginPath ext = do
+  let path = pluginPath </> ext
       parserPath = path </> "parser"
       printerPath = path </> "printer"
-  specDecoded <- liftLoadIO $ decodeFileEither specPath
-  spec <-
-    case specDecoded of
-      Left err
-        -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
-      Right res -> pure res
-  pure Language
-    { languageSpec = spec
-    , languageParser
+      ext' = T.pack ext
+  unless (isLower $ T.head ext') $
+    tellError $ mkPluginLoadError $ "language folder name (extension) be lowercase: " <> ext'
+  pure (ext', Language
+    { languageParser
         = CmdProgram
         { cmdProgramStage = StagePluginUse
         , cmdProgramPath = parserPath
@@ -153,22 +139,8 @@ mkLanguage pluginPath name = do
         , cmdProgramPath = printerPath
         , cmdProgramEnv = []
         }
-    }
+    } )
 
-mkLibrary :: FilePath -> String -> PreSessionRes Library
-mkLibrary pluginPath name = do
-  let path = pluginPath </> name
-      specPath = path </> "spec.yaml"
-  specDecoded <- liftLoadIO $ decodeFileEither specPath
-  spec <-
-    case specDecoded of
-      Left err
-        -> mkFail $ mkPluginLoadError $ "bad specification - " <> T.pack (prettyPrintParseException err)
-      Right res -> pure res
-  pure Library
-    { librarySpec = spec
-    , libraryDirName = T.pack name
-    }
 
 listDirPlugins :: FilePath -> PreSessionRes [String]
 listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
@@ -178,7 +150,7 @@ getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
 getEnvAtPath pluginPath = do
   let settingsPath = pluginPath </> "settings.yaml"
       languagesPath = pluginPath </> "languages"
-      librariesPath = pluginPath </> "libraries"
+      modsPath = pluginPath </> "modules"
   settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
   settings <-
     case settingsDecoded of
@@ -186,12 +158,11 @@ getEnvAtPath pluginPath = do
         tellError $ mkPluginLoadError $ "bad settings - " <> T.pack (prettyPrintParseException err)
         pure defaultSettings
       Right res -> pure res
-  languages <- traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
-  libraries <- traverseDropFatals (mkLibrary librariesPath) =<< listDirPlugins librariesPath
+  languages <- fmap M.fromList . traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
   pure SessionEnv
     { sessionEnvSettings = settings
     , sessionEnvLanguages = languages
-    , sessionEnvLibraries = libraries
+    , sessionEnvBuiltinModsPath = modsPath
     }
 
 -- | Loads the environment which is shipped with this package.
@@ -200,16 +171,7 @@ getInitialEnv = getEnvAtPath "resources/env"
 
 -- | Loads the environment for the current user.
 getRealEnv :: PreSessionRes SessionEnv
-getRealEnv = do
-  pluginPath <- getRealPluginPath
-  env <- getEnvAtPath pluginPath
-  if settingsOverwriteWithDefault $ sessionEnvSettings env then do
-    logDebugN "Overwriting plugins with defaults - this was specified in settings."
-    S.shelly $ S.rm_rf (P.decodeString pluginPath)
-    setupInitialPlugins pluginPath
-    getInitialEnv
-  else
-    pure env
+getRealEnv = getEnvAtPath =<< getRealPluginPath
 
 getSessionEnv :: SessionRes SessionEnv
 getSessionEnv = ask
@@ -245,26 +207,8 @@ runSessionResReal session = runPreSessionRes $ do
     setupEnv
     session
 
--- | Gets the language for the given extension in the session. Fails if no language found.
-langWithExt :: Stage -> T.Text -> SessionRes Language
-langWithExt stage ext = do
+-- | Gets the language for the given extension in the session.
+langWithExt :: T.Text -> SessionRes (Maybe Language)
+langWithExt ext = do
   langs <- sessionEnvLanguages <$> getSessionEnv
-  case find (\lang -> langSpecExtension (languageSpec lang) == ext) langs of
-    Nothing -> mkFail Error
-      { errorStage = stage
-      , errorRange = Nothing
-      , errorMsg = "no (valid) plugin for language with extension '" <> ext <> "'"
-      }
-    Just res -> pure res
-
--- | Gets the library with the given name in the session. Fails if no language found.
-libraryWithName :: Stage -> T.Text -> SessionRes Library
-libraryWithName stage name = do
-  libraries <- sessionEnvLibraries <$> getSessionEnv
-  case find (\library -> librarySpecName (librarySpec library) == name) libraries of
-    Nothing -> mkFail Error
-      { errorStage = stage
-      , errorRange = Nothing
-      , errorMsg = "no (valid) plugin for library with name '" <> name <> "'"
-      }
-    Just res -> pure res
+  pure $ langs M.!? ext

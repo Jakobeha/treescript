@@ -1,6 +1,6 @@
 [package]
 name = "treescript-interpreter"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["jakob <jakobeha@gmail.com>"]
 license = "GPL-3.0-or-later"
 description = "TreeScript interpreter, with some built-in libraries and API to create more"
@@ -17,5 +17,7 @@ clap = "2.32.0"
 Inflector = "0.11.4"
 rmp-serde = "0.13.7"
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.8"
+serde_bytes = "0.11"
+serde_json = "1.0"
+try_map = "0.3.1"
 unicode_reader = "0.1.1"

@@ -1,188 +1,78 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Functions to manipulate @Core@ ASTs.
 module TreeScript.Ast.Core.Analyze
-  ( mapValue
-  , mapValuesInGroupRef
-  , mapValuesInGuard
-  , mapValuesInReducer
-  , mapGroupsInGroupRef
-  , mapGroupsInGuard
-  , mapGroupsInReducer
-  , foldValue
-  , foldValuesInGroupRef
-  , foldValuesInGuard
-  , foldValuesInReducer
-  , foldGroupsInGroupRef
-  , foldGroupsInGuard
-  , foldGroupsInReducer
-  , traverseValue
-  , traverseValuesInGroupRef
-  , traverseValuesInGuard
-  , traverseValuesInReducer
+  ( traverseAst
+  , foldAst
+  , mapAst
   , allProgramReducers
   , maxNumBindsInProgram
   , bindsInValue
-  , langSpecDecls
-  , allImportedDecls
-  , getAllProgramDecls
-  , allProgramFunctionNames
-  , getAllProgramUsedLibraries
   , allGroupDefReducers
   , allGroupRefReducers
+  , remExtra
   ) where
 
 import TreeScript.Ast.Core.Types
+import TreeScript.Ast.Core.Classes
 import TreeScript.Misc
-import TreeScript.Plugin
 
+import Control.Monad
+import Control.Monad.Writer.Strict
+import Data.Functor.Identity
 import Data.List hiding (group)
-import Data.Maybe
 import qualified Data.Set as S
-import qualified Data.Text as T
-import qualified Data.Vector as V
+import qualified Data.Map.Strict as M
 
--- | Applies to each child value, then combines all results.
-mapValue :: (Value an -> Value an) -> Value an -> Value an
-mapValue f (ValuePrimitive prim) = f $ ValuePrimitive prim
-mapValue f (ValueRecord (Record ann head' props))
-  = f $ ValueRecord $ Record ann head' $ map (mapValue f) props
-mapValue f (ValueBind bind) = f $ ValueBind bind
+traverseAstSelf :: (Monad w) => Term o -> Term i -> (i e1 e2 e3 e4 t an -> w (i e1 e2 e3 e4 t an)) -> o e1 e2 e3 e4 t an -> w (o e1 e2 e3 e4 t an)
+traverseAstSelf TPrim TPrim f = f
+traverseAstSelf TSymbol TSymbol f = f
+traverseAstSelf TRecord TRecord f = f
+traverseAstSelf TBind TBind f = f
+traverseAstSelf TValue TValue f = f
+traverseAstSelf TGroupLoc TGroupLoc f = f
+traverseAstSelf TGroupRef TGroupRef f = f
+traverseAstSelf TGuard TGuard f = f
+traverseAstSelf TReducer TReducer f = f
+traverseAstSelf TGroupDef TGroupDef f = f
+traverseAstSelf TProgram TProgram f = f
+traverseAstSelf _ _ _ = pure
 
--- | Applies to each value, then combines all results.
-mapValuesInGroupRef :: (Value an -> Value an) -> GroupRef an -> GroupRef an
-mapValuesInGroupRef f (GroupRef ann loc vprops gprops)
-  = GroupRef
-  { groupRefAnn = ann
-  , groupRefLoc = loc
-  , groupRefValueProps = map (mapValue f) vprops
-  , groupRefGroupProps = map (mapValuesInGroupRef f) gprops}
+traverseAstSub :: (Monad w) => Term o -> Term i -> (i e1 e2 e3 e4 t an -> w (i e1 e2 e3 e4 t an)) -> o e1 e2 e3 e4 t an -> w (o e1 e2 e3 e4 t an)
+traverseAstSub TPrim _ _ x = pure x
+traverseAstSub TSymbol _ _ x = pure x
+traverseAstSub TRecord ti f (Record ann t head' props) = Record ann t <$> traverseAst TSymbol ti f head' <*> traverse (traverseAst TValue ti f) props
+traverseAstSub TBind _ _ x = pure x
+traverseAstSub TValue ti f (ValuePrimitive prim) = ValuePrimitive <$> traverseAst TPrim ti f prim
+traverseAstSub TValue ti f (ValueRecord record) = ValueRecord <$> traverseAst TRecord ti f record
+traverseAstSub TValue ti f (ValueBind bind) = ValueBind <$> traverseAst TBind ti f bind
+traverseAstSub TGroupLoc ti f (GroupLocGlobal ann sym) = GroupLocGlobal ann <$> traverseAst TSymbol ti f sym
+traverseAstSub TGroupLoc _ _ (GroupLocLocal ann idx) = pure $ GroupLocLocal ann idx
+traverseAstSub TGroupLoc ti f (GroupLocFunction ann sym) = GroupLocFunction ann <$> traverseAst TSymbol ti f sym
+traverseAstSub TGroupRef ti f (GroupRef ann loc vprops gprops) = GroupRef ann <$> traverseAst TGroupLoc ti f loc <*> traverse (traverseAst TValue ti f) vprops <*> traverse (traverseAst TGroupRef ti f) gprops
+traverseAstSub TGuard ti f (Guard ann inp out nxts) = Guard ann <$> traverseAst TValue ti f inp <*> traverseAst TValue ti f out <*> traverse (traverseAst TGroupRef ti f) nxts
+traverseAstSub TReducer ti f (Reducer ann main guards) = Reducer ann <$> traverseAst TGuard ti f main <*> traverse (traverseAst TGuard ti f) guards
+traverseAstSub TGroupDef ti f (GroupDef ann vprops gprops reds env) = GroupDef ann <$> pure vprops <*> pure gprops <*> traverse (traverseAst TReducer ti f) reds <*> pure env
+traverseAstSub TProgram ti f (Program ann pth idcls rdcls exps grps libs) = Program ann pth idcls rdcls exps <$> traverse (traverseAst TGroupDef ti f) grps <*> pure libs
 
--- | Applies to each value, then combines all results.
-mapValuesInGuard :: (Value an -> Value an) -> Guard an -> Guard an
-mapValuesInGuard f (Guard ann input output nexts)
-  = Guard
-  { guardAnn = ann
-  , guardInput = mapValue f input
-  , guardOutput = mapValue f output
-  , guardNexts = map (mapValuesInGroupRef f) nexts
-  }
+-- | Traverses each child node (includes recursive), inner to outer.
+traverseAst :: (Monad w) => Term o -> Term i -> (i e1 e2 e3 e4 t an -> w (i e1 e2 e3 e4 t an)) -> o e1 e2 e3 e4 t an -> w (o e1 e2 e3 e4 t an)
+traverseAst to ti f = traverseAstSelf to ti f <=< traverseAstSub to ti f
 
--- | Applies to each value, then combines all results.
-mapValuesInReducer :: (Value an -> Value an) -> Reducer an -> Reducer an
-mapValuesInReducer f (Reducer ann main guards)
-  = Reducer
-  { reducerAnn = ann
-  , reducerMain = mapValuesInGuard f main
-  , reducerSubGuards = map (mapValuesInGuard f) guards
-  }
+-- | Folds each child node (includes recursive), inner to outer.
+foldAst :: (Monoid r) => Term o -> Term i -> (i e1 e2 e3 e4 t an -> r) -> o e1 e2 e3 e4 t an -> r
+foldAst to ti f = execWriter . traverseAst to ti (\x -> WriterT $ Identity (x, f x))
 
--- | Applies to each group, then combines all results. Properties before parent groups.
-mapGroupsInGroupRef :: (GroupRef an -> GroupRef an) -> GroupRef an -> GroupRef an
-mapGroupsInGroupRef f (GroupRef ann loc vprops gprops)
-  = f $ GroupRef
-  { groupRefAnn = ann
-  , groupRefLoc = loc
-  , groupRefValueProps = vprops
-  , groupRefGroupProps = map (mapGroupsInGroupRef f) gprops
-  }
-
--- | Applies to each group, then combines all results. Properties before parent groups.
-mapGroupsInGuard :: (GroupRef an -> GroupRef an) -> Guard an -> Guard an
-mapGroupsInGuard f (Guard ann input output nexts)
-  = Guard
-  { guardAnn = ann
-  , guardInput = input
-  , guardOutput = output
-  , guardNexts = map (mapGroupsInGroupRef f) nexts
-  }
-
--- | Applies to each group, then combines all results. Properties before parent groups.
-mapGroupsInReducer :: (GroupRef an -> GroupRef an) -> Reducer an -> Reducer an
-mapGroupsInReducer f (Reducer ann main guards)
-  = Reducer
-  { reducerAnn = ann
-  , reducerMain = mapGroupsInGuard f main
-  , reducerSubGuards = map (mapGroupsInGuard f) guards
-  }
-
--- | Applies to each child value, then combines all results.
-foldValue :: (Semigroup r) => (Value an -> r) -> Value an -> r
-foldValue f (ValuePrimitive prim) = f $ ValuePrimitive prim
-foldValue f (ValueRecord record)
-  = foldl' foldInValue (f (ValueRecord record)) (recordProps record)
-  where foldInValue res val = foldValue f val <> res
-foldValue f (ValueBind bind) = f $ ValueBind bind
-
--- | Applies to each value, then combines all results.
-foldValuesInGroupRef :: (Monoid r) => (Value an -> r) -> GroupRef an -> r
-foldValuesInGroupRef f (GroupRef _ _ vprops gprops)
-   = foldMap (foldValue f) vprops
-  <> foldMap (foldValuesInGroupRef f) gprops
-
--- | Applies to each value, then combines all results.
-foldValuesInGuard :: (Monoid r) => (Value an -> r) -> Guard an -> r
-foldValuesInGuard f (Guard _ input output nexts)
-   = foldValue f input
-  <> foldValue f output
-  <> foldMap (foldValuesInGroupRef f) nexts
-
--- | Applies to each value, then combines all results.
-foldValuesInReducer :: (Monoid r) => (Value an -> r) -> Reducer an -> r
-foldValuesInReducer f (Reducer _ main guards)
-   = foldValuesInGuard f main
-  <> foldMap (foldValuesInGuard f) guards
-
--- | Applies to each child group, then combines all results. Properties left of parent groups.
-foldGroupsInGroupRef :: (Monoid r) => (GroupRef an -> r) -> GroupRef an -> r
-foldGroupsInGroupRef f grp
-   = foldMap (foldGroupsInGroupRef f) (groupRefGroupProps grp)
-  <> f grp
-
--- | Applies to each child group, then combines all results. Properties left of parent groups.
-foldGroupsInGuard :: (Monoid r) => (GroupRef an -> r) -> Guard an -> r
-foldGroupsInGuard f = foldMap (foldGroupsInGroupRef f) . guardNexts
-
--- | Applies to each child group, then combines all results. Properties left of parent groups.
-foldGroupsInReducer :: (Monoid r) => (GroupRef an -> r) -> Reducer an -> r
-foldGroupsInReducer f (Reducer _ main guards)
-  = foldGroupsInGuard f main <> foldMap (foldGroupsInGuard f) guards
-
--- | Applies to each child value, then combines all results.
-traverseValue :: (Monad w) => (Value an -> w (Value an)) -> Value an -> w (Value an)
-traverseValue f (ValuePrimitive prim) = f $ ValuePrimitive prim
-traverseValue f (ValueRecord (Record ann head' props)) = f =<< traverseInValue
-  where traverseInValue
-          = ValueRecord . Record ann head' <$> traverse (traverseValue f) props
-traverseValue f (ValueBind bind) = f $ ValueBind bind
-
--- | Applies to each value, then combines all results.
-traverseValuesInGroupRef :: (Monad w) => (Value an -> w (Value an)) -> GroupRef an -> w (GroupRef an)
-traverseValuesInGroupRef f (GroupRef ann loc vprops gprops)
-    = GroupRef ann loc
-  <$> traverse (traverseValue f) vprops
-  <*> traverse (traverseValuesInGroupRef f) gprops
-
--- | Applies to each value, then combines all results.
-traverseValuesInGuard :: (Monad w) => (Value an -> w (Value an)) -> Guard an -> w (Guard an)
-traverseValuesInGuard f (Guard ann input output nexts)
-    = Guard ann
-  <$> traverseValue f input
-  <*> traverseValue f output
-  <*> traverse (traverseValuesInGroupRef f) nexts
-
--- | Applies to each value, then combines all results.
-traverseValuesInReducer :: (Monad w) => (Value an -> w (Value an)) -> Reducer an -> w (Reducer an)
-traverseValuesInReducer f (Reducer ann main guards)
-    = Reducer ann
-  <$> traverseValuesInGuard f main
-  <*> traverse (traverseValuesInGuard f) guards
+-- | Maps each child node (includes recursive), inner to outer.
+mapAst :: Term o -> Term i -> (i e1 e2 e3 e4 t an -> i e1 e2 e3 e4 t an) -> o e1 e2 e3 e4 t an -> o e1 e2 e3 e4 t an
+mapAst to ti f = runIdentity . traverseAst to ti (Identity . f)
 
 -- | Reducers in all groups.
-allProgramReducers :: Program an -> [Reducer an]
+allProgramReducers :: Program e1 e2 e3 e4 t an -> [Reducer e1 e2 e3 e4 t an]
 allProgramReducers = concatMap groupDefReducers . programGroups
 
-substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
+substGroupProp1 :: [(Int, GroupRef e1 e2 e3 e4 t an)] -> GroupRef e1 e2 e3 e4 t an -> GroupRef e1 e2 e3 e4 t an
 substGroupProp1 substs x
   = case groupRefLoc x of
       GroupLocLocal _ idx
@@ -197,121 +87,52 @@ substGroupProp1 substs x
                 }
       _ -> x
 
-numBindsInValue1 :: Value an -> Int
+numBindsInValue1 :: Value e1 e2 e3 e4 t an -> Int
 numBindsInValue1 (ValuePrimitive _) = 0
 numBindsInValue1 (ValueRecord _) = 0
-numBindsInValue1 (ValueBind (Bind _ idx)) = idx
+numBindsInValue1 (ValueBind (Bind _ _ idx)) = idx
 
-maxNumBindsInValue :: Value an -> Int
-maxNumBindsInValue = getMax0 . foldValue (Max0 . numBindsInValue1)
+maxNumBindsInValue :: Value e1 e2 e3 e4 t an -> Int
+maxNumBindsInValue = getMax0 . foldAst TValue TValue (Max0 . numBindsInValue1)
 
-maxNumBindsInGuard :: Guard an -> Int
+maxNumBindsInGuard :: Guard e1 e2 e3 e4 t an -> Int
 maxNumBindsInGuard (Guard _ input output _)
   = max (maxNumBindsInValue input) (maxNumBindsInValue output)
 
-maxNumBindsInReducer :: Reducer an -> Int
+maxNumBindsInReducer :: Reducer e1 e2 e3 e4 t an -> Int
 maxNumBindsInReducer (Reducer _ main guards)
   = maximum $ map maxNumBindsInGuard $ main : guards
 
-maxNumBindsInReducers :: [Reducer an] -> Int
+maxNumBindsInReducers :: [Reducer e1 e2 e3 e4 t an] -> Int
 maxNumBindsInReducers stmts = maximum $ 0 : map maxNumBindsInReducer stmts
 
 -- | The maximum number of binds used by the main reducers in the program - the maximum index in any used bind.
-maxNumBindsInProgram :: Program an -> Int
+maxNumBindsInProgram :: Program e1 e2 e3 e4 t an -> Int
 maxNumBindsInProgram = maxNumBindsInReducers . allProgramReducers
 
-bindsInValue1 :: Value an -> S.Set Int
+bindsInValue1 :: Value e1 e2 e3 e4 t an -> S.Set Int
 bindsInValue1 (ValuePrimitive _) = S.empty
 bindsInValue1 (ValueRecord _) = S.empty
 bindsInValue1 (ValueBind bind) = S.singleton $ bindIdx bind
 
-bindsInValue :: Value an -> S.Set Int
-bindsInValue = foldValue bindsInValue1
-
--- TODO: Replace spec with imported TreeScript.
-declSpecToRecordDecl :: T.Text -> DeclSpec -> RecordDecl ()
-declSpecToRecordDecl name (DeclSpec nodeName numArgs)
-  = RecordDecl
-  { recordDeclAnn = ()
-  , recordDeclHead = name <> "_" <> nodeName
-  , recordDeclProps = replicate numArgs $ Type () [TypePartAtom () AtomTypeAny]
-  }
-
-declSpecToFunctionDecl :: T.Text -> DeclSpec -> FunctionDecl ()
-declSpecToFunctionDecl name spec
-  = FunctionDecl
-  { functionDeclAnn = ()
-  , functionDeclInput = declSpecToRecordDecl name spec
-  , functionDeclOutput = Type () [TypePartAtom () AtomTypeAny]
-  }
-
-langSpecDecls :: LangSpec -> DeclSet
-langSpecDecls spec
-  = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToRecordDecl langName) $ langSpecNodes spec
-  , declSetFunctions = S.empty
-  }
-  where langName = langSpecName spec
-
-librarySpecDecls :: LibrarySpec -> DeclSet
-librarySpecDecls spec
-  = DeclSet
-  { declSetRecords = S.fromList $ map (declSpecToRecordDecl libraryName) $ librarySpecRecords spec
-  , declSetFunctions = S.fromList $ map (declSpecToFunctionDecl libraryName) $ librarySpecFunctions spec
-  }
-  where libraryName = librarySpecName spec
-
--- | All record declarations imported by a program in the given environment.
-allImportedDecls :: SessionEnv -> DeclSet
-allImportedDecls env
-   = builtinDecls
-  <> foldMap (langSpecDecls . languageSpec) (sessionEnvLanguages env)
-  <> foldMap (librarySpecDecls . librarySpec) (sessionEnvLibraries env)
-
--- | All declarations accessible from the program, declared and imported.
-getAllProgramDecls :: Program an -> SessionRes DeclSet
-getAllProgramDecls prog = do
-  env <- getSessionEnv
-  let declaredDecls
-        = DeclSet
-        { declSetRecords = S.fromList $ map remAnns $ programRecordDecls prog
-        , declSetFunctions = S.empty
-        }
-      importedDecls = allImportedDecls env
-  pure $ declaredDecls <> importedDecls
-
-groupFunctionName1 :: GroupLoc an -> [Annd T.Text an]
-groupFunctionName1 (GroupLocGlobal _ _) = []
-groupFunctionName1 (GroupLocLocal _ _) = []
-groupFunctionName1 (GroupLocFunction ann head') = [Annd ann head']
-
--- | All function names in the program.
-allProgramFunctionNames :: Program an -> [Annd T.Text an]
-allProgramFunctionNames = concatMap (foldGroupsInReducer $ groupFunctionName1 . groupRefLoc) . allProgramReducers
-
-functionUsedLibName1 :: T.Text -> Maybe T.Text
-functionUsedLibName1 name
-  = case T.splitOn "_" name of
-      (libName : _ : _) -> Just libName
-      _ -> Nothing
-
-allProgramUsedLibNames :: Program an -> [T.Text]
-allProgramUsedLibNames
-  = nub . mapMaybe (functionUsedLibName1 . annd) . allProgramFunctionNames
-
--- | Gets all libraries used by the program.
-getAllProgramUsedLibraries :: Program an -> SessionRes [Library]
-getAllProgramUsedLibraries
-  = traverse (libraryWithName StageDesugar) . allProgramUsedLibNames
+bindsInValue :: Value e1 e2 e3 e4 t an -> S.Set Int
+bindsInValue = foldAst TValue TValue bindsInValue1
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
-allGroupDefReducers :: [GroupRef an] -> GroupDef an -> [Reducer an]
-allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds)
-    = map (mapGroupsInReducer (substGroupProp1 gpropSubsts)) reds
-  where gpropSubsts = zip (map bindIdx gpropIdxs) gprops
+allGroupDefReducers :: [GroupRef e1 e2 e3 e4 t an] -> GroupDef e1 e2 e3 e4 t an -> [Reducer e1 e2 e3 e4 t an]
+allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds _)
+    = map (mapAst TReducer TGroupRef (substGroupProp1 gpropSubsts)) reds
+  where gpropSubsts = zip (map snd gpropIdxs) gprops
 
 -- | The reducers in the referenced group, substituting exported binds, and their mode.
-allGroupRefReducers :: V.Vector (GroupDef an) -> GroupRef an -> [Reducer an]
-allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ idx) _ gprops)
-  = allGroupDefReducers gprops $ groups V.! idx
+allGroupRefReducers :: M.Map (PF Symbol) (GroupDef e1 e2 e3 e4 t an) -> GroupRef e1 e2 e3 e4 t an -> [Reducer e1 e2 e3 e4 t an]
+allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops)
+  = allGroupDefReducers gprops $ groups M.! remExtraSym name
 allGroupRefReducers _ (GroupRef _ _ _ _) = error "can't get all group ref statements from unsubstituted group prop"
+
+remExtraSym :: Symbol a1 a2 a3 a4 t an -> PF Symbol
+remExtraSym (Symbol _ mdl txt) = Symbol () mdl txt
+
+remExtra :: (FunctorAst a) => PR a -> PF a
+remExtra = mapA $ MapA rem' rem' rem' rem' id rem'
+  where rem' _ = ()

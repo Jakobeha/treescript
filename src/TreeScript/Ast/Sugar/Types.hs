@@ -5,8 +5,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- TODO Groups out of values, group statements with guards
-
 -- | Types for the @Sugar@ AST.
 module TreeScript.Ast.Sugar.Types
   ( module TreeScript.Ast.Sugar.Types
@@ -16,6 +14,15 @@ import TreeScript.Misc
 
 import qualified Data.Text as T
 import GHC.Generics
+
+-- | Declares an imported module.
+data ImportDecl an
+  = ImportDecl
+  { importDeclAnn :: an
+  , importDeclLiteral :: Symbol an -- ^ Should be "import", but this has to be checked
+  , importDeclMod :: Symbol an
+  , importDeclQualifier :: Maybe (Symbol an)
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
@@ -179,7 +186,8 @@ data Reducer an
 
 -- | Not nested in anything other than the program.
 data TopLevel an
-  = TopLevelRecordDecl (RecordDecl an)
+  = TopLevelImportDecl (ImportDecl an)
+  | TopLevelRecordDecl (RecordDecl an)
   | TopLevelReducer (Reducer an)
   | TopLevelGroupDecl (GroupDecl an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
@@ -190,6 +198,11 @@ data Program an
   { programAnn :: an
   , programTopLevels :: [TopLevel an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+instance TreePrintable ImportDecl where
+  treePrint par _ (ImportDecl _ lit mdl qual)
+    = "#" <> par lit <> " " <> par mdl <> foldMap printQual qual
+    where printQual = (" -> " <>) . par
 
 instance TreePrintable RecordDecl where
   treePrint par _ (RecordDecl _ record)
@@ -243,11 +256,8 @@ instance TreePrintable GroupLoc where
   treePrint _ _ (GroupLocFunction _) = "#"
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ loc head' sgs)
-    = par loc <> par head' <> printProps loc sgs
-    where printProps (GroupLocFunction _) [] = ""
-          printProps (GroupLocFunction _) _ = error "functions with properties not valid"
-          printProps _ ps = "[" <> mintercalate ", " (map par ps) <> "]"
+  treePrint par _ (Group _ loc head' props)
+    = par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)
@@ -255,7 +265,7 @@ instance TreePrintable GroupDecl where
 
 instance TreePrintable Record where
   treePrint par _ (Record _ head' props)
-    = par head' <> "[" <> mintercalate ", " (map par props) <> "]"
+    = par head' <> printProps (map par props)
 
 instance TreePrintable BindTarget where
   treePrint _ _ (BindTargetNone _) = "_"
@@ -302,9 +312,13 @@ instance TreePrintable Reducer where
           printGuard guard = ",\n  " <> par guard
 
 instance TreePrintable TopLevel where
+  treePrint par _ (TopLevelImportDecl decl) = par decl
   treePrint par _ (TopLevelRecordDecl decl) = par decl
   treePrint par _ (TopLevelReducer red) = par red
   treePrint par _ (TopLevelGroupDecl decl) = par decl
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
+
+printProps :: (PrintOut o) => [o] -> o
+printProps ps = "[" <> mintercalate ", " ps <> "]"

@@ -53,10 +53,16 @@ Program : eof { Program $1 [] }
 NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
-TopLevel : RecordDecl { TopLevelRecordDecl $1 }
+TopLevel : ImportDecl { TopLevelImportDecl $1 }
+         | RecordDecl { TopLevelRecordDecl $1 }
          | Reducer { TopLevelReducer $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
          ;
+ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 $3 (Just $5) }
+           | '#' LowerSym UpperSym ';'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4) $2 $3 Nothing }
+           ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
 Reducer : ReducerBase Guards ';'
@@ -97,7 +103,7 @@ Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
        ;
 Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocGlobal $1) $2 (annd $3) }
       | '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocLocal $1) $2 (annd $3) }
-      | '#' UpperSym { Group ($1 <> getAnn $2) (GroupLocFunction $1) $2 [] }
+      | '#' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocFunction $1) $2 (annd $3) }
       ;
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }

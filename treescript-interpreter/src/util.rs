@@ -1,9 +1,13 @@
 use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
+#[cfg(unix)]
+use std::fs::Permissions;
 use std::io;
 use std::ops::{Generator, GeneratorState};
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 #[allow(dead_code)]
 pub struct AtomicFileCommit {
@@ -36,8 +40,8 @@ impl Drop for AtomicFileCommit {
 
 #[allow(dead_code)]
 impl AtomicFile {
-  fn temp_path(path: &PathBuf) -> PathBuf {
-    let mut temp_base = OsString::from(path.as_os_str());
+  pub fn temp_path<P: AsRef<Path>>(path: P) -> PathBuf {
+    let mut temp_base = OsString::from(path.as_ref().as_os_str());
     temp_base.push(".temp");
     let mut counter = 0;
     let mut temp_path = PathBuf::from(&temp_base);
@@ -74,5 +78,14 @@ where
       GeneratorState::Yielded(x) => Some(x),
       GeneratorState::Complete(()) => None,
     }
+  }
+}
+
+/// Sets permissions to 755 on Unix-based systems
+pub fn allow_execute<P: AsRef<Path>>(path: P) -> io::Result<()> {
+  if cfg!(unix) {
+    return fs::set_permissions(path, Permissions::from_mode(0o755));
+  } else {
+    return Ok(());
   }
 }

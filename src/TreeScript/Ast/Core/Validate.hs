@@ -8,7 +8,6 @@ module TreeScript.Ast.Core.Validate
 import TreeScript.Ast.Core.Analyze
 import TreeScript.Ast.Core.Types
 import TreeScript.Misc
-import TreeScript.Plugin
 
 import Control.Monad.Reader
 import Control.Monad.Writer.Strict
@@ -30,69 +29,35 @@ duplicateDeclErrs imported
           | otherwise = (nexts, Nothing)
           where nexts = S.insert head' prevs
 
--- Note: Doesn't typecheck, that's separate
-invalidRecordErrs :: M.Map T.Text [Type ()] -> [Reducer Range] -> [Error]
-invalidRecordErrs decls reds
-  = concatMap (foldValuesInReducer invalidRecordErrorsValue1) reds
-  where invalidRecordErrorsValue1 (ValuePrimitive _) = []
-        invalidRecordErrorsValue1 (ValueRecord (Record rng head' props))
-          = case recordType head' of
-              RecordTypeTuple -> []
-              RecordTypeCons -> numPropMismatchErrs rng 2 (length props)
-              RecordTypeRegular _ ->
-                case decls M.!? head' of
-                  Nothing -> [desugarError rng $ "undeclared record: " <> head']
-                  Just declProps -> numPropMismatchErrs rng (length declProps) (length props)
-        invalidRecordErrorsValue1 (ValueBind _) = []
-        numPropMismatchErrs rng numDeclProps numProps
-           | numDeclProps /= numProps = [ desugarError rng
-           $ "record has wrong number of properties: expected "
-          <> pprint numDeclProps
-          <> ", got "
-          <> pprint numProps ]
-           | otherwise = []
-
--- Note: Doesn't typecheck, that's separate
-invalidFunctionErrs :: S.Set T.Text -> [Reducer Range] -> [Error]
-invalidFunctionErrs decls reds
-  = concatMap (foldGroupsInReducer invalidFunctionErrorsGroup1) reds
-  where invalidFunctionErrorsGroup1 (GroupRef _ (GroupLocGlobal _ _) _ _) = []
-        invalidFunctionErrorsGroup1 (GroupRef _ (GroupLocLocal _ _) _ _) = []
-        invalidFunctionErrorsGroup1 (GroupRef _ (GroupLocFunction nameRng name) vprops gprops)
-          | not (null vprops) || not (null gprops)
-          = error "function can't have properties (shouldn't be allowed by syntax)"
-          | not (S.member name decls) = [desugarError nameRng $ "undeclared function: " <> name]
-          | otherwise = []
-
-unboundErrsValue :: S.Set Int -> Value Range -> [Error]
+unboundErrsValue :: S.Set Int -> PR Value -> [Error]
 unboundErrsValue _ (ValuePrimitive _) = []
 unboundErrsValue binds (ValueRecord record)
   = foldMap (unboundErrsValue binds) $ recordProps record
-unboundErrsValue binds (ValueBind (Bind rng idx))
+unboundErrsValue binds (ValueBind (Bind rng _ idx))
   | idx == 0 = [desugarError rng "unlabeled bind in output"]
   | S.member idx binds = []
   | otherwise = [desugarError rng "unmatched bind in output"]
 
-unboundErrsGroupRef :: LocalEnv -> GroupRef Range -> [Error]
-unboundErrsGroupRef env@(LocalEnv binds groups) (GroupRef _ (GroupLocGlobal locRng idx) vprops gprops)
-   = selfErrs
+unboundErrsGroupLoc :: S.Set Int -> PR GroupLoc -> [Error]
+unboundErrsGroupLoc groups (GroupLocLocal locRng idx)
+  | not (S.member idx groups) = [desugarError locRng $ "undeclared local group"]
+unboundErrsGroupLoc _ _ = []
+
+unboundErrsGroupRef :: LocalEnv -> PR GroupRef -> [Error]
+unboundErrsGroupRef env@(LocalEnv binds groups) (GroupRef _ loc vprops gprops)
+   = unboundErrsGroupLoc groups loc
   ++ foldMap (unboundErrsValue binds) vprops
   ++ foldMap (unboundErrsGroupRef env) gprops
-  where selfErrs
-          | S.member idx groups = [desugarError locRng $ "undeclared local group"]
-          | otherwise = []
-unboundErrsGroupRef _ (GroupRef _ (GroupLocLocal _ _) _ _) = []
-unboundErrsGroupRef _ (GroupRef _ (GroupLocFunction _ _) _ _) = []
 
-addGuardBindsToEnv :: Guard Range -> UnboundErrs
+addGuardBindsToEnv :: PR Guard -> UnboundErrs
 addGuardBindsToEnv = modify . localEnvInsertBinds . bindsInValue . guardInput
 
-unboundErrsGuard :: Guard Range -> UnboundErrs
+unboundErrsGuard :: PR Guard -> UnboundErrs
 unboundErrsGuard (Guard _ _ output nexts) = do
   env@(LocalEnv binds _) <- get
   tell $ unboundErrsValue binds output ++ foldMap (unboundErrsGroupRef env) nexts
 
-unboundErrsReducer :: LocalEnv -> Reducer Range -> [Error]
+unboundErrsReducer :: LocalEnv -> PR Reducer -> [Error]
 unboundErrsReducer env (Reducer _ main guards) = (`evalState` env) $ execWriterT $ do
   addGuardBindsToEnv main
   forM_ (reverse guards) $ \guard' -> do
@@ -100,36 +65,24 @@ unboundErrsReducer env (Reducer _ main guards) = (`evalState` env) $ execWriterT
     addGuardBindsToEnv guard'
   unboundErrsGuard main
 
-unboundErrs :: GroupDef Range -> [Error]
-unboundErrs (GroupDef _ vprops gprops reds)
+unboundErrs :: PR GroupDef -> [Error]
+unboundErrs (GroupDef _ vprops gprops reds _)
   = concatMap (unboundErrsReducer env) reds
   where env = LocalEnv
-          { localEnvBinds = convertProps vprops
-          , localEnvGroups = convertProps gprops
+          { localEnvBinds = S.fromList $ map snd vprops
+          , localEnvGroups = S.fromList $ map snd gprops
           }
-        convertProps = S.fromList . map bindIdx
+
+-- SOON: Error on module path with bad characters
 
 -- TODO: Undeclared function errors
 
-validationErrs :: SessionEnv -> Program Range -> [Error]
-validationErrs env (Program _ decls castReds groups)
-   = duplicateDeclErrs (S.map recordDeclHead $ declSetRecords importedDecls) decls
-  ++ invalidRecordErrs (declSetToMap $ declSetRecords allDecls) allReds
-  ++ invalidFunctionErrs (S.map (recordDeclHead . functionDeclInput) $ declSetFunctions allDecls) allReds
-  ++ concatMap unboundErrs groups
-  where importedDecls = allImportedDecls env
-        localDecls
-          = DeclSet
-          { declSetRecords = S.fromList $ map remAnns decls
-          , declSetFunctions = S.empty
-          }
-        allDecls = localDecls <> importedDecls
-        allReds = castReds ++ concatMap groupDefReducers groups
+-- TODO: Validate imports
 
--- | Adds syntax errors which didn't affect parsing but would cause problems during compilation.
-validate :: SessionRes (Program Range) -> SessionRes (Program Range)
-validate res = do
-  env <- getSessionEnv
-  x <- res
-  tellErrors $ sort $ validationErrs env x
-  pure x
+-- | Reports syntax errors which didn't affect parsing but would cause problems during compilation.
+validate :: ImportEnv -> PR Program -> [Error]
+validate imps (Program _ mpath _ decls _ groups _)
+   = sort
+   $ duplicateDeclErrs (M.keysSet importedRecordDecls) decls
+  ++ concatMap unboundErrs groups
+  where importedRecordDecls = declSetRecords $ importEnvImportedLocals imps

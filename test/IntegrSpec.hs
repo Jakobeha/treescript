@@ -8,13 +8,13 @@ module IntegrSpec
 
 import Core.Test
 import TreeScript
-import qualified TreeScript.Ast.Translate as T
 import qualified TreeScript.Ast.Core as C
 import qualified TreeScript.Ast.Lex as L
 import qualified TreeScript.Ast.Sugar as S
 
 import Control.Concurrent.MVar
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.List
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
@@ -57,7 +57,6 @@ spec = do
   exampleLexVars <- runIO $ mkVarMap exampleFiles
   exampleSugarVars <- runIO $ mkVarMap exampleFiles
   exampleCoreVars <- runIO $ mkVarMap exampleFiles
-  exampleTranslateVars <- runIO $ mkVarMap exampleFiles
   exampleExecVars <- runIO $ mkVarMap exampleFiles
   exampleUnsetVars <- runIO $ mkVarMap exampleFiles
   let forExampleFile :: (TestFile -> SpecWith FilePath) -> SpecWith FilePath
@@ -84,26 +83,30 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
-      forExampleCore :: TestFile -> (C.Program Range -> IO ()) -> IO ()
-      forExampleCore = forExampleIntermediateIn exampleCoreVars exampleTranslateVars
-      forExampleTranslate :: TestFile -> (T.Program -> IO ()) -> IO ()
-      forExampleTranslate = forExampleIntermediateIn exampleTranslateVars exampleExecVars
+      forExampleCore :: TestFile -> ((C.PR C.Program, C.PF C.Program) -> IO ()) -> IO ()
+      forExampleCore = forExampleIntermediateIn exampleCoreVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
       codeToAstData :: T.Text -> T.Text -> ResultT IO T.Text
       codeToAstData txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langWithExt undefined ext
-          let parser = languageParser lang
-          runCmdProgram parser txt
+          lang <- langWithExt ext
+          case languageParser <$> lang of
+            Nothing -> do
+              liftIO $ pendingWith $ T.unpack $ "unknown language with extension: " <> ext
+              pure undefined
+            Just parser -> runCmdProgram parser txt
       astDataToCode :: T.Text -> T.Text -> ResultT IO T.Text
       astDataToCode txt ext
         | ext == "tast" = pure txt
         | otherwise = ResultT $ runSessionResVirtual exampleEnv $ do
-          lang <- langWithExt undefined ext
-          let printer = languagePrinter lang
-          runCmdProgram printer txt
+          lang <- langWithExt ext
+          case languagePrinter <$> lang of
+            Nothing -> do
+              liftIO $ pendingWith $ T.unpack $ "unknown language with extension: " <> ext
+              pure undefined
+            Just printer -> runCmdProgram printer txt
       assertProperFailure :: (Printable a) => TestInfo -> Result a -> IO ()
       assertProperFailure testInfo (ResultFail err) = do
         unless (T.null $ testInfoFatalErrorMsg testInfo) $
@@ -158,10 +161,10 @@ spec = do
               assertProperFailure testInfo sugarRes
         it "Desugars" $ \_ ->
           forExampleSugar file $ \sugarSrc -> do
-            coreRes <- runSessionResVirtual exampleEnv $ C.parse sugarSrc
+            coreRes <- runSessionResVirtual exampleEnv $ C.parse1Raw examplesDir (fileName srcFile) sugarSrc
             when (testInfoPrintCore testInfo) $ do
               T.putStrLn $ fileName srcFile <> ":"
-              T.putStrLn $ pprint coreRes
+              T.putStrLn $ pprint $ fst <$> coreRes
             if testInfoIsDesugarable testInfo then
               case coreRes of
                 ResultFail coreErr -> do
@@ -172,28 +175,12 @@ spec = do
                   assertNoErrors coreErrs
             else do
               insertVarMapFailure exampleCoreVars file True
-              assertProperFailure testInfo coreRes
-        it "Translates" $ \_ ->
-          forExampleCore file $ \coreSrc -> do
-            translateRes <- runSessionResVirtual exampleEnv $ T.parse coreSrc
-            when (testInfoPrintTranslate testInfo) $ do
-              T.putStrLn $ fileName srcFile <> ":"
-              T.putStrLn $ pprint translateRes
-            if testInfoIsTranslatable testInfo then
-              case translateRes of
-                ResultFail translateErr -> do
-                  insertVarMapFailure exampleTranslateVars file False
-                  assertFailureText $ pprint translateErr
-                Result translateErrs translateSrc -> do
-                  insertVarMapSuccess exampleTranslateVars file translateSrc
-                  assertNoErrors translateErrs
-            else do
-              insertVarMapFailure exampleTranslateVars file True
-              assertProperFailure testInfo translateRes
+              assertProperFailure testInfo $ fst <$> coreRes
         it "Compiles" $ \tmpDir ->
-          forExampleTranslate file $ \translateSrc -> do
-            let execPath = tmpDir </> T.unpack (fileName srcFile)
-            execRes <- runSessionResVirtual exampleEnv $ T.exportFile execPath translateSrc
+          forExampleCore file $ \(coreSrcMain, coreImods) -> do
+            let coreSrc = C.remExtra coreSrcMain <> coreImods
+                execPath = tmpDir </> T.unpack (fileName srcFile)
+            execRes <- runSessionResVirtual exampleEnv $ C.exportFile execPath coreSrc
             if testInfoIsCompilable testInfo then
               case execRes of
                 ResultFail execErr -> do

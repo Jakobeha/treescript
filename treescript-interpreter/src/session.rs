@@ -2,67 +2,58 @@ extern crate app_dirs;
 extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
+use crate::resources;
+use crate::util;
 use crate::util::{AtomicFile, AtomicFileCommit};
-use crate::value::Value;
+use crate::value::{Record, Symbol, Value};
 use app_dirs::{AppDataType, AppInfo};
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
+use serde_json::Value as JsValue;
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
-use std::fs::{DirEntry, File};
-use std::io::{Read, Write};
+use std::fs::{DirEntry, File, OpenOptions};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct LanguageSpec {
-  name: String,
-  extension: String,
-}
-
 pub struct Language {
-  pub name: String,
   pub extension: String,
   dir: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LibrarySpec {
-  code_name: String,
-  dir_name: String,
+pub enum LibrarySpec {
+  CmdBinary(ByteBuf),
+  JavaScript(String),
 }
 
-struct Library {
-  name: String,
-  process: Option<Child>,
+pub enum Library {
+  CmdBinary {
+    path: PathBuf,
+    process: Option<Child>,
+  },
+  JavaScript {
+    code: String,
+    process: Option<Child>,
+  },
 }
 
 pub struct Session {
   langs: Vec<Language>,
-  lang_idxs_by_name: HashMap<String, usize>,
   lang_idxs_by_ext: HashMap<String, usize>,
   libs: HashMap<String, Library>,
-  root_dir: PathBuf,
+  tmp_lib_dir: PathBuf,
 }
 
 impl Language {
   fn new(dir: DirEntry) -> Language {
     let dir_name = dir.file_name();
-    let inferred_name = dir_name.to_string_lossy();
     let dir_path = dir.path();
-    let mut spec_path = dir_path.clone();
-    spec_path.push("spec.yaml");
-    let spec_file = File::open(spec_path).expect(
-      format!(
-        "failed to read language specification for '{}'",
-        inferred_name
-      )
-      .as_str(),
-    );
-    let spec: LanguageSpec = serde_yaml::from_reader(spec_file)
-      .expect(format!("invalid language specification for '{}'", inferred_name).as_str());
     return Language {
-      name: spec.name,
-      extension: spec.extension,
+      extension: String::from(dir_name.to_string_lossy()),
       dir: dir_path,
     };
   }
@@ -74,7 +65,7 @@ impl Language {
       .stdin(in_code)
       .stdout(Stdio::piped())
       .spawn()
-      .expect(format!("failed to start parser for language: {}", self.name).as_str())
+      .expect(format!("failed to start parser for language: {}", self.extension).as_str())
       .stdout
       .unwrap();
   }
@@ -86,72 +77,225 @@ impl Language {
       .stdin(Stdio::piped())
       .stdout(out_code)
       .spawn()
-      .expect(format!("failed to start printer for language: {}", self.name).as_str())
+      .expect(format!("failed to start printer for language: {}", self.extension).as_str())
       .stdin
       .unwrap();
   }
 }
 
 impl Library {
-  fn new(name: String) -> Library {
-    return Library {
-      name: name,
-      process: Option::None,
+  fn new(name: &String, spec: LibrarySpec, tmp_dir: &PathBuf) -> Library {
+    match spec {
+      LibrarySpec::CmdBinary(bytes) => {
+        let mut path = tmp_dir.clone();
+        path.push(name);
+        let mut file = OpenOptions::new()
+          .write(true)
+          .create_new(true)
+          .open(&path)
+          .expect(format!("failed to start create file for binary lib: {}", name).as_str());
+        file
+          .write_all(bytes.as_slice())
+          .expect(format!("failed to write binary lib to file: {}", name).as_str());
+        util::allow_execute(&path)
+          .expect(format!("failed to set binary lib's perms to executable: {}", name).as_str());
+        return Library::CmdBinary {
+          path: path,
+          process: None,
+        };
+      }
+      LibrarySpec::JavaScript(lib_txt) => {
+        let ffi_txt = resources::js_ffi().expect("failed to get JS ffi module");
+        return Library::JavaScript {
+          code: ffi_txt + "\nObject.assign(this, ffi);\n" + lib_txt.as_str(),
+          process: None,
+        };
+      }
     };
   }
 
-  fn start(&mut self, path: &Option<PathBuf>, libs_dir: &PathBuf) {
-    assert!(
-      self.process.is_none(),
-      "can't start session - already started"
-    );
-    let mut lib_path = libs_dir.clone();
-    lib_path.push(self.name.clone());
-    lib_path.push("exec");
-    self.process = Option::Some(
-      Command::new(lib_path.as_os_str())
-        .args(path.into_iter())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect(format!("failed to start library process: {}", self.name).as_str()),
-    );
+  fn start(&mut self, prog_path: &Option<PathBuf>) {
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        assert!(
+          process.is_none(),
+          "can't start library process, already started: {}",
+          name
+        );
+        *process = Some(
+          Command::new(path.as_os_str())
+            .args(prog_path.into_iter())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect(format!("failed to start library process: {}", name).as_str()),
+        );
+      }
+      Library::JavaScript { code, process } => {
+        assert!(
+          process.is_none(),
+          "can't start JS library process, already started"
+        );
+        let mut p = Command::new("node")
+          .stdin(Stdio::piped())
+          .stdout(Stdio::piped())
+          .stderr(Stdio::inherit())
+          .spawn()
+          .expect("failed to start JS library process");
+        dprintln!("PRINT_SESSION", "Started JS session");
+        write!(p.stdin.as_mut().unwrap(), "{}\n", code)
+          .expect("failed to write initial code to JS library process");
+        if let Some(prog_path) = prog_path {
+          write!(
+            p.stdin.as_mut().unwrap(),
+            "var progPath = {};\n",
+            prog_path.to_string_lossy()
+          )
+          .expect("failed to write program path to JS library process");
+        }
+        *process = Some(p);
+      }
+    }
   }
 
-  fn call_fun(&mut self, name: String, args: Vec<Value>) -> Option<Value> {
-    let process = self
-      .process
-      .as_mut()
-      .expect("can't call function - not started");
-    let mut parser = Parser {
-      input: process
-        .stdout
-        .as_mut()
-        .expect("can't call function - process output not available"),
+  fn call_fun(&mut self, fun: &String, args: Vec<Value>) -> Option<Value> {
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        let process = process
+          .as_mut()
+          .expect(format!("can't call function, library process not started: {}", name).as_str());
+        let mut parser = Parser {
+          input: process.stdout.as_mut().expect(
+            format!(
+              "can't call function, library process output not available: {}",
+              name,
+            )
+            .as_str(),
+          ),
+        };
+        let mut printer = Printer {
+          output: process.stdin.as_mut().expect(
+            format!(
+              "can't call function, library process input not available: {}",
+              name,
+            )
+            .as_str(),
+          ),
+        };
+        printer
+          .print_value(Value::Record(Record {
+            head: Symbol::from(fun),
+            props: args,
+          }))
+          .expect(
+            format!(
+              "can't call function, couldn't send input to library process: {}",
+              name,
+            )
+            .as_str(),
+          );
+        return parser.scan_value();
+      }
+      Library::JavaScript { code: _, process } => {
+        let process = process
+          .as_mut()
+          .expect("can't call function, JS library process not started");
+        let args = args
+          .into_iter()
+          .map(|arg| {
+            serde_json::to_string::<JsValue>(
+              &arg
+                .try_into()
+                .expect(format!("can't all function, bad input args: {}", fun).as_str()),
+            )
+            .unwrap()
+          })
+          .collect::<Vec<String>>()
+          .join(", ");
+        write!(
+          process.stdin.as_mut().unwrap(),
+          "callFfi({}, {});\n",
+          fun,
+          args
+        )
+        .expect(format!("can't all function, couldn't send input: {}", fun).as_str());
+        dprintln!("PRINT_SESSION", "> callFfi({}, {});\n", fun, args);
+        let out = serde_json::from_str::<JsValue>(
+          BufReader::new(process.stdout.as_mut().unwrap())
+            .lines()
+            .next()
+            .expect(format!("can't all function, no output: {}", fun).as_str())
+            .expect(format!("can't all function, error getting output: {}", fun).as_str())
+            .as_str(),
+        )
+        .expect(format!("can't all function, invalid output: {}", fun).as_str());
+        // Want to still fail on undefined
+        if out.is_null() {
+          return None;
+        } else {
+          return Some(
+            Value::try_from(out)
+              .expect(format!("can't all function, bad output: {}", fun).as_str()),
+          );
+        }
+      }
     };
-    let mut printer = Printer {
-      output: process
-        .stdin
-        .as_mut()
-        .expect("can't call function - process input not available"),
-    };
-    printer
-      .print_value(Value::Record {
-        head: name,
-        props: args,
-      })
-      .expect("can't call function - couldn't send input to library process");
-    return parser.scan_value();
   }
 
   fn stop(&mut self) {
-    let mut process = self
-      .process
-      .take()
-      .expect("can't stop session - not started");
-    process
-      .kill()
-      .expect(format!("library process exited early: {}", self.name).as_str());
+    match self {
+      Library::CmdBinary { path, process } => {
+        let name = path
+          .file_stem()
+          .map(|st| st.to_string_lossy())
+          .unwrap_or(Cow::Borrowed("???"));
+        let mut process = process
+          .take()
+          .expect(format!("can't stop library session, not started: {}", name).as_str());
+        process
+          .kill()
+          .expect(format!("library process exited early: {}", name).as_str());
+      }
+      Library::JavaScript { code: _, process } => {
+        let mut process = process
+          .take()
+          .expect("can't stop JS library session, not started");
+        process.kill().expect("JS library process exited early");
+      }
+    };
+  }
+
+  fn pre_drop(&mut self) {
+    match self {
+      Library::CmdBinary { path, process } => {
+        if let Some(mut process) = process.take() {
+          let _ = process.kill();
+        }
+        let _ = fs::remove_file(path);
+      }
+      Library::JavaScript { code: _, process } => {
+        if let Some(mut process) = process.take() {
+          let _ = process.kill();
+        }
+      }
+    }
+  }
+}
+
+impl Drop for Session {
+  fn drop(&mut self) {
+    for lib in self.libs.values_mut() {
+      lib.pre_drop();
+    }
+    let _ = fs::remove_dir(&self.tmp_lib_dir);
   }
 }
 
@@ -167,45 +311,37 @@ impl Session {
     .expect("failed to get user session directory");
   }
 
-  pub fn new(libs: Vec<LibrarySpec>) -> Session {
-    let root_dir = Session::root_dir();
-    let mut langs_dir = root_dir.clone();
+  pub fn new(libs: HashMap<String, LibrarySpec>) -> Session {
+    let mut langs_dir = Session::root_dir();
     langs_dir.push("languages");
     let lang_dirs = fs::read_dir(langs_dir)
       .expect("failed to find languages")
       .map(|lang_dir| lang_dir.expect("failed to find a language"))
       .filter(|lang_dir| lang_dir.file_name() != ".DS_Store");
     let langs: Vec<Language> = lang_dirs.map(|lang_dir| Language::new(lang_dir)).collect();
-    let lang_idxs_by_name = langs
-      .iter()
-      .enumerate()
-      .map(|(idx, lang)| (lang.name.clone(), idx))
-      .collect();
     let lang_idxs_by_ext = langs
       .iter()
       .enumerate()
       .map(|(idx, lang)| (lang.extension.clone(), idx))
       .collect();
+    let tmp_lib_dir = AtomicFile::temp_path(std::env::temp_dir());
+    fs::create_dir(&tmp_lib_dir)
+      .expect("failed to create temporary directory for session libraries");
     return Session {
       langs: langs,
-      lang_idxs_by_name: lang_idxs_by_name,
       lang_idxs_by_ext: lang_idxs_by_ext,
       libs: libs
         .into_iter()
-        .map(|lib| (lib.code_name, Library::new(lib.dir_name)))
+        .map(|(name, spec)| {
+          let lib = Library::new(&name, spec, &tmp_lib_dir);
+          return (name, lib);
+        })
         .collect(),
-      root_dir: root_dir,
+      tmp_lib_dir: tmp_lib_dir,
     };
   }
 
-  pub fn lang_with_name(&self, name: &String) -> Option<&Language> {
-    return self
-      .lang_idxs_by_name
-      .get(name)
-      .map(|idx| &self.langs[*idx]);
-  }
-
-  fn lang_with_ext(&self, ext: &String) -> Option<&Language> {
+  pub fn lang_with_ext(&self, ext: &String) -> Option<&Language> {
     return self.lang_idxs_by_ext.get(ext).map(|idx| &self.langs[*idx]);
   }
 
@@ -251,30 +387,20 @@ impl Session {
   }
 
   pub fn start(&mut self, path: &Option<PathBuf>) {
-    let mut libs_dir = self.root_dir.clone();
-    libs_dir.push("libraries");
     for lib in self.libs.values_mut() {
-      lib.start(&path, &libs_dir);
+      lib.start(path);
     }
   }
 
-  fn call_fun(&mut self, lib: &String, name: String, args: Vec<Value>) -> Option<Value> {
-    let lib = self
-      .libs
-      .get_mut(lib)
-      .expect(format!("failed to call function - library not setup: {}", lib).as_str());
-    return lib.call_fun(name, args);
-  }
-
-  pub fn call_fun_val(&mut self, head: &String, args_val: &Value) -> Option<Value> {
-    if let Some((lib, name)) = Value::record_head_to_fun(head) {
-      return self.call_fun(&lib, name, args_val.to_args());
-    } else {
-      panic!(
-        "Can't extract function lib and name from record head: {}",
-        head
+  pub fn call_fun(&mut self, head: &Symbol, args: &Value) -> Option<Value> {
+    let lib = self.libs.get_mut(&head.module).expect(
+      format!(
+        "failed to call function - library not setup: {}",
+        head.module
       )
-    }
+      .as_str(),
+    );
+    return lib.call_fun(&head.local, args.to_args());
   }
 
   pub fn stop(&mut self) {

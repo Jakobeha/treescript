@@ -18,6 +18,7 @@ module TreeScript.Misc.Error
   , addRangeToErr
   , isSuccess
   , forceSuccess
+  , justSuccess
   , traverseDropFatals
   , mapResultT
   , catchExceptionToError
@@ -33,6 +34,7 @@ import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 import Data.Maybe
 import qualified Data.Text as T
 import Control.Monad.Logger
@@ -151,6 +153,9 @@ instance (Applicative u) => MonadResult (ResultT u) where
   overErrors f (ResultT x) = ResultT $ overErrors f <$> x
   downgradeFatal (ResultT x) = ResultT $ downgradeFatal <$> x
 
+instance MonadTrans ResultT where
+  lift = ResultT . fmap (Result [])
+
 instance (Monad u, MonadResult u) => MonadResult (ReaderT r u) where
   mkFail = lift . mkFail
   tellErrors = lift . tellErrors
@@ -165,6 +170,15 @@ instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
     where run s = fmap fillState $ downgradeFatal $ runStateT x s
             where fillState Nothing = (Nothing, s)
                   fillState (Just (res, s')) = (Just res, s')
+
+instance (Monoid m, Monad u, MonadResult u) => MonadResult (WriterT m u) where
+  mkFail = lift . mkFail
+  tellErrors = lift . tellErrors
+  overErrors = mapWriterT . overErrors
+  downgradeFatal x = WriterT run
+    where run = fmap fillState $ downgradeFatal $ runWriterT x
+            where fillState Nothing = (Nothing, mempty)
+                  fillState (Just (res, m')) = (Just res, m')
 
 instance (MonadReader r u) => MonadReader r (ResultT u) where
   ask = ResultT $ pure <$> ask
@@ -235,6 +249,12 @@ forceSuccess (ResultFail err) = error $ "unexpected fatal error:\n" <> T.unpack 
 forceSuccess (Result errs x)
   | null errs = x
   | otherwise = error $ "unexpected nonfatal errors:\n" <> T.unpack (T.unlines $ map pprint errs)
+
+-- | @Nothing@ if there's any failure (even if success).
+justSuccess :: Result a -> Maybe a
+justSuccess (ResultFail _) = Nothing
+justSuccess (Result [] x) = Just x
+justSuccess (Result _ _) = Nothing
 
 -- | Like 'traverse', but when an element raises a fatal error, instead of completely failing, the element is removed and the error becomes nonfatal.
 traverseDropFatals :: (Applicative w, MonadResult w) => (a -> w b) -> [a] -> w [b]

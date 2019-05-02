@@ -17,7 +17,7 @@ scm'(+ \xAt)' -> Add[\x],
  //Makes recursion easier because we don't need to evaluate \x anymore
   Scheme_Atom[\x] <- \xAt;
 scm'(\xAdd \yAt)' -> Scheme_Atom[\xpy],
-  \xpy <- T[\x, \y] #Num_Add,
+  \xpy <- T[\x, \y] #Num_Add[],
   Add[\x] <- \xAdd,
   Scheme_Atom[\y] <- \yAt;
 
@@ -26,7 +26,7 @@ scm'(< \xAt)' -> LT[\x],
  //Makes recursion easier because we don't need to evaluate \x anymore
   Scheme_Atom[\x] <- \xAt;
 scm'(\xLt \yAt)' -> Scheme_Atom[\xpy],
-  \xpy <- T[\x, \y] #Num_LessThan,
+  \xpy <- T[\x, \y] #Num_LessThan[],
   LT[\x] <- \xLt,
   Scheme_Atom[\y] <- \yAt;
 
@@ -55,7 +55,7 @@ Subst[scm'(\a \x \y \z)', \old, \new] -> scm'(\a \x2 \y2 \z2)',
 Subst[\body, \_, \_] -> \body;
 
 &NonEmpty[].
-Scheme_Cons[\_, \_] -> T[];
+Scheme_SCons[\_, \_] -> T[];
 
 &IsEqual[].
 T[\x, \x] -> True[];

@@ -94,6 +94,6 @@ compileInfo
 runInfo :: InfoMod a
 runInfo
    = fullDesc
-  <> progDesc "run a TreeScript source file"
-  <> header "treescript run - run a TreeScript source file"
-  <> footer "TODO"
+  <> progDesc "interpret a TreeScript source file"
+  <> header "treescript run - interpret a TreeScript source file"
+  <> footer "Compiles the source into a temporary directory, then runs it with the given arguments."
