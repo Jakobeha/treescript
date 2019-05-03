@@ -1,12 +1,12 @@
-extern crate serde;
 use crate::parse::Parser;
 use crate::print::Printer;
 use crate::reduce::{GroupDef, GroupDefSerial, GroupEnv, ReduceResult, Reducer};
 use crate::session::{LibrarySpec, Session};
 use crate::value::{Record, Symbol, Value};
+use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
 use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -54,10 +54,13 @@ impl From<ProgramSerial> for Program {
   }
 }
 
-impl<R: Read> From<R> for Program {
+impl<R: Read + Seek> From<R> for Program {
   fn from(read: R) -> Program {
     let mut reader = BufReader::new(read);
     reader.read_line(&mut String::new()).unwrap(); //Gets rid of shebang
+    let module_length = reader.read_i64::<BigEndian>().unwrap();
+    reader.seek_relative(module_length).unwrap();
+    let _ = reader.read_i64::<BigEndian>().unwrap();
     let serial: ProgramSerial = rmp_serde::from_read(reader).unwrap();
     return Program::from(serial);
   }

@@ -83,7 +83,7 @@ spec = do
       forExampleLex = forExampleIntermediateIn exampleLexVars exampleSugarVars
       forExampleSugar :: TestFile -> (S.Program Range -> IO ()) -> IO ()
       forExampleSugar = forExampleIntermediateIn exampleSugarVars exampleCoreVars
-      forExampleCore :: TestFile -> ((C.PR C.Program, C.PF C.Program) -> IO ()) -> IO ()
+      forExampleCore :: TestFile -> ((C.Program (), C.Program ()) -> IO ()) -> IO ()
       forExampleCore = forExampleIntermediateIn exampleCoreVars exampleExecVars
       forExampleExec :: TestFile -> (FilePath -> IO ()) -> IO ()
       forExampleExec = forExampleIntermediateIn exampleExecVars exampleUnsetVars
@@ -178,7 +178,7 @@ spec = do
               assertProperFailure testInfo $ fst <$> coreRes
         it "Compiles" $ \tmpDir ->
           forExampleCore file $ \(coreSrcMain, coreImods) -> do
-            let coreSrc = C.remExtra coreSrcMain <> coreImods
+            let coreSrc = coreSrcMain <> coreImods
                 execPath = tmpDir </> T.unpack (fileName srcFile)
             execRes <- runSessionResVirtual exampleEnv $ C.exportFile execPath coreSrc
             if testInfoIsCompilable testInfo then

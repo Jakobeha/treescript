@@ -1,5 +1,6 @@
 #![feature(
   bind_by_move_pattern_guards,
+  bufreader_seek_relative,
   refcell_map_split,
   generators,
   generator_trait,

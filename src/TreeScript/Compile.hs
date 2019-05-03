@@ -1,7 +1,7 @@
 -- | Fully compile a TreeScript program.
 module TreeScript.Compile
   ( compile
-  , compileRaw
+  , compileInterp
   ) where
 
 import TreeScript.Ast.Core
@@ -15,7 +15,7 @@ compile input output
   | otherwise = exportFile output =<< parse input
 
 -- | Read the TreeScript source from the first path, serialize it, and move the raw data to the second path. For testing.
-compileRaw :: FilePath -> FilePath -> SessionRes ()
-compileRaw input output
+compileInterp :: FilePath -> FilePath -> SessionRes ()
+compileInterp input output
   | input == output = mkFail $ mkOverlapInOutError StageReadArgs
-  | otherwise = exportRaw output =<< parse input
+  | otherwise = exportInterp output =<< parse input

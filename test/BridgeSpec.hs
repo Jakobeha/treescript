@@ -17,6 +17,9 @@ import System.Process
 input :: FilePath
 input = "test-resources/Serialize.tscr"
 
+outputProg :: FilePath
+outputProg = "treescript-interpreter/test-resources/program/SerializeHaskell.tprg"
+
 outputMsgpack :: FilePath
 outputMsgpack = "treescript-interpreter/test-resources/program/SerializeHaskell.msgpack"
 
@@ -26,32 +29,35 @@ outputJson = "treescript-interpreter/test-resources/program/SerializeHaskell.jso
 interpreterOutputJson :: FilePath
 interpreterOutputJson = "treescript-interpreter/test-resources/program/SerializeRust.json"
 
+validate :: Result a -> IO a
+validate (ResultFail err) = do
+  assertFailureText $ pprint err
+  pure undefined
+validate (Result errs x) = do
+  assertNoErrors errs
+  pure x
+
 spec :: Spec
 spec = do
   exampleEnv <- runIO $ fmap forceSuccess $ runPreSessionRes $ getInitialEnv
-  describe "The compiler" $ do
-    -- WARN: Be careful of order
-    it "Compiles and serializes" $ do
-      res <- runSessionResVirtual exampleEnv $ compileRaw input outputMsgpack
-      case res of
-        ResultFail err ->
-          assertFailureText $ pprint err
-        Result errs () ->
-          assertNoErrors errs
-    it "Can deserialize" $ do
-      text <- B.readFile outputMsgpack
-      let res :: Maybe (C.PF C.Program)
-          res = C.deserialize text
-      case res of
-        Nothing -> assertFailureText "couldn't deserialize"
-        Just prog -> do
-          let out = C.serialize prog
-          assertBool "didn't deserialize correctly" $ text == out
-  describe "The serialized file" $ do
-    -- WARN: Be careful of order
-    it "Is valid msgpack" $
+  describe "program serialization" $ do
+    -- WARN: Needs this order
+    it "serializes" $ do
+      resProg <- runSessionResVirtual exampleEnv $ compile input outputProg
+      validate resProg
+    it "deserializes" $ do
+      text <- B.readFile outputProg
+      prog <- validate $ C.decompile text
+      let text' = C.export prog
+      assertBool "didn't deserialize correctly" $ text == text'
+  describe "interpreter serialization" $ do
+    -- WARN: Needs this order
+    it "serializes" $ do
+      resInterp <- runSessionResVirtual exampleEnv $ compileInterp input outputMsgpack
+      validate resInterp
+    it "is valid msgpack" $
       callProcess "msgpack2json" ["-i", outputMsgpack, "-o", outputJson, "-p"]
-    it "Matches the format expected by the interpreter" $ do
+    it "matches the format expected by the interpreter" $ do
       txt <- T.readFile outputJson
       itxt <- T.readFile interpreterOutputJson
       assertBool "format doesn't match" $ txt == itxt -- `shouldBe` exhausts heap
