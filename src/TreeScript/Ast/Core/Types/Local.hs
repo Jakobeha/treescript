@@ -62,7 +62,7 @@ data GVEnv a
 
 type GVBindEnv = GVEnv BindEnv
 
-type ImportSessionRes a = GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO))) a
+type GlobalSessionRes a = GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO))) a
 
 type BindSessionRes a = StateT BindEnv (GlobalT (ResultT (ReaderT SessionEnv (LoggingT IO)))) a
 

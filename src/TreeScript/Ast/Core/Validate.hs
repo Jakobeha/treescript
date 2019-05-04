@@ -2,7 +2,8 @@
 
 -- | Ensures an AST is well-formed, catching errors before runtime.
 module TreeScript.Ast.Core.Validate
-  ( validate
+  ( validate'
+  , validate
   ) where
 
 import TreeScript.Ast.Core.Analyze
@@ -90,11 +91,18 @@ hiddenModulePathErrs mdl
 -- TODO: Validate imports
 
 -- | Reports syntax errors which didn't affect parsing but would cause problems during compilation.
-validate :: GlobalEnv -> Program () -> [Error]
-validate imps (Program _ mpath _ rdecls _ _ _ castReds groups _)
+validate' :: GlobalEnv -> Program () -> [Error]
+validate' imps (Program _ mpath _ rdecls _ _ _ castReds groups _)
    = sort
    $ hiddenModulePathErrs mpath
   ++ duplicateDeclErrs (M.keysSet importedRecordDecls) rdecls
   ++ concatMap (unboundErrsReducer emptyLocalEnv) castReds
   ++ concatMap unboundErrs groups
   where importedRecordDecls = declSetRecords $ globalEnvImportedLocals imps
+
+-- | Wrapper for 'validate''
+validate :: Program () -> GlobalSessionRes (Program ())
+validate x = do
+  genv <- getGlobalEnv
+  tellErrors $ validate' genv x
+  pure x
