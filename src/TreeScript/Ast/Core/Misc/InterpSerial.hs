@@ -8,7 +8,7 @@
 
 -- | One-way specialized @MessagePack@ serialization for @Core@ ASTs, for the interpreter. 'Data.Binary' serializes for the compiler.
 -- Hacked from https://github.com/msgpack/msgpack-haskell/blob/master/msgpack/src/Data/MessagePack/Generic.hs
-module TreeScript.Ast.Core.Classes.InterpSerial
+module TreeScript.Ast.Core.Misc.InterpSerial
   ( InterpSerial (..)
   , encodeInterp
   ) where

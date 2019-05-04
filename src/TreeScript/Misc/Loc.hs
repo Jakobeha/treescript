@@ -38,13 +38,20 @@ data Range
 
 -- | The result is the smallest range containing all sub-ranges.
 instance Semigroup Range where
-  Range xStart xEnd <> Range yStart yEnd
+  x@(Range xStart xEnd) <> y@(Range yStart yEnd)
+    | x == r0 = y
+    | y == r0 = x
+    | otherwise
     = Range
     { rangeStart = min xStart yStart
     , rangeEnd = max xEnd yEnd
     }
   sconcat = foldr1 (<>)
   stimes _ x = x
+
+-- | 'r0' is empty.
+instance Monoid Range where
+  mempty = r0
 
 instance Printable Loc where
   pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)

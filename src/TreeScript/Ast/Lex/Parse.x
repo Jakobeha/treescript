@@ -352,7 +352,7 @@ parse str
            -> case reads locAndErrMsg of
                 [(loc, errMsg)] -> ResultFail Error
                   { errorStage = StageLex
-                  , errorRange = Just $ singletonRange loc
+                  , errorRange = singletonRange loc
                   , errorMsg = T.pack errMsg
                   }
                 _ -> error $ "bad lexer error format: " ++ locAndErrMsg

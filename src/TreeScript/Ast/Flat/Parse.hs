@@ -19,7 +19,7 @@ mkError :: T.Text -> Error
 mkError msg
   = Error
   { errorStage = StageLex
-  , errorRange = Nothing
+  , errorRange = r0
   , errorMsg = msg
   }
 

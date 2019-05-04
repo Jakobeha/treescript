@@ -1,5 +1,5 @@
 desugars?: false
 errors:
-- "while desugaring / validating - at 1:1-1:4 - unknown language with extension: foo"
+- "while desugaring - at 1:1-1:4 - unknown language with extension: foo"
 - "while using a plugin - at 2:1-2:23 - couldn't parse code - syntax error - multiple dots in list"
-- 'while desugaring / validating - at 3:1-3:28 - expected 1 value, got 3'
+- 'while desugaring - at 3:1-3:28 - expected 1 value, got 3'

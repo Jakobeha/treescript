@@ -32,7 +32,7 @@ convertErr :: Stage -> T.Text -> Error
 convertErr stage err
   = Error
     { errorStage = stage
-    , errorRange = Nothing
+    , errorRange = r0
     , errorMsg = err
     }
 

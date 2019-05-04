@@ -171,7 +171,7 @@ desugarError [] = error "unexpected parse error without leftover lexemes - shoul
 desugarError (nextLex : _)
   = ResultFail Error
   { errorStage = StageParse
-  , errorRange = Just nextLexRange
+  , errorRange = nextLexRange
   , errorMsg = "gave up at " <> locDesc
   }
   where nextLexRange = getAnn nextLex

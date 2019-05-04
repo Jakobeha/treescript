@@ -3,9 +3,9 @@
 
 -- | Integrates plugins into compilation and other actions.
 module TreeScript.Plugin.Session
-  ( Settings (..)
-  , Language (..)
-  , SessionEnv (..)
+  ( Settings(..)
+  , Language(..)
+  , SessionEnv(..)
   , Session
   , SessionRes
   , mkPluginUseError
@@ -15,21 +15,23 @@ module TreeScript.Plugin.Session
   , runPreSessionRes
   , runSessionResReal
   , langWithExt
-  ) where
+  )
+where
 
-import TreeScript.Plugin.CmdProgram
-import TreeScript.Misc
+import           TreeScript.Plugin.CmdProgram
+import           TreeScript.Misc
 
-import Control.Monad.Logger hiding (LogLevel (..))
-import qualified Control.Monad.Logger as L (LogLevel (..))
-import Control.Monad.Reader
-import Data.Char
-import Data.List
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
-import Data.Yaml
-import System.Directory
-import System.FilePath
+import           Control.Monad.Logger    hiding ( LogLevel(..) )
+import qualified Control.Monad.Logger          as L
+                                                ( LogLevel(..) )
+import           Control.Monad.Reader
+import           Data.Char
+import           Data.List
+import qualified Data.Map.Strict               as M
+import qualified Data.Text                     as T
+import           Data.Yaml
+import           System.Directory
+import           System.FilePath
 
 data LogLevel
   = LogLevelDebug
@@ -58,59 +60,46 @@ data SessionEnv
   , sessionEnvBuiltinModsPath :: FilePath
   }
 
-type PreSessionRes a = forall r. ResultT (ReaderT r (LoggingT IO)) a
+type PreSessionRes a = forall r . ResultT (ReaderT r (LoggingT IO)) a
 
 -- | A value computed using plugins.
-type Session a = ReaderT SessionEnv (LoggingT IO) a
+type Session = ReaderT SessionEnv (LoggingT IO)
 
 -- | A result computed using plugins.
-type SessionRes a = ResultT (ReaderT SessionEnv (LoggingT IO)) a
+type SessionRes = ResultT (ReaderT SessionEnv (LoggingT IO))
 
 instance FromJSON LogLevel where
   parseJSON = withText "LogLevel" $ parseStr . T.unpack
-    where parseStr "debug" = pure LogLevelDebug
-          parseStr "warning" = pure LogLevelWarning
-          parseStr "error" = pure LogLevelError
-          parseStr lvl = fail $ "invalid log level: " ++ lvl
+   where
+    parseStr "debug"   = pure LogLevelDebug
+    parseStr "warning" = pure LogLevelWarning
+    parseStr "error"   = pure LogLevelError
+    parseStr lvl       = fail $ "invalid log level: " ++ lvl
 
 instance FromJSON Settings where
-  parseJSON = withObject "Settings" $ \x -> Settings
-    <$> x .: "logLevel"
+  parseJSON = withObject "Settings" $ \x -> Settings <$> x .: "logLevel"
 
 logLevelToMonadLogLevel :: LogLevel -> L.LogLevel
-logLevelToMonadLogLevel LogLevelDebug = L.LevelDebug
+logLevelToMonadLogLevel LogLevelDebug   = L.LevelDebug
 logLevelToMonadLogLevel LogLevelWarning = L.LevelWarn
-logLevelToMonadLogLevel LogLevelError = L.LevelError
+logLevelToMonadLogLevel LogLevelError   = L.LevelError
 
 defaultSettings :: Settings
-defaultSettings
-  = Settings
-  { settingsLogLevel = LogLevelDebug
-  }
+defaultSettings = Settings { settingsLogLevel = LogLevelDebug }
 
 emptySessionEnv :: SessionEnv
-emptySessionEnv
-  = SessionEnv
-  { sessionEnvSettings = defaultSettings
-  , sessionEnvLanguages = M.empty
-  , sessionEnvBuiltinModsPath = ""
-  }
+emptySessionEnv = SessionEnv { sessionEnvSettings        = defaultSettings
+                             , sessionEnvLanguages       = M.empty
+                             , sessionEnvBuiltinModsPath = ""
+                             }
 
 mkPluginLoadError :: T.Text -> Error
-mkPluginLoadError msg
-  = Error
-  { errorStage = StagePluginLoad
-  , errorRange = Nothing
-  , errorMsg = msg
-  }
+mkPluginLoadError msg =
+  Error { errorStage = StagePluginLoad, errorRange = r0, errorMsg = msg }
 
 mkPluginUseError :: T.Text -> Error
-mkPluginUseError msg
-  = Error
-  { errorStage = StagePluginUse
-  , errorRange = Nothing
-  , errorMsg = msg
-  }
+mkPluginUseError msg =
+  Error { errorStage = StagePluginUse, errorRange = r0, errorMsg = msg }
 
 liftLoadIO :: IO a -> PreSessionRes a
 liftLoadIO = liftIOAndCatch StagePluginLoad
@@ -120,26 +109,28 @@ getRealPluginPath = liftLoadIO $ getRealAppDataDirectory "treescript"
 
 mkLanguage :: FilePath -> String -> PreSessionRes (T.Text, Language)
 mkLanguage pluginPath ext = do
-  let path = pluginPath </> ext
-      parserPath = path </> "parser"
+  let path        = pluginPath </> ext
+      parserPath  = path </> "parser"
       printerPath = path </> "printer"
-      ext' = T.pack ext
-  unless (isLower $ T.head ext') $
-    tellError $ mkPluginLoadError $ "language folder name (extension) be lowercase: " <> ext'
-  pure (ext', Language
-    { languageParser
-        = CmdProgram
-        { cmdProgramStage = StagePluginUse
-        , cmdProgramPath = parserPath
-        , cmdProgramEnv = []
-        }
-    , languagePrinter
-        = CmdProgram
-        { cmdProgramStage = StagePluginUse
-        , cmdProgramPath = printerPath
-        , cmdProgramEnv = []
-        }
-    } )
+      ext'        = T.pack ext
+  unless (isLower $ T.head ext')
+    $  tellError
+    $  mkPluginLoadError
+    $  "language folder name (extension) be lowercase: "
+    <> ext'
+  pure
+    ( ext'
+    , Language
+      { languageParser  = CmdProgram { cmdProgramStage = StagePluginUse
+                                     , cmdProgramPath  = parserPath
+                                     , cmdProgramEnv   = []
+                                     }
+      , languagePrinter = CmdProgram { cmdProgramStage = StagePluginUse
+                                     , cmdProgramPath  = printerPath
+                                     , cmdProgramEnv   = []
+                                     }
+      }
+    )
 
 
 listDirPlugins :: FilePath -> PreSessionRes [String]
@@ -148,22 +139,24 @@ listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
 
 getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
 getEnvAtPath pluginPath = do
-  let settingsPath = pluginPath </> "settings.yaml"
+  let settingsPath  = pluginPath </> "settings.yaml"
       languagesPath = pluginPath </> "languages"
-      modsPath = pluginPath </> "modules"
+      modsPath      = pluginPath </> "modules"
   settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
-  settings <-
-    case settingsDecoded of
-      Left err -> do
-        tellError $ mkPluginLoadError $ "bad settings - " <> T.pack (prettyPrintParseException err)
-        pure defaultSettings
-      Right res -> pure res
-  languages <- fmap M.fromList . traverseDropFatals (mkLanguage languagesPath) =<< listDirPlugins languagesPath
-  pure SessionEnv
-    { sessionEnvSettings = settings
-    , sessionEnvLanguages = languages
-    , sessionEnvBuiltinModsPath = modsPath
-    }
+  settings        <- case settingsDecoded of
+    Left err -> do
+      tellError $ mkPluginLoadError $ "bad settings - " <> T.pack
+        (prettyPrintParseException err)
+      pure defaultSettings
+    Right res -> pure res
+  languages <-
+    fmap M.fromList
+    .   traverseDropFatals (mkLanguage languagesPath)
+    =<< listDirPlugins languagesPath
+  pure SessionEnv { sessionEnvSettings        = settings
+                  , sessionEnvLanguages       = languages
+                  , sessionEnvBuiltinModsPath = modsPath
+                  }
 
 -- | Loads the environment which is shipped with this package.
 getInitialEnv :: PreSessionRes SessionEnv
@@ -183,11 +176,12 @@ setupEnv = do
   logDebugN "Loaded session."
 
 runSessionVirtualRaw :: SessionEnv -> Session a -> IO a
-runSessionVirtualRaw env
-  = runStdoutLoggingT
-  . filterLogger (\_ lvl -> lvl >= envLvl)
-  . (`runReaderT` env)
-  where envLvl = logLevelToMonadLogLevel $ settingsLogLevel $ sessionEnvSettings env
+runSessionVirtualRaw env =
+  runStdoutLoggingT
+    . filterLogger (\_ lvl -> lvl >= envLvl)
+    . (`runReaderT` env)
+ where
+  envLvl = logLevelToMonadLogLevel $ settingsLogLevel $ sessionEnvSettings env
 
 -- | Evaluates a session result in a given environment. Useful for tests.
 runSessionResVirtual :: SessionEnv -> SessionRes a -> IO (Result a)
@@ -197,7 +191,8 @@ runSessionResVirtual env session = runSessionVirtualRaw env $ runResultT $ do
 
 -- | Evaluates a pre-session result (like session result but doesn't use any environment).
 runPreSessionRes :: PreSessionRes a -> IO (Result a)
-runPreSessionRes session = runSessionVirtualRaw emptySessionEnv $ runResultT session
+runPreSessionRes session =
+  runSessionVirtualRaw emptySessionEnv $ runResultT session
 
 -- | Evaluates a session result in the user's environment.
 runSessionResReal :: SessionRes a -> IO (Result a)
