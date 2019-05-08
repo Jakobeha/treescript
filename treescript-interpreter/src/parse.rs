@@ -1,5 +1,6 @@
 extern crate unicode_reader;
-use crate::value::{Float, Prim, Record, Symbol, Value};
+use crate::value::{Float, Prim, Record, Value};
+use crate::vtype::Symbol;
 use std::io::Read;
 use unicode_reader::CodePoints;
 

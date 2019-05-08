@@ -1,10 +1,13 @@
 extern crate rmp_serde;
 use crate::program::ProgramSerial;
-use crate::reduce::{GroupDefSerial, GroupLoc, GroupRef, Guard, Next, Reducer};
+use crate::reduce::{Cast, GroupDefSerial, GroupLoc, GroupRef, Guard, Next, Reducer};
 use crate::session::LibrarySpec;
-use crate::value::{Prim, Record, Symbol, Value};
+use crate::value::{Prim, Record, Value};
+use crate::vtype::{PrimType, Symbol, TypePart};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -51,7 +54,10 @@ fn test_serialize_prog() {
                   },
                   props: vec![Value::Splice(1)],
                 }),
-                nexts: vec![],
+                nexts: vec![Next::Cast(Cast {
+                  inner_path: vec![0],
+                  out_types: HashSet::from_iter(vec![TypePart::Prim(PrimType::Integer)]),
+                })],
               },
               guards: vec![Guard {
                 input: Value::Splice(1),

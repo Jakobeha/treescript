@@ -1,18 +1,20 @@
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Types for the @Local@ phase.
-module TreeScript.Ast.Core.Misc.Types.Local
-  ( module TreeScript.Ast.Core.Misc.Types.Local
+module TreeScript.Ast.Core.Types.Local
+  ( module TreeScript.Ast.Core.Types.Local
   )
 where
 
-import           TreeScript.Ast.Core.Misc.Types.Gen
+import           TreeScript.Ast.Core.Types.Gen
 import           TreeScript.Misc
 import           TreeScript.Plugin
 
@@ -36,7 +38,7 @@ data GlobalEnv
   , globalEnvImportedModules :: M.Map ModulePath DeclSet
   -- | Includes builtins.
   , globalEnvImportedDecls :: M.Map T.Text [(ModulePath, DeclSet)]
-  , globalEnvImportDecls :: [ImportDecl]
+  , globalEnvImportDecls :: [ImportDecl Range]
   }
 
 newtype GlobalT m a = GlobalT (StateT GlobalEnv (WriterT (Program ()) m) a) deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadLogger, MonadResult)
@@ -70,8 +72,14 @@ type GVBindSessionRes = StateT (GVEnv BindEnv) GlobalSessionRes
 
 class (Monad m) => MonadGlobal m where
   getGlobalEnv :: m GlobalEnv
+  default getGlobalEnv :: (MonadTrans mt, MonadGlobal m', m ~ mt m') => m GlobalEnv
+  getGlobalEnv = lift getGlobalEnv
   addImportedModule :: Range -> T.Text -> Program () -> m ()
+  default addImportedModule :: (MonadTrans mt, MonadGlobal m', m ~ mt m') => Range -> T.Text -> Program () -> m ()
+  addImportedModule rng qual = lift . addImportedModule rng qual
   putLocals :: DeclSet -> m ()
+  default putLocals :: (MonadTrans mt, MonadGlobal m', m ~ mt m') => DeclSet -> m ()
+  putLocals = lift . putLocals
 
 instance (Monad m) => MonadGlobal (GlobalT m) where
   getGlobalEnv = GlobalT get
@@ -82,10 +90,8 @@ instance (Monad m) => MonadGlobal (GlobalT m) where
   putLocals exps =
     GlobalT $ modify $ \genv -> genv { globalEnvLocalDecls = exps }
 
-instance (MonadGlobal m) => MonadGlobal (StateT s m) where
-  getGlobalEnv = lift getGlobalEnv
-  addImportedModule rng qual = lift . addImportedModule rng qual
-  putLocals = lift . putLocals
+instance (MonadGlobal m) => MonadGlobal (StateT s m)
+instance (Monoid w, MonadGlobal m) => MonadGlobal (WriterT w m)
 
 instance (MonadReader r m) => MonadReader r (GlobalT m) where
   ask    = GlobalT ask
@@ -95,7 +101,7 @@ instance (MonadReader r m) => MonadReader r (GlobalT m) where
 instance MonadTrans GlobalT where
   lift = GlobalT . lift . lift
 
-globalEnvInsertDecl :: ImportDecl -> GlobalEnv -> GlobalEnv
+globalEnvInsertDecl :: ImportDecl Range -> GlobalEnv -> GlobalEnv
 globalEnvInsertDecl decl@(ImportDecl _ ipath qual exps) (GlobalEnv root mpath locs imods imps idecls)
   = GlobalEnv
     { globalEnvRoot            = root
@@ -114,11 +120,14 @@ globalEnvAllDecls :: GlobalEnv -> M.Map T.Text [(ModulePath, DeclSet)]
 globalEnvAllDecls (GlobalEnv _ mpath locs _ imps _) =
   M.insertWith (<>) "" [(mpath, locs)] imps
 
+globalEnvAllCasts :: GlobalEnv -> S.Set CastSurface
+globalEnvAllCasts = foldMap declSetCasts . M.elems . globalEnvAllModules
+
 globalEnvImportedLocals :: GlobalEnv -> DeclSet
 globalEnvImportedLocals =
   foldMap snd . fold . (M.!? "") . globalEnvImportedDecls
 
-globalEnvLookup :: SymbolType a -> Symbol t -> GlobalEnv -> Maybe a
+globalEnvLookup :: SymbolType a -> Symbol an -> GlobalEnv -> Maybe a
 globalEnvLookup typ (Symbol _ path loc) =
   declSetLookup typ loc <=< (M.!? path) . globalEnvAllModules
 
@@ -163,16 +172,11 @@ bindEnvLookup bind env@(BindEnv binds nextFree) = case binds M.!? bind of
 mkLocalSymbol :: (Monad m) => T.Text -> GlobalT m (Symbol ())
 mkLocalSymbol lcl = do
   mpath <- globalEnvModulePath <$> getGlobalEnv
-  pure Symbol { symbolAnn = r0, symbolModule = mpath, symbol = lcl }
+  pure Symbol { symbolAnn = (), symbolModule = mpath, symbol = lcl }
 
-hole :: Range -> Range -> Int -> Value ()
-hole ann idxAnn idx = ValueRecord
-  ()
-  Record
-    { recordAnn   = ann
-    , recordHead  = Symbol { symbolAnn    = ann
-                           , symbolModule = ""
-                           , symbol       = "Hole"
-                           }
-    , recordProps = [ValuePrimitive () $ PrimInteger idxAnn idx]
-    }
+hole :: Range -> Range -> Int -> Value Range
+hole ann idxAnn idx = ValueRecord Record
+  { recordAnn   = ann
+  , recordHead  = Symbol { symbolAnn = ann, symbolModule = "", symbol = "Hole" }
+  , recordProps = [ValuePrimitive $ PrimInteger idxAnn idx]
+  }

@@ -12,6 +12,7 @@ import qualified TreeScript.Misc.Ext.Text as T
 
 import Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as B.C
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as T.L
 import qualified Data.Text.Lazy.Encoding as T.L
@@ -356,6 +357,6 @@ parse str
                   , errorMsg = T.pack errMsg
                   }
                 _ -> error $ "bad lexer error format: " ++ locAndErrMsg
-         Right lexemes -> Result [] $ Program $ Annd rng lexemes
+         Right lexemes -> Result S.empty $ Program $ Annd rng lexemes
            where rng = mkRange loc1 str
 }

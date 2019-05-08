@@ -1,9 +1,10 @@
 extern crate serde;
 use crate::session::Session;
-use crate::value::{Record, Symbol, Value};
+use crate::value::{Record, Value};
+use crate::vtype::{SType, Symbol, TypePart};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::rc::Weak;
@@ -50,7 +51,7 @@ pub struct GroupRef {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Cast {
   pub inner_path: Vec<usize>,
-  pub idx: usize,
+  pub out_types: HashSet<TypePart>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -72,6 +73,12 @@ pub struct Reducer {
   pub guards: Vec<Guard>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct CastSurface {
+  pub input: TypePart,
+  pub output: TypePart,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GroupDefSerial {
   pub vprops: Vec<usize>,
@@ -89,7 +96,7 @@ pub struct GroupDef {
 
 #[derive(Clone, Debug)]
 pub struct GroupEnv {
-  pub casts: Vec<Reducer>,
+  pub casts: HashMap<CastSurface, Reducer>,
   pub groups: HashMap<Symbol, GroupDef>,
 }
 
@@ -231,8 +238,27 @@ impl GroupDef {
     }
   }
 
-  fn resolve_cast(&self, idx: usize) -> Reducer {
-    return self.env.upgrade().unwrap().casts[idx].clone();
+  fn resolve_cast(&self, in_type: &SType, out_tparts: &HashSet<TypePart>) -> Reducer {
+    let casts = &self.env.upgrade().unwrap().casts;
+    if let SType::Atom(in_tpart) = in_type {
+      let surfaces = out_tparts.iter().map(|out_tpart| CastSurface {
+        input: in_tpart.clone(),
+        output: out_tpart.clone(),
+      });
+      let valid_casts: Vec<Reducer> = surfaces
+        .filter_map(|surface| casts.get(&surface).cloned())
+        .collect();
+      match valid_casts.as_slice() {
+        [] => panic!("can't cast from {:?} to {:?}", in_tpart, out_tparts),
+        [res] => return res.clone(),
+        _ => panic!(
+          "ambiguous: multiple casts from {:?} to {:?}",
+          in_tpart, out_tparts
+        ),
+      };
+    } else {
+      panic!("can't cast bind");
+    }
   }
 
   fn resolve(&self, group_head: &Symbol, group_gprops: &Vec<GroupRef>) -> GroupDef {
@@ -318,12 +344,20 @@ impl GroupDef {
   ) -> ReduceResult {
     match next {
       Next::Cast(next) => {
-        return self.reduce(
+        let mut x = x.clone();
+        let child = x.sub_at_path_mut(&next.inner_path);
+        match self.reduce(
           session,
           &BindFrame::new(),
-          x.sub_at_path(&next.inner_path),
-          &self.resolve_cast(next.idx),
-        );
+          child,
+          &self.resolve_cast(&child.vtype(), &next.out_types),
+        ) {
+          ReduceResult::Fail => return ReduceResult::Fail,
+          ReduceResult::Success(new_child) => {
+            *child = new_child;
+            return ReduceResult::Success(x);
+          }
+        };
       }
       Next::GroupRef(next) => {
         match &next.loc {

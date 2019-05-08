@@ -1,5 +1,6 @@
 extern crate serde;
 use crate::util::GeneratorIterator;
+use crate::vtype::{PrimType, SType, Symbol, Type, TypePart};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_json::{Map, Number, Value as JsValue};
@@ -20,12 +21,6 @@ pub enum Prim {
   Integer(i32),
   Float(Float),
   String(String),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Symbol {
-  pub module: String,
-  pub local: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -78,12 +73,12 @@ impl Display for Prim {
 }
 
 impl Prim {
-  pub fn type_str(&self) -> &'static str {
+  pub fn vtype(&self) -> PrimType {
     match self {
-      Prim::Integer(_) => "integer",
-      Prim::Float(_) => "float",
-      Prim::String(_) => "string",
-    }
+      Prim::Integer(_) => return PrimType::Integer,
+      Prim::Float(_) => return PrimType::Float,
+      Prim::String(_) => return PrimType::String,
+    };
   }
 }
 
@@ -121,8 +116,16 @@ impl Symbol {
     };
   }
 
-  pub fn tuple_head() -> Symbol {
+  pub fn tuple() -> Symbol {
     return Symbol::from("T");
+  }
+
+  pub fn nil() -> Symbol {
+    return Symbol::from("Nil");
+  }
+
+  pub fn cons() -> Symbol {
+    return Symbol::from("Cons");
   }
 }
 
@@ -208,12 +211,7 @@ impl Value {
           props: Vec::default(),
         });
       }
-      Some(val) => {
-        return Value::Record(Record {
-          head: Symbol::from("Some"),
-          props: vec![val],
-        });
-      }
+      Some(val) => return val,
     };
   }
 
@@ -236,11 +234,37 @@ impl Value {
 
   pub fn to_args(&self) -> Vec<Value> {
     if let Value::Record(Record { head, props }) = self {
-      if head == &Symbol::tuple_head() {
+      if head == &Symbol::tuple() {
         return props.clone();
       }
     }
     panic!("to_args: expected tuple, got: {}", self)
+  }
+
+  pub fn vtype(&self) -> SType {
+    match self {
+      Value::Prim(prim) => return SType::Atom(TypePart::Prim(prim.vtype())),
+      Value::Record(Record { head, props }) => {
+        if head == &Symbol::tuple() {
+          return SType::Atom(TypePart::Tuple(
+            props.iter().map(|prop| Type::from(prop.vtype())).collect(),
+          ));
+        } else if head == &Symbol::nil() {
+          return SType::Atom(TypePart::List(Type::bottom()));
+        } else if head == &Symbol::cons() {
+          if let [head, tail] = props.as_slice() {
+            let htyp = Type::from(head.vtype());
+            if let SType::Atom(TypePart::List(ttyp)) = tail.vtype() {
+              return SType::Atom(TypePart::List(&htyp | &ttyp));
+            }
+          }
+          panic!("can't get type of malformed list: {}", self);
+        } else {
+          return SType::Atom(TypePart::Record(head.clone()));
+        }
+      }
+      Value::Splice(_) => return SType::Splice,
+    };
   }
 
   pub fn is_splice(&self) -> bool {
@@ -414,6 +438,21 @@ impl Value {
         panic!(
           "Value doesn't contain path: {} doesn't contain {:?}",
           self, path
+        );
+      }
+    }
+    return x;
+  }
+
+  pub fn sub_at_path_mut(&mut self, path: &Vec<usize>) -> &mut Value {
+    let mut x = self;
+    for idx in path {
+      if let Value::Record(Record { head: _, props }) = x {
+        x = &mut props[*idx];
+      } else {
+        panic!(
+          "Value doesn't contain path: ...{} doesn't contain {:?}",
+          x, path
         );
       }
     }

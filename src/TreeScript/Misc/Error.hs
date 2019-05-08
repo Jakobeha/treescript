@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -37,6 +38,7 @@ import           Control.Monad.Reader
 import           Control.Monad.State.Strict
 import           Control.Monad.Writer.Strict
 import           Data.Maybe
+import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 import           Control.Monad.Logger
 
@@ -67,7 +69,7 @@ data Error
 -- | A value which can fail to be created because of a fatal error, or it can be created but have nonfatal errors.
 data Result a
   = ResultFail Error -- ^ Failed to get a result because of a fatal error.
-  | Result [Error] a -- ^ Got a result but maybe some errors.
+  | Result (S.Set Error) a -- ^ Got a result but maybe some errors.
   deriving (Functor)
 
 -- | 'Result' monad transformer.
@@ -108,13 +110,15 @@ instance (Printable a) => Printable (Result a) where
   pprint (ResultFail err ) = "fatal error: " <> pprint err
   pprint (Result []   res) = "success: " <> pprint res
   pprint (Result errs res) = T.unlines
-    ("result:" : pprint res : "errors:" : map (T.bullet . pprint) errs)
+    ("result:" : pprint res : "errors:" : map (T.bullet . pprint)
+                                              (S.toList errs)
+    )
 
 instance Applicative Result where
   pure = Result []
   ResultFail err <*> _              = ResultFail err
   _              <*> ResultFail err = ResultFail err
-  Result fErrs f <*> Result xErrs x = Result (fErrs ++ xErrs) $ f x
+  Result fErrs f <*> Result xErrs x = Result (fErrs <> xErrs) $ f x
 
 instance (Applicative u) => Applicative (ResultT u) where
   pure = ResultT . pure2
@@ -125,7 +129,7 @@ instance Monad Result where
   ResultFail err >>= _ = ResultFail err
   Result xErrs x >>= f = case f x of
     ResultFail err -> ResultFail err
-    Result errs y  -> Result (xErrs ++ errs) y
+    Result errs y  -> Result (xErrs <> errs) y
 
 instance (Monad u) => Monad (ResultT u) where
   return = pure
@@ -134,15 +138,15 @@ instance (Monad u) => Monad (ResultT u) where
     f' (ResultFail err) = pure $ ResultFail err
     f' (Result errs x') = prependErrs errs <$> runResultT (f x')
     prependErrs _     (ResultFail err) = ResultFail err
-    prependErrs xErrs (Result yErrs y) = Result (xErrs ++ yErrs) y
+    prependErrs xErrs (Result yErrs y) = Result (xErrs <> yErrs) y
 
 instance MonadResult Result where
   mkFail = ResultFail
 
-  tellErrors errs = Result errs ()
+  tellErrors errs = Result (S.fromList errs) ()
 
   overErrors f (ResultFail err) = ResultFail $ f err
-  overErrors f (Result errs x ) = Result (map f errs) x
+  overErrors f (Result errs x ) = Result (S.map f errs) x
 
   downgradeFatal (ResultFail err) = Result [err] Nothing
   downgradeFatal (Result errs x ) = Result errs $ Just x
@@ -251,7 +255,7 @@ forceSuccess (ResultFail err) =
 forceSuccess (Result errs x)
   | null errs = x
   | otherwise = error $ "unexpected nonfatal errors:\n" <> T.unpack
-    (T.unlines $ map pprint errs)
+    (T.unlines $ map pprint $ S.toList errs)
 
 -- | @Nothing@ if there's any failure (even if success).
 justSuccess :: Result a -> Maybe a

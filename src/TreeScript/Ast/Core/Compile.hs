@@ -10,7 +10,7 @@ module TreeScript.Ast.Core.Compile
   )
 where
 
-import           TreeScript.Ast.Core.Misc
+import           TreeScript.Ast.Core.Types
 import           TreeScript.Misc
 import           TreeScript.Plugin
 
@@ -31,10 +31,8 @@ convertBinaryRes
 convertBinaryRes (Left (_, _, msg)) =
   mkFail $ desugarError_ $ "couldn't extract module: " <> T.pack msg
 convertBinaryRes (Right (rem', _, prog)) = do
-  unless (B.null rem')
-    $ tellError
-    $ desugarError_
-    $ "some input left after decompiling"
+  unless (B.null rem') $ tellError $ desugarError_
+    "some input left after decompiling"
   pure prog
 
 getByteString64 :: Get B.ByteString

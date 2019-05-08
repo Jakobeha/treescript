@@ -18,6 +18,7 @@ mod resources;
 mod session;
 mod util;
 mod value;
+mod vtype;
 use crate::program::Program;
 use crate::util::AtomicFileCommit;
 use clap::{App, AppSettings, Arg};

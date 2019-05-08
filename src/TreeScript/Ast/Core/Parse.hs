@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TupleSections #-}
@@ -13,9 +14,7 @@ where
 
 import           TreeScript.Ast.Core.Analyze
 import           TreeScript.Ast.Core.Compile
-import           TreeScript.Ast.Core.TypeCast
-import           TreeScript.Ast.Core.Misc
-import           TreeScript.Ast.Core.Validate
+import           TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Flat           as F
 import qualified TreeScript.Ast.Lex            as L
 import qualified TreeScript.Ast.Sugar          as S
@@ -43,7 +42,7 @@ import           System.FilePath
 
 -- = Parsing from AST data
 
-parseAstSymbol :: Range -> T.Text -> Symbol ()
+parseAstSymbol :: Range -> T.Text -> Symbol Range
 parseAstSymbol rng txt = Symbol { symbolAnn    = rng
                                 , symbolModule = path
                                 , symbol       = lcl
@@ -52,7 +51,7 @@ parseAstSymbol rng txt = Symbol { symbolAnn    = rng
   (path_, lcl) = T.breakOnEnd "_" txt
   path         = T.dropEnd 1 path_
 
-decodeAstData :: Range -> T.Text -> [Value ()] -> SessionRes [Value ()]
+decodeAstData :: Range -> T.Text -> [Value Range] -> SessionRes [Value Range]
 decodeAstData rng txt splices = traverse decodeAstData1
   =<< ResultT (pure $ F.parse txt)
  where
@@ -70,9 +69,9 @@ decodeAstData rng txt splices = traverse decodeAstData1
       mkFail $ desugarError rng $ "invalid splice index: " <> pprint idx
     Just splice -> pure (splice, rest)
   valueParser (F.LexemePrimitive prim : rest) =
-    pure (ValuePrimitive () $ primParser prim, rest)
+    pure (ValuePrimitive $ primParser prim, rest)
   valueParser (F.LexemeRecordHead head' numProps : rest) =
-    first (ValueRecord ()) <$> recordParser head' numProps rest
+    first ValueRecord <$> recordParser head' numProps rest
   primParser (F.PrimInteger value) = PrimInteger rng value
   primParser (F.PrimFloat   value) = PrimFloat rng value
   primParser (F.PrimString  value) = PrimString rng value
@@ -91,7 +90,7 @@ decodeAstData rng txt splices = traverse decodeAstData1
 
 
 runLanguageParser
-  :: Range -> Language -> T.Text -> [Value ()] -> SessionRes [Value ()]
+  :: Range -> Language -> T.Text -> [Value Range] -> SessionRes [Value Range]
 runLanguageParser rng lang txt splices = do
   let parser = languageParser lang
   astData <-
@@ -151,7 +150,9 @@ getCompModule rng mpath path = do
   let msgPrefix  = "couldn't import compiled module: " <> T.pack path <> " - "
       liftProgIO = overErrors (addRangeToErr rng . prependMsgToErr msgPrefix)
         . liftIOAndCatch StageDesugar
-  overErrors (addRangeToErr rng) $ decompile =<< liftProgIO (B.readFile path)
+  pdata <- overErrors (addRangeToErr rng) $ liftProgIO $ B.readFile path
+  prog  <- decompile pdata
+  pure $ moveProgPath mpath prog
 
 getScriptModule
   :: Range
@@ -176,7 +177,7 @@ getScriptModule rng mroot mpath path = do
         $  "errors in script: "
         <> T.pack path
         <> "\n"
-        <> T.unlines (map (T.bullet . pprint) errs)
+        <> T.unlines (map (T.bullet . pprint) $ S.toList errs)
       pure x
 
 getDirModules
@@ -295,7 +296,7 @@ parseImportDecl (S.ImportDecl _ (S.Symbol litRng lit) (S.Symbol modRange mdl) qu
     importModules modRange mdl qual'
 
 parseLookupSymbol
-  :: SymbolType a -> S.Symbol Range -> GlobalSessionRes (Symbol (), Maybe a)
+  :: SymbolType a -> S.Symbol Range -> GlobalSessionRes (Symbol Range, Maybe a)
 parseLookupSymbol typ (S.Symbol ann txt) = do
   let (qual_, lcl) = T.breakOnEnd "_" txt
       qual         = T.dropEnd 1 qual_
@@ -321,7 +322,7 @@ parseLookupSymbol typ (S.Symbol ann txt) = do
 tryLookupSymbol :: SymbolType a -> S.Symbol Range -> GlobalSessionRes (Maybe a)
 tryLookupSymbol typ = fmap snd . parseLookupSymbol typ
 
-parseSymbol :: SymbolType a -> S.Symbol Range -> GlobalSessionRes (Symbol ())
+parseSymbol :: SymbolType a -> S.Symbol Range -> GlobalSessionRes (Symbol Range)
 parseSymbol typ sym@(S.Symbol ann txt) = do
   (res, x) <- parseLookupSymbol typ sym
   when (isNothing x)
@@ -339,16 +340,18 @@ parseBuiltinType (S.Symbol _ txt)
   | txt == "string" = pure $ Just $ xType1 $ TypePartPrim PrimTypeString
   | otherwise       = pure Nothing
 
-parseRecordDeclSkipProps :: S.RecordDecl Range -> GlobalSessionRes RecordDecl
+parseRecordDeclSkipProps
+  :: S.RecordDecl Range -> GlobalSessionRes (RecordDecl Range)
 parseRecordDeclSkipProps (S.RecordDecl rng (S.Record _ (S.Symbol _ head') _)) =
   pure $ RecordDecl rng head' [undefined]
 
 parseAliasType :: S.Symbol Range -> GlobalSessionRes (Maybe XType)
-parseAliasType ali = fmap utype <$> tryLookupSymbol SymbolTypeAlias ali
+parseAliasType = tryLookupSymbol SymbolTypeAlias
 
 parseTypePart :: S.TypePart Range -> GlobalSessionRes XType
 parseTypePart (S.TypePartSymbol rng sym)
-  | loc /= "" && isLower (T.head loc) = do
+  | loc /= "" && isLower (T.head loc)
+  = do
     prmPart <- parseBuiltinType sym
     aliPart <- parseAliasType sym
     case (prmPart, aliPart) of
@@ -367,7 +370,8 @@ parseTypePart (S.TypePartSymbol rng sym)
           $  "unknown type (not an alias or prim): "
           <> pprint sym
         pure XTypeAny
-  | otherwise = xType1 . TypePartRecord <$> parseSymbol SymbolTypeRecord sym
+  | otherwise
+  = xType1 . TypePartRecord . remAnns <$> parseSymbol SymbolTypeRecord sym
   where loc = T.takeWhileEnd (/= '_') $ S.symbol sym
 parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') props))
   | head' == "t"
@@ -389,11 +393,11 @@ parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') pr
       <> head'
     pure XTypeAny
 
-parseType :: S.Type Range -> GlobalSessionRes (UType ())
+parseType :: S.Type Range -> GlobalSessionRes (UType Range)
 parseType (S.Type rng parts) =
   UType rng . mconcat <$> traverse parseTypePart parts
 
-parseTypeProp :: S.GenProperty Range -> GlobalSessionRes (UType ())
+parseTypeProp :: S.GenProperty Range -> GlobalSessionRes (UType Range)
 parseTypeProp (S.GenPropertyDecl     typ ) = parseType typ
 parseTypeProp (S.GenPropertySubGroup prop) = do
   let rng = getAnn prop
@@ -408,12 +412,13 @@ parseTypeProp (S.GenPropertyGroup grp) = do
   tellError $ desugarError rng "expected value, got group"
   pure $ UType rng XTypeAny
 
-parseRecordDecl :: S.RecordDecl Range -> GlobalSessionRes RecordDecl
+parseRecordDecl :: S.RecordDecl Range -> GlobalSessionRes (RecordDecl Range)
 parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props)) =
   RecordDecl rng head' <$> traverse parseTypeProp props
 
 parseGroupDecl
-  :: S.GroupDecl Range -> GlobalSessionRes (Either GroupDecl FunctionDecl)
+  :: S.GroupDecl Range
+  -> GlobalSessionRes (Either (GroupDecl Range) (FunctionDecl Range))
 parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props) funRet)
   = case loc of
     S.GroupLocGlobal _ -> do
@@ -421,7 +426,7 @@ parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props) funR
         Nothing -> pure ()
         Just f  -> tellError
           $ desugarError (getAnn f) "group can't have an explicit return type"
-      pure $ Left $ GroupDecl head' nvps ngps -- TODO Error on other properties
+      pure $ Left $ GroupDecl rng head' nvps ngps -- TODO Error on other properties
     S.GroupLocFunction _ ->
       fmap Right
         $   FunctionDecl rng head'
@@ -449,16 +454,16 @@ parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props) funR
     )
     props
 
-parseTypeAlias :: S.TypeAlias Range -> GlobalSessionRes TypeAlias
+parseTypeAlias :: S.TypeAlias Range -> GlobalSessionRes (TypeAlias Range)
 parseTypeAlias (S.TypeAlias ann (S.Symbol _ ali) typ) =
   TypeAlias ann ali <$> parseType typ
 
-parsePrim :: S.Primitive Range -> GVBindSessionRes (Primitive ())
+parsePrim :: S.Primitive Range -> GVBindSessionRes (Primitive Range)
 parsePrim (S.PrimInteger rng int   ) = pure $ PrimInteger rng int
 parsePrim (S.PrimFloat   rng float ) = pure $ PrimFloat rng float
 parsePrim (S.PrimString  rng string) = pure $ PrimString rng string
 
-parseValueProperty :: S.GenProperty Range -> GVBindSessionRes (Value ())
+parseValueProperty :: S.GenProperty Range -> GVBindSessionRes (Value Range)
 parseValueProperty (S.GenPropertyDecl key) =
   mkFail $ desugarError (getAnn key) "expected value, got type"
 parseValueProperty (S.GenPropertySubGroup prop) = mkFail $ desugarError
@@ -468,13 +473,13 @@ parseValueProperty (S.GenPropertyRecord val) = parseValue val
 parseValueProperty (S.GenPropertyGroup grp) =
   mkFail $ desugarError (getAnn grp) "expected value, got group"
 
-parseRecord :: S.Record Range -> GVBindSessionRes (Record ())
+parseRecord :: S.Record Range -> GVBindSessionRes (Record Range)
 parseRecord (S.Record rng head' props) =
   Record rng
     <$> lift (parseSymbol SymbolTypeRecord head')
     <*> traverseDropFatals parseValueProperty props
 
-parseBind :: S.Bind Range -> GVBindSessionRes (Bind ())
+parseBind :: S.Bind Range -> GVBindSessionRes (Bind Range)
 parseBind (S.Bind rng tgt) = case tgt of
   S.BindTargetNone _                -> pure $ Bind rng 0
   S.BindTargetSome (S.Symbol _ txt) -> do
@@ -498,7 +503,7 @@ spliceTextSplices (S.SpliceTextNil _ _) = []
 spliceTextSplices (S.SpliceTextCons _ _ _ val rst) =
   val : spliceTextSplices rst
 
-parseSpliceCode :: S.SpliceCode Range -> GVBindSessionRes (Value ())
+parseSpliceCode :: S.SpliceCode Range -> GVBindSessionRes (Value Range)
 parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
   do
     let txt             = flattenSpliceText spliceText
@@ -519,21 +524,21 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
           _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint
             (length ress)
 
-parseSplice :: S.Splice Range -> GVBindSessionRes (Value ())
-parseSplice (S.SpliceBind targ) = ValueBind () <$> parseBind bind
+parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
+parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
   where bind = S.Bind (getAnn targ) targ
 parseSplice (S.SpliceHole (S.HoleIdx rng idx)) = pure $ hole rng rng idx
 
-parseValue :: S.Value Range -> GVBindSessionRes (Value ())
-parseValue (S.ValuePrimitive  prim  ) = ValuePrimitive () <$> parsePrim prim
-parseValue (S.ValueRecord     record) = ValueRecord () <$> parseRecord record
-parseValue (S.ValueBind       bind  ) = ValueBind () <$> parseBind bind
+parseValue :: S.Value Range -> GVBindSessionRes (Value Range)
+parseValue (S.ValuePrimitive  prim  ) = ValuePrimitive <$> parsePrim prim
+parseValue (S.ValueRecord     record) = ValueRecord <$> parseRecord record
+parseValue (S.ValueBind       bind  ) = ValueBind <$> parseBind bind
 parseValue (S.ValueSpliceCode code  ) = parseSpliceCode code
 parseValue (S.ValueHole (S.Hole rng (S.HoleIdx idxAnn idx))) =
   pure $ hole rng idxAnn idx
 
 parseGroupHead
-  :: S.GroupLoc Range -> S.Symbol Range -> GVBindSessionRes (GroupLoc ())
+  :: S.GroupLoc Range -> S.Symbol Range -> GVBindSessionRes (GroupLoc Range)
 parseGroupHead (S.GroupLocGlobal lrng) head'@(S.Symbol hrng _) =
   GroupLocGlobal (lrng <> hrng) <$> lift (parseSymbol SymbolTypeGroup head')
 parseGroupHead (S.GroupLocLocal _) (S.Symbol rng txt) = do
@@ -546,7 +551,8 @@ parseGroupHead (S.GroupLocFunction lrng) head'@(S.Symbol hrng _) =
     <$> lift (parseSymbol SymbolTypeFunction head')
 
 parseGroupProperty
-  :: S.GenProperty Range -> GVBindSessionRes (Either (Value ()) (GroupRef ()))
+  :: S.GenProperty Range
+  -> GVBindSessionRes (Either (Value Range) (GroupRef Range))
 parseGroupProperty (S.GenPropertyDecl key) =
   mkFail $ desugarError (getAnn key) "expected group, got type"
 parseGroupProperty (S.GenPropertySubGroup prop) = mkFail $ desugarError
@@ -555,17 +561,17 @@ parseGroupProperty (S.GenPropertySubGroup prop) = mkFail $ desugarError
 parseGroupProperty (S.GenPropertyRecord val) = Left <$> parseValue val
 parseGroupProperty (S.GenPropertyGroup  grp) = Right <$> parseGroupRef grp
 
-parseGroupRef :: S.Group Range -> GVBindSessionRes (GroupRef ())
+parseGroupRef :: S.Group Range -> GVBindSessionRes (GroupRef Range)
 parseGroupRef (S.Group rng isProp head' props) = do
   loc              <- parseGroupHead isProp head'
   (vprops, gprops) <-
     partitionEithers <$> traverseDropFatals parseGroupProperty props
   pure $ GroupRef rng loc vprops gprops
 
-parseNext :: S.Group Range -> GVBindSessionRes (Next ())
+parseNext :: S.Group Range -> GVBindSessionRes (Next Range)
 parseNext = fmap NextGroup . parseGroupRef
 
-parseGuard :: S.Guard Range -> GVBindSessionRes (Guard ())
+parseGuard :: S.Guard Range -> GVBindSessionRes (Guard Range)
 parseGuard (S.Guard rng input output nexts) =
   Guard rng
     <$> parseValue input
@@ -575,7 +581,7 @@ parseGuard (S.Guard rng input output nexts) =
 parseReducer
   :: GVBindEnv
   -> S.Reducer Range
-  -> GlobalSessionRes (S.ReducerType Range, Reducer ())
+  -> GlobalSessionRes (S.ReducerType Range, Reducer Range)
 parseReducer bindEnv (S.Reducer rng typ main guards) =
   (typ, )
     <$> evalStateT
@@ -583,7 +589,7 @@ parseReducer bindEnv (S.Reducer rng typ main guards) =
           bindEnv
 
 parseGroupPropDecl
-  :: S.GenProperty Range -> GVBindSessionRes (Maybe (Side, GroupDefProp))
+  :: S.GenProperty Range -> GVBindSessionRes (Maybe (Side, GroupDefProp Range))
 parseGroupPropDecl (S.GenPropertyDecl prop) = mkFail
   $ desugarError (getAnn prop) "expected group property declaration, got type"
 parseGroupPropDecl (S.GenPropertySubGroup (S.SubGroupProperty _ (S.Symbol rng txt)))
@@ -607,7 +613,8 @@ parseGroupPropDecl (S.GenPropertyGroup grp) = mkFail
   $ desugarError (getAnn grp) "expected group property declaration, got group"
 
 parseEmptyGroupDef
-  :: S.GroupDecl Range -> GlobalSessionRes (Symbol (), GroupDef (), GVBindEnv)
+  :: S.GroupDecl Range
+  -> GlobalSessionRes (Symbol (), GroupDef Range, GVBindEnv)
 parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) props) _)
   = case loc of
     S.GroupLocGlobal _ -> do
@@ -617,7 +624,7 @@ parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) prop
       let (vprops, gprops) = partitionTuple $ catMaybes props'
       head' <- mkLocalSymbol lhead
       pure
-        ( head'
+        ( remAnns head'
         , GroupDef { groupDefAnn        = rng
                    , groupDefValueProps = vprops
                    , groupDefGroupProps = gprops
@@ -634,7 +641,7 @@ parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) prop
 parseRestGroupDefs
   :: S.GroupDecl Range
   -> [S.TopLevel Range]
-  -> GlobalSessionRes (N.NonEmpty (Symbol (), GroupDef (), GVBindEnv))
+  -> GlobalSessionRes (N.NonEmpty (Symbol (), GroupDef Range, GVBindEnv))
 parseRestGroupDefs decl [] = (N.:| []) <$> parseEmptyGroupDef decl
 parseRestGroupDefs decl (S.TopLevelImportDecl _ : xs) =
   parseRestGroupDefs decl xs
@@ -661,7 +668,7 @@ parseRestGroupDefs decl (S.TopLevelGroupDecl decl' : xs) =
   (N.<|) <$> parseEmptyGroupDef decl <*> parseRestGroupDefs decl' xs
 
 parseAllGroupDefs
-  :: [S.TopLevel Range] -> GlobalSessionRes (M.Map (Symbol ()) (GroupDef ()))
+  :: [S.TopLevel Range] -> GlobalSessionRes (M.Map (Symbol ()) (GroupDef Range))
 parseAllGroupDefs [] = pure M.empty
 parseAllGroupDefs (S.TopLevelGroupDecl x : xs) =
   M.fromList
@@ -672,12 +679,33 @@ parseAllGroupDefs (S.TopLevelGroupDecl x : xs) =
 parseAllGroupDefs (_ : _) =
   error "expected group declaration when parsing group definitions"
 
-notGroupedReducerError :: Reducer () -> Error
+getCastSurfaceType :: Reducer Range -> GlobalSessionRes CastSurface
+getCastSurfaceType (Reducer _ (Guard mrng inp out nexts) _) = do
+  when (nexts /= []) $ mkFail $ desugarError mrng
+                                             "cast reducer can't have nexts"
+  case (surfaceType inp, surfaceType out) of
+    (SType1 ityp, SType1 otyp) -> pure $ CastSurface ityp otyp
+    _ ->
+      mkFail $ desugarError mrng "cast reducer input and output can't be binds"
+
+mkMapErrSharedKeys
+  :: (Ord k)
+  => (v -> Range)
+  -> T.Text
+  -> [(k, v)]
+  -> GlobalSessionRes (M.Map k v)
+mkMapErrSharedKeys getRng errMsg = foldM insert M.empty
+ where
+  insert prevs (key, val) = do
+    when (M.member key prevs) $ tellError $ desugarError (getRng val) errMsg
+    pure $ M.insert key val prevs
+
+notGroupedReducerError :: Reducer Range -> Error
 notGroupedReducerError red =
   desugarError (reducerAnn red) "regular reducer must be in group"
 
 -- | Parses the initial 'Core' AST, mainly adds location information like bind indices.
-parseLocal :: S.Program Range -> GlobalSessionRes (Program ())
+parseLocal :: S.Program Range -> GlobalSessionRes (Program Range)
 parseLocal (S.Program rng topLevels) = do
   let
     (topLevelsOutGroups, topLevelsInGroups) = break
@@ -720,13 +748,12 @@ parseLocal (S.Program rng topLevels) = do
       topLevelsOutGroups
   mapM_ parseImportDecl idecls
   rdecls0 <- traverse parseRecordDeclSkipProps rdecls
-  putLocals $ mkDeclSet rdecls0 [] [] [] []
+  putLocals $ mkDeclSet rdecls0 [] [] [] [] []
   alis' <- traverseDropFatals parseTypeAlias alis
-  putLocals $ mkDeclSet rdecls0 [] [] [] alis'
+  putLocals $ mkDeclSet rdecls0 [] [] [] alis' []
   rdecls'           <- traverse parseRecordDecl rdecls
   (gdecls', fdecls) <- partitionEithers <$> traverse parseGroupDecl gdecls
-  let exps = mkDeclSet rdecls' [] gdecls' fdecls alis'
-  putLocals exps
+  putLocals $ mkDeclSet rdecls' [] gdecls' fdecls alis' []
   reds'  <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
   groups <- parseAllGroupDefs topLevelsInGroups
   libs   <- findLibraries
@@ -736,6 +763,14 @@ parseLocal (S.Program rng topLevels) = do
     regReds = map snd $ filter ((== S.ReducerTypeReg ()) . remAnns . fst) reds'
     castReds =
       map snd $ filter ((== S.ReducerTypeCast ()) . remAnns . fst) reds'
+  castReds' <-
+    mkMapErrSharedKeys reducerAnn
+                       "cast reducer has same input and outputs as a previous"
+      =<< traverseDropFatals
+            (\red -> (, red) <$> getCastSurfaceType red)
+            castReds
+  let exps = mkDeclSet rdecls' [] gdecls' fdecls alis' $ M.keysSet castReds'
+  putLocals exps
   -- TODO: Syntax sugar a main group
   tellErrors $ map notGroupedReducerError regReds
   pure Program { programAnn           = rng
@@ -745,20 +780,20 @@ parseLocal (S.Program rng topLevels) = do
                , programFunctionDecls = fdecls
                , programExports       = exps
                , programTypeAliases   = alis'
-               , programCastReducers  = castReds
+               , programCastReducers  = castReds'
                , programGroups        = groups
                , programLibraries     = libs
                }
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result.
-parse1 :: S.Program Range -> GlobalSessionRes (Program ())
-parse1 = validate <=< castCheckTypes <=< parseLocal
+parse1 :: S.Program Range -> GlobalSessionRes (Program Range)
+parse1 = validate <=< addCasts <=< parseLocal
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result. Removes env and combines with imports.
 parse1_ :: FilePath -> ModulePath -> S.Program Range -> SessionRes (Program ())
 parse1_ root mpath prev = do
   (full, imods) <- runGlobalT root mpath $ parse1 prev
-  pure $ full <> imods
+  pure $ remAnns full <> imods
 
 -- | Compile a source into a @Program@. Strips extra.
 parseAt :: FilePath -> ModulePath -> FilePath -> SessionRes (Program ())

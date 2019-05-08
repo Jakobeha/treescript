@@ -20,3 +20,4 @@ pub mod session;
 mod tests;
 mod util;
 pub mod value;
+pub mod vtype;

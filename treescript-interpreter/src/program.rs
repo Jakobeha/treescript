@@ -1,8 +1,9 @@
 use crate::parse::Parser;
 use crate::print::Printer;
-use crate::reduce::{GroupDef, GroupDefSerial, GroupEnv, ReduceResult, Reducer};
+use crate::reduce::{CastSurface, GroupDef, GroupDefSerial, GroupEnv, ReduceResult, Reducer};
 use crate::session::{LibrarySpec, Session};
-use crate::value::{Record, Symbol, Value};
+use crate::value::{Record, Value};
+use crate::vtype::Symbol;
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,7 +15,7 @@ use std::rc::Rc;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProgramSerial {
   pub path: String,
-  pub casts: Vec<Reducer>,
+  pub casts: Vec<(CastSurface, Reducer)>,
   pub groups: Vec<(Symbol, GroupDefSerial)>,
   pub libraries: Vec<(String, LibrarySpec)>,
 }
@@ -31,7 +32,7 @@ impl From<ProgramSerial> for Program {
     let mut program = Program {
       path: serial.path,
       group_env: Rc::new(GroupEnv {
-        casts: serial.casts,
+        casts: HashMap::from_iter(serial.casts),
         groups: serial
           .groups
           .into_iter()

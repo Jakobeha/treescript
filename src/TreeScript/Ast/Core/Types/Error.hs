@@ -1,5 +1,5 @@
-module TreeScript.Ast.Core.Misc.Error
-  ( module TreeScript.Ast.Core.Misc.Error
+module TreeScript.Ast.Core.Types.Error
+  ( module TreeScript.Ast.Core.Types.Error
   )
 where
 
