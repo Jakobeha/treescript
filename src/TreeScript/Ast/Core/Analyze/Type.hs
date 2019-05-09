@@ -73,7 +73,7 @@ addGuardCasts :: Guard an -> GlobalSessionRes (Guard an)
 addGuardCasts (Guard rng inp out nexts) = do
   casts <- execWriterT $ addValueCasts out
   -- TODO Add casts for old next functions
-  let nexts' = nexts ++ map NextCast casts
+  let nexts' = map NextCast casts ++ nexts
   pure $ Guard rng inp out nexts'
 
 addCasts :: Program an -> GlobalSessionRes (Program an)

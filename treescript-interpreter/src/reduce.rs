@@ -238,9 +238,13 @@ impl GroupDef {
     }
   }
 
-  fn resolve_cast(&self, in_type: &SType, out_tparts: &HashSet<TypePart>) -> Reducer {
-    let casts = &self.env.upgrade().unwrap().casts;
+  fn resolve_cast(&self, in_type: &SType, out_tparts: &HashSet<TypePart>) -> Option<Reducer> {
     if let SType::Atom(in_tpart) = in_type {
+      if out_tparts.contains(in_tpart) {
+        return None;
+      }
+
+      let casts = &self.env.upgrade().unwrap().casts;
       let surfaces = out_tparts.iter().map(|out_tpart| CastSurface {
         input: in_tpart.clone(),
         output: out_tpart.clone(),
@@ -250,7 +254,7 @@ impl GroupDef {
         .collect();
       match valid_casts.as_slice() {
         [] => panic!("can't cast from {:?} to {:?}", in_tpart, out_tparts),
-        [res] => return res.clone(),
+        [res] => return Some(res.clone()),
         _ => panic!(
           "ambiguous: multiple casts from {:?} to {:?}",
           in_tpart, out_tparts
@@ -346,18 +350,15 @@ impl GroupDef {
       Next::Cast(next) => {
         let mut x = x.clone();
         let child = x.sub_at_path_mut(&next.inner_path);
-        match self.reduce(
-          session,
-          &BindFrame::new(),
-          child,
-          &self.resolve_cast(&child.vtype(), &next.out_types),
-        ) {
-          ReduceResult::Fail => return ReduceResult::Fail,
-          ReduceResult::Success(new_child) => {
-            *child = new_child;
-            return ReduceResult::Success(x);
-          }
-        };
+        if let Some(cast) = self.resolve_cast(&child.vtype(), &next.out_types) {
+          match self.reduce(session, &BindFrame::new(), child, &cast) {
+            ReduceResult::Fail => return ReduceResult::Fail,
+            ReduceResult::Success(new_child) => {
+              *child = new_child;
+            }
+          };
+        }
+        return ReduceResult::Success(x);
       }
       Next::GroupRef(next) => {
         match &next.loc {

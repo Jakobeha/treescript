@@ -467,19 +467,19 @@ instance Printable (UType an) where
   pprint (UType _ typ) = pprint typ
 
 instance Printable DeclSet where
-  pprint (DeclSet alis rexps gexps fexps casts) =
-    foldMap (",\n  @" <>) (M.keys alis)
-      <> foldMap (",\n  " <>)            (M.keys rexps)
+  pprint (DeclSet rexps gexps fexps alis casts) =
+    foldMap (",\n  " <>) (M.keys rexps)
       <> foldMap (",\n  &" <>)           (M.keys gexps)
       <> foldMap (",\n  #" <>)           (M.keys fexps)
+      <> foldMap (",\n  @" <>)           (M.keys alis)
       <> foldMap ((",\n  " <>) . pprint) (S.toList casts)
 
 instance Printable (ImportDecl an) where
   pprint (ImportDecl _ path qual exps) =
-    "#import " <> pprint path <> printQual <> pprint exps <> ";"
+    "#import " <> path <> printQual <> pprint exps <> ";"
    where
     printQual | T.null qual = ""
-              | otherwise   = " => " <> T.dropEnd 1 qual
+              | otherwise   = " => " <> qual
 
 instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props) =
@@ -569,7 +569,7 @@ printReducer :: T.Text -> Reducer t -> T.Text
 printReducer typ (Reducer _ (Guard _ input output nexts) guards) =
   pprint input
     <> " "
-    <> pprint typ
+    <> typ
     <> " "
     <> pprint output
     <> foldMap printNext  nexts
