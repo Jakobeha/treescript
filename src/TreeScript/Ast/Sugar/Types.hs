@@ -121,7 +121,6 @@ data GroupDecl an
   = GroupDecl
   { groupDeclAnn :: an
   , groupDeclGroup :: Group an
-  , groupDeclFunReturn :: Maybe (Type an)
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
@@ -271,10 +270,8 @@ instance TreePrintable Group where
     = par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
-  treePrint par _ (GroupDecl _ group fret)
-    = par group <> printFunRet fret <> "."
-    where printFunRet Nothing = ""
-          printFunRet (Just fret') = " -> " <> par fret'
+  treePrint par _ (GroupDecl _ group)
+    = par group <> "."
 
 instance TreePrintable Record where
   treePrint par _ (Record _ head' props)

@@ -66,8 +66,8 @@ ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
            ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 Nothing }
-          | Group '->' Type '.' { GroupDecl (getAnn $1 <> $2 <> getAnn $3 <> $4) $1 (Just $3) }
+GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
+          ;
 TypeAlias : '@' LowerSym '<-' Type ';' { TypeAlias ($1 <> getAnn $2 <> getAnn $4) $2 $4 }
           ;
 Reducer : ReducerBase Guards ';'

@@ -1,2 +1,2 @@
-#Get[@any] -> @any.
+#Get[@any].
 #Set[@any, @any].

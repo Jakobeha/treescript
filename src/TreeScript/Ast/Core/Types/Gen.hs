@@ -108,7 +108,7 @@ data PropsType
 data DeclSet
   = DeclSet
   { declSetRecords :: M.Map T.Text PropsType
-  , declSetFunctions :: M.Map T.Text ([XType], XType)
+  , declSetFunctions :: M.Map T.Text [XType]
   , declSetGroups :: M.Map T.Text (Int, Int)
   , declSetAliases :: M.Map T.Text XType
   , declSetCasts :: S.Set CastSurface
@@ -149,7 +149,6 @@ data FunctionDecl an
   { functionDeclAnn :: an
   , functionDeclHead :: T.Text
   , functionDeclProps :: [UType an]
-  , functionDeclOutput :: UType an
   } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Defines a type alias.
@@ -171,7 +170,7 @@ data Primitive an
 data SymbolType a where
   SymbolTypeRecord ::SymbolType PropsType
   SymbolTypeGroup ::SymbolType (Int, Int)
-  SymbolTypeFunction ::SymbolType ([XType], XType)
+  SymbolTypeFunction ::SymbolType [XType]
   SymbolTypeAlias ::SymbolType XType
 
 -- | An identifier, such as a record head or property key.
@@ -486,8 +485,8 @@ instance Printable (RecordDecl an) where
     head' <> printProps (map pprint props) <> "."
 
 instance Printable (FunctionDecl an) where
-  pprint (FunctionDecl _ head' props ret) =
-    "#" <> head' <> printProps (map pprint props) <> " -> " <> pprint ret <> "."
+  pprint (FunctionDecl _ head' props) =
+    "#" <> head' <> printProps (map pprint props) <> "."
 
 instance Printable (TypeAlias an) where
   pprint (TypeAlias _ ali typ) =
@@ -669,9 +668,7 @@ mkDeclSet frdecls vrheads gdecls fdecls alis casts = DeclSet
                          (\(GroupDecl _ head' nvps ngps) -> (head', (nvps, ngps)))
                          gdecls
   , declSetFunctions = M.fromList $ map
-                         (\(FunctionDecl _ head' ps ret) ->
-                           (head', (map utype ps, utype ret))
-                         )
+                         (\(FunctionDecl _ head' ps) -> (head', map utype ps))
                          fdecls
   , declSetAliases   = M.fromList
                          $ map (\(TypeAlias _ ali typ) -> (ali, utype typ)) alis

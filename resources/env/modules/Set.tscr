@@ -1,2 +1,2 @@
-#Has[@any, @any] -> @bool.
-#Add[@any, @any] -> @t[].
+#Has[@any, @any].
+#Add[@any, @any].

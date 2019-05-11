@@ -1,1 +1,1 @@
-#IsNum[@any] -> @bool.
+#IsNum[@any].

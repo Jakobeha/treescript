@@ -419,25 +419,11 @@ parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props)) =
 parseGroupDecl
   :: S.GroupDecl Range
   -> GlobalSessionRes (Either (GroupDecl Range) (FunctionDecl Range))
-parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props) funRet)
-  = case loc of
-    S.GroupLocGlobal _ -> do
-      case funRet of
-        Nothing -> pure ()
-        Just f  -> tellError
-          $ desugarError (getAnn f) "group can't have an explicit return type"
-      pure $ Left $ GroupDecl rng head' nvps ngps -- TODO Error on other properties
+parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props)) =
+  case loc of
+    S.GroupLocGlobal _ -> pure $ Left $ GroupDecl rng head' nvps ngps -- TODO Error on other properties
     S.GroupLocFunction _ ->
-      fmap Right
-        $   FunctionDecl rng head'
-        <$> traverse parseTypeProp props
-        <*> funRet' -- TODO output type
-     where
-      funRet' = case funRet of
-        Nothing -> do
-          tellError $ desugarError rng "function needs an explicit return type"
-          pure $ UType rng XTypeAny
-        Just f -> parseType f
+      fmap Right $ FunctionDecl rng head' <$> traverse parseTypeProp props
     S.GroupLocLocal lrng -> mkFail
       $ desugarError (lrng <> hrng) "can't declare local (lowercase) group"
  where
@@ -615,7 +601,7 @@ parseGroupPropDecl (S.GenPropertyGroup grp) = mkFail
 parseEmptyGroupDef
   :: S.GroupDecl Range
   -> GlobalSessionRes (Symbol (), GroupDef Range, GVBindEnv)
-parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) props) _)
+parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) props))
   = case loc of
     S.GroupLocGlobal _ -> do
       (props', bindEnv) <- runStateT
@@ -710,7 +696,7 @@ parseLocal (S.Program rng topLevels) = do
   let
     (topLevelsOutGroups, topLevelsInGroups) = break
       (\case
-        S.TopLevelGroupDecl (S.GroupDecl _ (S.Group _ (S.GroupLocGlobal _) _ _) _)
+        S.TopLevelGroupDecl (S.GroupDecl _ (S.Group _ (S.GroupLocGlobal _) _ _))
           -> True
         _ -> False
       )

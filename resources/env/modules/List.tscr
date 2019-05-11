@@ -1,1 +1,1 @@
-#Map[@any, @list[@any]] -> @list[@any].
+#Map[@any, @list[@any]].
