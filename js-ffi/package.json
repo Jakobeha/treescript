@@ -1,7 +1,7 @@
 {
-  "name": "treescript-js",
+  "name": "treescript-ffi",
   "version": "0.1.0",
-  "description": "JS FFI for TreeScript (https://github.com/Jakobeha/treescript)",
+  "description": "JS FFI for TreeScript (https://github.com/Jakobeha/treescript/blob/master/treescript-ffi-js)",
   "main": "index.ts",
   "scripts": {
     "install": "browserify --standalone ffi --node index.ts -p [ tsify noImplicitAny ] -o ../../ffi.js",
