@@ -332,12 +332,12 @@ parseSymbol typ sym@(S.Symbol ann txt) = do
     <> txt
   pure res
 
-parseBuiltinType :: S.Symbol Range -> GlobalSessionRes (Maybe XType)
+parseBuiltinType :: S.Symbol Range -> GlobalSessionRes (Maybe MType)
 parseBuiltinType (S.Symbol _ txt)
-  | txt == "any"    = pure $ Just XTypeAny
-  | txt == "int"    = pure $ Just $ xType1 $ TypePartPrim PrimTypeInteger
-  | txt == "float"  = pure $ Just $ xType1 $ TypePartPrim PrimTypeFloat
-  | txt == "string" = pure $ Just $ xType1 $ TypePartPrim PrimTypeString
+  | txt == "any"    = pure $ Just MTypeAny
+  | txt == "int"    = pure $ Just $ mType1 $ STypePrim PrimTypeInteger
+  | txt == "float"  = pure $ Just $ mType1 $ STypePrim PrimTypeFloat
+  | txt == "string" = pure $ Just $ mType1 $ STypePrim PrimTypeString
   | otherwise       = pure Nothing
 
 parseRecordDeclSkipProps
@@ -345,10 +345,10 @@ parseRecordDeclSkipProps
 parseRecordDeclSkipProps (S.RecordDecl rng (S.Record _ (S.Symbol _ head') _)) =
   pure $ RecordDecl rng head' [undefined]
 
-parseAliasType :: S.Symbol Range -> GlobalSessionRes (Maybe XType)
+parseAliasType :: S.Symbol Range -> GlobalSessionRes (Maybe MType)
 parseAliasType = tryLookupSymbol SymbolTypeAlias
 
-parseTypePart :: S.TypePart Range -> GlobalSessionRes XType
+parseTypePart :: S.TypePart Range -> GlobalSessionRes MType
 parseTypePart (S.TypePartSymbol rng sym)
   | loc /= "" && isLower (T.head loc)
   = do
@@ -369,29 +369,38 @@ parseTypePart (S.TypePartSymbol rng sym)
           $  desugarError rng
           $  "unknown type (not an alias or prim): "
           <> pprint sym
-        pure XTypeAny
+        pure MTypeAny
   | otherwise
-  = xType1 . TypePartRecord . remAnns <$> parseSymbol SymbolTypeRecord sym
+  = mType1 . STypeRecord . remAnns <$> parseSymbol SymbolTypeRecord sym
   where loc = T.takeWhileEnd (/= '_') $ S.symbol sym
 parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') props))
   | head' == "t"
-  = xType1 . TypePartTuple . map utype <$> traverse parseTypeProp props
+  = mkTupleType . map utype <$> traverse parseTypeProp props
+  | head' == "cons"
+  = case props of
+    [prop] -> mkConsType . utype <$> parseTypeProp prop
+    _      -> do
+      tellError
+        $  desugarError rng
+        $  "cons type must have 1 property, got "
+        <> pprint (length props)
+      pure MTypeAny
   | head' == "list"
   = case props of
-    [prop] -> xType1 . TypePartList . utype <$> parseTypeProp prop
+    [prop] -> mkListType . utype <$> parseTypeProp prop
     _      -> do
       tellError
         $  desugarError rng
         $  "list type must have 1 property, got "
         <> pprint (length props)
-      pure XTypeAny
+      pure MTypeAny
   | otherwise
   = do
     tellError
       $  desugarError headRng
       $  "unknown transparent record type: "
       <> head'
-    pure XTypeAny
+    pure MTypeAny
 
 parseType :: S.Type Range -> GlobalSessionRes (UType Range)
 parseType (S.Type rng parts) =
@@ -402,15 +411,15 @@ parseTypeProp (S.GenPropertyDecl     typ ) = parseType typ
 parseTypeProp (S.GenPropertySubGroup prop) = do
   let rng = getAnn prop
   tellError $ desugarError rng "expected type, got group property declaration"
-  pure $ UType rng XTypeAny
+  pure $ UType rng MTypeAny
 parseTypeProp (S.GenPropertyRecord val) = do
   let rng = getAnn val
   tellError $ desugarError rng "expected type, got value"
-  pure $ UType rng XTypeAny
+  pure $ UType rng MTypeAny
 parseTypeProp (S.GenPropertyGroup grp) = do
   let rng = getAnn grp
   tellError $ desugarError rng "expected value, got group"
-  pure $ UType rng XTypeAny
+  pure $ UType rng MTypeAny
 
 parseRecordDecl :: S.RecordDecl Range -> GlobalSessionRes (RecordDecl Range)
 parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props)) =
@@ -669,10 +678,11 @@ getCastSurfaceType :: Reducer Range -> GlobalSessionRes CastSurface
 getCastSurfaceType (Reducer _ (Guard mrng inp out nexts) _) = do
   when (nexts /= []) $ mkFail $ desugarError mrng
                                              "cast reducer can't have nexts"
-  case (surfaceType inp, surfaceType out) of
-    (SType1 ityp, SType1 otyp) -> pure $ CastSurface ityp otyp
-    _ ->
-      mkFail $ desugarError mrng "cast reducer input and output can't be binds"
+  case (valueType inp, valueType out) of
+    (Just ityp, Just otyp) -> pure $ CastSurface ityp otyp
+    _                      -> mkFail $ desugarError
+      mrng
+      "cast reducer input and output aren't atom types - they can't be binds or tuples/lists with binds"
 
 mkMapErrSharedKeys
   :: (Ord k)

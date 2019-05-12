@@ -4,30 +4,40 @@
 
 -- | Tests that serialized programs match the interpreter's specification.
 module BridgeSpec
-       ( spec ) where
+  ( spec
+  )
+where
 
-import Core.Test
-import TreeScript
-import qualified TreeScript.Ast.Core as C
+import           Core.Test
+import           TreeScript
+import qualified TreeScript.Ast.Core           as C
 
-import qualified Data.ByteString.Lazy as B
-import qualified Data.Text.IO as T
-import System.Process
+import qualified Data.ByteString.Lazy          as B
+import qualified Data.Text.IO                  as T
+import           System.Process
 
 input :: FilePath
 input = "test-resources/Serialize.tscr"
 
 outputProg :: FilePath
-outputProg = "treescript-interpreter/test-resources/program/SerializeHaskell.tprg"
+outputProg =
+  "treescript-interpreter/test-resources/program/SerializeHaskell.tprg"
 
 outputMsgpack :: FilePath
-outputMsgpack = "treescript-interpreter/test-resources/program/SerializeHaskell.msgpack"
+outputMsgpack =
+  "treescript-interpreter/test-resources/program/SerializeHaskell.msgpack"
 
 outputJson :: FilePath
-outputJson = "treescript-interpreter/test-resources/program/SerializeHaskell.json"
+outputJson =
+  "treescript-interpreter/test-resources/program/SerializeHaskell.json"
+
+interpreterOutputMsgpack :: FilePath
+interpreterOutputMsgpack =
+  "treescript-interpreter/test-resources/program/SerializeRust.msgpack"
 
 interpreterOutputJson :: FilePath
-interpreterOutputJson = "treescript-interpreter/test-resources/program/SerializeRust.json"
+interpreterOutputJson =
+  "treescript-interpreter/test-resources/program/SerializeRust.json"
 
 validate :: Result a -> IO a
 validate (ResultFail err) = do
@@ -53,11 +63,16 @@ spec = do
   describe "interpreter serialization" $ do
     -- WARN: Needs this order
     it "serializes" $ do
-      resInterp <- runSessionResVirtual exampleEnv $ compileInterp input outputMsgpack
+      resInterp <- runSessionResVirtual exampleEnv
+        $ compileInterp input outputMsgpack
       validate resInterp
-    it "is valid msgpack" $
-      callProcess "msgpack2json" ["-i", outputMsgpack, "-o", outputJson, "-p"]
+    it "is valid msgpack" $ callProcess
+      "msgpack2json"
+      ["-i", outputMsgpack, "-o", outputJson, "-p"]
     it "matches the format expected by the interpreter" $ do
-      txt <- T.readFile outputJson
-      itxt <- T.readFile interpreterOutputJson
-      assertBool "format doesn't match" $ txt == itxt -- `shouldBe` exhausts heap
+      jtxt  <- T.readFile outputJson
+      ijtxt <- T.readFile interpreterOutputJson
+      assertBool "JSON format doesn't match" $ jtxt == ijtxt -- `shouldBe` exhausts heap
+      mtxt  <- B.readFile outputMsgpack
+      imtxt <- B.readFile interpreterOutputMsgpack
+      assertBool "Msgpack format doesn't match (but JSON does)" $ mtxt == imtxt

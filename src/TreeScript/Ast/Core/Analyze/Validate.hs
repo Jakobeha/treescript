@@ -62,17 +62,20 @@ vDisjointProps (Record rng head' props) = do
         <> ", got "
         <> pprint nprops
       -- Validate prop types
-      forM_ (zip ptyps' props) $ \(eptyp, prop) -> do
-        let aptyp  = s2xType $ surfaceType prop
-            pcasts = S.fromList $ allPossibleCasts aptyp eptyp
-        -- | SOON make casts contain ones from modules (add to exports)
-        when (typesDisjoint eptyp aptyp && S.disjoint pcasts casts)
-          $  tellError
-          $  typeError rng
-          $  "types are disjoint and there aren't any casts: expected "
-          <> pprint eptyp
-          <> ", actual "
-          <> pprint aptyp
+      forM_ (zip ptyps' props) $ \(eptyp, prop) ->
+        case mType1 <$> valueType prop of
+          -- Prop is a bind, so never guarenteed disjoint
+          Nothing    -> pure ()
+          Just aptyp -> do
+            let pcasts = S.fromList $ allPossibleCasts aptyp eptyp
+            -- | SOON make casts contain ones from modules (add to exports)
+            when (typesDisjoint eptyp aptyp && S.disjoint pcasts casts)
+              $  tellError
+              $  typeError rng
+              $  "types are disjoint and there aren't any casts: expected "
+              <> pprint eptyp
+              <> ", actual "
+              <> pprint aptyp
 
 unboundErrsValue :: S.Set Int -> Value Range -> [Error]
 unboundErrsValue _ (ValuePrimitive _) = []

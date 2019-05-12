@@ -1,6 +1,6 @@
 extern crate serde;
 use crate::util::GeneratorIterator;
-use crate::vtype::{PrimType, SType, Symbol, Type, TypePart};
+use crate::vtype::{PrimType, SType, Symbol};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use serde_json::{Map, Number, Value as JsValue};
@@ -241,29 +241,28 @@ impl Value {
     panic!("to_args: expected tuple, got: {}", self)
   }
 
-  pub fn vtype(&self) -> SType {
+  pub fn vtype(&self) -> Option<SType> {
     match self {
-      Value::Prim(prim) => return SType::Atom(TypePart::Prim(prim.vtype())),
+      Value::Prim(prim) => return Some(SType::Prim(prim.vtype())),
       Value::Record(Record { head, props }) => {
         if head == &Symbol::tuple() {
-          return SType::Atom(TypePart::Tuple(
-            props.iter().map(|prop| Type::from(prop.vtype())).collect(),
-          ));
-        } else if head == &Symbol::nil() {
-          return SType::Atom(TypePart::List(Type::bottom()));
+          return props
+            .iter()
+            .map(|prop| prop.vtype())
+            .collect::<Vec<Option<SType>>>()
+            .flip()
+            .map(|ptyps| SType::Tuple(ptyps));
         } else if head == &Symbol::cons() {
-          if let [head, tail] = props.as_slice() {
-            let htyp = Type::from(head.vtype());
-            if let SType::Atom(TypePart::List(ttyp)) = tail.vtype() {
-              return SType::Atom(TypePart::List(&htyp | &ttyp));
-            }
+          if let [elem, _] = props.as_slice() {
+            return elem.vtype().map(|etyp| SType::Cons(Box::new(etyp)));
+          } else {
+            panic!("can't get type of malformed list: {}", self);
           }
-          panic!("can't get type of malformed list: {}", self);
         } else {
-          return SType::Atom(TypePart::Record(head.clone()));
+          return Some(SType::Record(head.clone()));
         }
       }
-      Value::Splice(_) => return SType::Splice,
+      Value::Splice(_) => return None,
     };
   }
 

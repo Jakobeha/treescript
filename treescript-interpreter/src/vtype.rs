@@ -1,14 +1,12 @@
 use serde::{Deserialize, Serialize};
-use serde_repr::{Serialize_repr, Deserialize_repr};
-use std::collections::HashSet;
+use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::iter;
-use std::iter::FromIterator;
 use std::ops::BitOr;
 
-#[derive(Clone, Debug, Deserialize_repr, Eq, Hash, PartialEq, Serialize_repr)]
+#[derive(Clone, Debug, Deserialize_repr, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize_repr)]
 #[repr(usize)]
 pub enum PrimType {
   Integer,
@@ -16,30 +14,37 @@ pub enum PrimType {
   String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Symbol {
   pub module: String,
   pub local: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub enum TypePart {
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum SType {
   Prim(PrimType),
   Record(Symbol),
-  Tuple(Vec<Type>),
-  List(Type),
+  Tuple(Vec<SType>),
+  Cons(Box<SType>),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum Type {
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum MType {
   Any,
-  Parts(HashSet<TypePart>),
+  Parts(BTreeSet<SType>),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub enum SType {
-  Splice,
-  Atom(TypePart),
+impl Hash for MType {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    match self {
+      MType::Any => (),
+      MType::Parts(parts) => {
+        for part in parts {
+          part.hash(state);
+        }
+      }
+    };
+  }
 }
 
 impl Display for PrimType {
@@ -52,42 +57,20 @@ impl Display for PrimType {
   }
 }
 
-impl Hash for Type {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    match self {
-      Type::Any => (),
-      Type::Parts(parts) => {
-        for part in parts {
-          part.hash(state);
-        }
-      }
-    };
-  }
-}
+impl BitOr for &MType {
+  type Output = MType;
 
-impl From<SType> for Type {
-  fn from(stype: SType) -> Type {
-    match stype {
-      SType::Atom(tpart) => return Type::Parts(HashSet::from_iter(iter::once(tpart))),
-      SType::Splice => return Type::Any,
-    };
-  }
-}
-
-impl BitOr for &Type {
-  type Output = Type;
-
-  fn bitor(self, rhs: &Type) -> Type {
+  fn bitor(self, rhs: &MType) -> MType {
     match (self, rhs) {
-      (Type::Any, _) => return Type::Any,
-      (_, Type::Any) => return Type::Any,
-      (Type::Parts(xparts), Type::Parts(yparts)) => return Type::Parts(xparts | yparts),
+      (MType::Any, _) => return MType::Any,
+      (_, MType::Any) => return MType::Any,
+      (MType::Parts(xparts), MType::Parts(yparts)) => return MType::Parts(xparts | yparts),
     };
   }
 }
 
-impl Type {
-  pub fn bottom() -> Type {
-    return Type::Parts(HashSet::new());
+impl MType {
+  pub fn bottom() -> MType {
+    return MType::Parts(BTreeSet::new());
   }
 }

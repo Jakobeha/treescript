@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedLists #-}
 
 module TreeScript.Ast.Core.Analyze.Type
-  ( surfaceType
+  ( valueType
   , addCasts
   )
 where
@@ -14,28 +14,24 @@ import           Control.Monad.Writer.Strict
 
 type Typed an = WriterT [Cast an] GlobalSessionRes
 
-primType :: Primitive an -> TypePart
-primType (PrimInteger _ _) = TypePartPrim PrimTypeInteger
-primType (PrimFloat   _ _) = TypePartPrim PrimTypeFloat
-primType (PrimString  _ _) = TypePartPrim PrimTypeString
+primType :: Primitive an -> SType
+primType (PrimInteger _ _) = STypePrim PrimTypeInteger
+primType (PrimFloat   _ _) = STypePrim PrimTypeFloat
+primType (PrimString  _ _) = STypePrim PrimTypeString
 
-elemType :: [SType] -> XType
-elemType [x, SType1 (TypePartList y)] = s2xType x <> y
-elemType [_, STypeAny               ] = XTypeAny
--- Malformed
-elemType _                            = xBottom
-
-recType :: Record an -> TypePart
+recType :: Record an -> Maybe SType
 recType (Record _ head' props) = case recordKind head' of
-  RecordKindTuple  -> TypePartTuple $ map (s2xType . surfaceType) props
-  RecordKindNil    -> TypePartList xBottom
-  RecordKindCons   -> TypePartList $ elemType $ map surfaceType props
-  RecordKindOpaque -> TypePartRecord $ remAnns head'
+  RecordKindTuple -> STypeTuple <$> traverse valueType props
+  RecordKindCons  -> case props of
+    -- Malformed
+    []      -> Just $ STypeRecord $ remAnns head'
+    (x : _) -> STypeCons <$> valueType x
+  RecordKindOpaque -> Just $ STypeRecord $ remAnns head'
 
-surfaceType :: Value an -> SType
-surfaceType (ValuePrimitive prim) = SType1 $ primType prim
-surfaceType (ValueRecord    recd) = SType1 $ recType recd
-surfaceType (ValueBind      _   ) = STypeAny
+valueType :: Value an -> Maybe SType
+valueType (ValuePrimitive prim) = Just $ primType prim
+valueType (ValueRecord    recd) = recType recd
+valueType (ValueBind      _   ) = Nothing
 
 addChildCasts :: Record an -> Typed an ()
 addChildCasts (Record _ _ props) = forM_ (zip [0 ..] props) $ \(idx, prop) ->

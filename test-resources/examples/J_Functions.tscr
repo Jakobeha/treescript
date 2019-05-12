@@ -1,5 +1,3 @@
-Add[@int|@float].
-LT[@int|@float].
 Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
 
 &Main[].
@@ -13,21 +11,15 @@ Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Sch
 \x -> \x &Apply[];
 
 &Add[].
-scm'(+ \xAt)' -> Add[\x],
- //Makes recursion easier because we don't need to evaluate \x anymore
-  Scheme_Atom[\x] <- \xAt;
-scm'(\xAdd \yAt)' -> Scheme_Atom[\xpy],
+scm'((+ \xAt) \yAt)' -> Scheme_Atom[\xpy],
   \xpy <- T[\x, \y] #Num_Add[],
-  Add[\x] <- \xAdd,
+  Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 
 &LT[].
-scm'(< \xAt)' -> LT[\x],
- //Makes recursion easier because we don't need to evaluate \x anymore
-  Scheme_Atom[\x] <- \xAt;
-scm'(\xLt \yAt)' -> Scheme_Atom[\xpy],
+scm'((< \xAt) \yAt)' -> Scheme_Atom[\xpy],
   \xpy <- T[\x, \y] #Num_LessThan[],
-  LT[\x] <- \xLt,
+  Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 
 &If[].

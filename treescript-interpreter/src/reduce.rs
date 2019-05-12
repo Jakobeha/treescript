@@ -1,10 +1,10 @@
 extern crate serde;
 use crate::session::Session;
 use crate::value::{Record, Value};
-use crate::vtype::{SType, Symbol, TypePart};
+use crate::vtype::{SType, Symbol};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::rc::Weak;
@@ -51,7 +51,7 @@ pub struct GroupRef {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Cast {
   pub inner_path: Vec<usize>,
-  pub out_types: HashSet<TypePart>,
+  pub out_types: BTreeSet<SType>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -75,8 +75,8 @@ pub struct Reducer {
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct CastSurface {
-  pub input: TypePart,
-  pub output: TypePart,
+  pub input: SType,
+  pub output: SType,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -238,8 +238,8 @@ impl GroupDef {
     }
   }
 
-  fn resolve_cast(&self, in_type: &SType, out_tparts: &HashSet<TypePart>) -> Option<Reducer> {
-    if let SType::Atom(in_tpart) = in_type {
+  fn resolve_cast(&self, in_type: &Option<SType>, out_tparts: &BTreeSet<SType>) -> Option<Reducer> {
+    if let Some(in_tpart) = in_type {
       if out_tparts.contains(in_tpart) {
         return None;
       }

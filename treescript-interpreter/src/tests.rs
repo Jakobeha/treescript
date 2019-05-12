@@ -3,8 +3,8 @@ use crate::program::ProgramSerial;
 use crate::reduce::{Cast, GroupDefSerial, GroupLoc, GroupRef, Guard, Next, Reducer};
 use crate::session::LibrarySpec;
 use crate::value::{Prim, Record, Value};
-use crate::vtype::{PrimType, Symbol, TypePart};
-use std::collections::HashSet;
+use crate::vtype::{PrimType, SType, Symbol};
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::iter::FromIterator;
@@ -50,13 +50,20 @@ fn test_serialize_prog() {
                 output: Value::Record(Record {
                   head: Symbol {
                     module: String::from("Serialize"),
-                    local: String::from("Foo"),
+                    local: String::from("Baz"),
                   },
                   props: vec![Value::Splice(1)],
                 }),
                 nexts: vec![Next::Cast(Cast {
                   inner_path: vec![0],
-                  out_types: HashSet::from_iter(vec![TypePart::Prim(PrimType::Integer)]),
+                  out_types: BTreeSet::from_iter(vec![
+                    SType::Record(Symbol::from("Nil")),
+                    SType::Cons(Box::new(SType::Prim(PrimType::Integer))),
+                    SType::Cons(Box::new(SType::Prim(PrimType::Float))),
+                    SType::Cons(Box::new(SType::Prim(PrimType::String))),
+                    SType::Cons(Box::new(SType::Record(Symbol::from("False")))),
+                    SType::Cons(Box::new(SType::Record(Symbol::from("True")))),
+                  ]),
                 })],
               },
               guards: vec![Guard {
@@ -87,7 +94,7 @@ fn test_serialize_prog() {
                 output: Value::Record(Record {
                   head: Symbol {
                     module: String::from("Scheme_Lang"),
-                    local: String::from("SCons"),
+                    local: String::from("SNil"),
                   },
                   props: vec![],
                 }),

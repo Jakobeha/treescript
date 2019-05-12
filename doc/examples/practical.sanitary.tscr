@@ -19,7 +19,8 @@ if (is.data.frame(\x)) {
   R_Symbol[\_] <- \i,
   T[\in2, \_] <- T[\in, 0] &MapAccum[&Count[&Recurse[&OptimizeForReplace[\x, \y, \i]]]],
   \x <- \in &First[&FirstRecurse[&OptimizeForFind[\i]]],
-  \y <- T[R_Symbol[\1]] #Gen_FreeString[];
+  \y <- R_Symbol[\yStr],
+  \yStr <- T[\1] #Gen_FreeString[];
 
 &OptimizeForFind[\i].
 r'\x[[\i]] <- \body' -> \x;

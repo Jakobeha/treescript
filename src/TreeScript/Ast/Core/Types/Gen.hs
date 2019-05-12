@@ -22,12 +22,10 @@ import           TreeScript.Misc
 import qualified Data.ByteString.Lazy          as B
 import           Data.Binary
 import qualified Data.Map.Strict               as M
-import           Data.Maybe
 import           Data.MessagePack
 import           Data.Proxy
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
-import           GHC.Exts
 import           GHC.Generics
 
 data Term a where
@@ -56,61 +54,44 @@ data PrimType
 -- | Whether the record is a regular or special type.
 data RecordKind
   = RecordKindTuple
-  | RecordKindNil
   | RecordKindCons
   | RecordKindOpaque
   deriving (Eq, Ord, Read, Show, Generic, Binary)
 
--- | Part of a union type.
-data TypePart
-  = TypePartPrim PrimType
-  | TypePartRecord (Symbol ())
-  | TypePartTuple [XType]
-  | TypePartList XType
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
-
--- | Set of @TypeParts@, with separate sets for each type of part (easier to merge lists/tuples).
-data TypePartSet
-  = TypePartSet
-  { typePartSetPrims :: S.Set PrimType
-  , typePartSetRecords :: S.Set (Symbol ())
-  , typePartSetTuples :: M.Map Int [XType]
-  , typePartSetLists :: Maybe XType
-  } deriving (Eq, Ord, Read, Show, Generic, Binary)
-
--- | Type without annotations.
--- Types are bounded lattices consisting of either a union of disjoint atoms or @any@.
-data XType
-  = XTypeAny
-  | XType TypePartSet
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
-
--- | Type of a single value - values never have union types.
+-- | Type of a concrete value (no splices). An atom or product of atoms, specialized for TreeScript values.
 data SType
-  = STypeAny
-  | SType1 TypePart
-  deriving (Eq, Ord, Read, Show)
+  = STypePrim PrimType
+  | STypeRecord (Symbol ())
+  | STypeTuple [SType]
+  | STypeCons SType
+  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+
+-- | Type of an expected record property: a union of a fixed # of 'SType's or "any", which is the union of all types.
+data MType
+  = MTypeAny
+  | MType (S.Set SType)
+  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
 
 -- | Type defined by the user, with annotations.
 data UType an
   = UType
   { utypeAnn :: an
-  , utype :: XType
+  , utype :: MType
   } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Whether a record has fixed or variable props
 data PropsType
   = PropsTypeVarLen
-  | PropsTypeFixed [XType]
+  | PropsTypeFixed [MType]
   deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | Declares what nodes a language or library enables.
 data DeclSet
   = DeclSet
   { declSetRecords :: M.Map T.Text PropsType
-  , declSetFunctions :: M.Map T.Text [XType]
+  , declSetFunctions :: M.Map T.Text [MType]
   , declSetGroups :: M.Map T.Text (Int, Int)
-  , declSetAliases :: M.Map T.Text XType
+  , declSetAliases :: M.Map T.Text MType
   , declSetCasts :: S.Set CastSurface
   } deriving (Eq, Ord, Read, Show, Generic, Binary)
 
@@ -170,8 +151,8 @@ data Primitive an
 data SymbolType a where
   SymbolTypeRecord ::SymbolType PropsType
   SymbolTypeGroup ::SymbolType (Int, Int)
-  SymbolTypeFunction ::SymbolType [XType]
-  SymbolTypeAlias ::SymbolType XType
+  SymbolTypeFunction ::SymbolType [MType]
+  SymbolTypeAlias ::SymbolType MType
 
 -- | An identifier, such as a record head or property key.
 data Symbol an
@@ -224,7 +205,7 @@ data Cast an
   = Cast
   { castAnn :: an
   , castPath :: [Int] -- ^ Index path in the value.
-  , castType :: TypePartSet -- ^ Expected type.
+  , castType :: S.Set SType -- ^ Expected type.
   } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a reducers.
@@ -245,8 +226,8 @@ data Guard an
 -- | The input and output type of a cast reducer.
 data CastSurface
   = CastSurface
-  { castSurfaceInput :: TypePart
-  , castSurfaceOutput :: TypePart
+  { castSurfaceInput :: SType
+  , castSurfaceOutput :: SType
   } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
 
 -- | Transforms a value into a different value. Like a case in a "match" statement.
@@ -295,71 +276,15 @@ data Program an
   , programLibraries :: M.Map ModulePath Library
   } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
-instance IsList TypePartSet where
-  type Item TypePartSet = TypePart
-
-  fromList parts = TypePartSet
-    { typePartSetPrims   = S.fromList $ mapMaybe
-                             (\case
-                               TypePartPrim prm -> Just prm
-                               _                -> Nothing
-                             )
-                             parts
-    , typePartSetRecords = S.fromList $ mapMaybe
-                             (\case
-                               TypePartRecord sym -> Just sym
-                               _                  -> Nothing
-                             )
-                             parts
-    , typePartSetTuples  = M.fromListWith (<>) $ mapMaybe
-                             (\case
-                               TypePartTuple props -> Just (length props, props)
-                               _                   -> Nothing
-                             )
-                             parts
-    , typePartSetLists   = foldMap
-                             (\case
-                               TypePartList elm -> Just elm
-                               _                -> Nothing
-                             )
-                             parts
-    }
-
-  toList (TypePartSet prms recs tups lsts) =
-    map TypePartPrim (S.toList prms)
-      ++ map TypePartRecord (S.toList recs)
-      ++ map TypePartTuple  (M.elems tups)
-      ++ map TypePartList   (maybeToList lsts)
-
-instance Semigroup TypePartSet where
-  TypePartSet xPrims xRecs xTups xLsts <> TypePartSet yPrims yRecs yTups yLsts
-    = TypePartSet { typePartSetPrims   = xPrims <> yPrims
-                  , typePartSetRecords = xRecs <> yRecs
-                  , typePartSetTuples  = M.unionWith (<>) xTups yTups
-                  , typePartSetLists   = unionLists xLsts yLsts
-                  }
-   where
-    unionLists (Just xLsts') (Just yLsts') = Just $ xLsts' <> yLsts'
-    unionLists (Just xLsts') Nothing       = Just xLsts'
-    unionLists Nothing       (Just yLsts') = Just yLsts'
-    unionLists Nothing       Nothing       = Nothing
-
-instance Monoid TypePartSet where
-  mempty = TypePartSet { typePartSetPrims   = mempty
-                       , typePartSetRecords = mempty
-                       , typePartSetTuples  = mempty
-                       , typePartSetLists   = mempty
-                       }
-
 -- | @mappend == union@.
-instance Semigroup XType where
-  XTypeAny <> _        = XTypeAny
-  _        <> XTypeAny = XTypeAny
+instance Semigroup MType where
+  MTypeAny <> _        = MTypeAny
+  _        <> MTypeAny = MTypeAny
 -- TODO: Merge same length lists and tuples.
-  XType xs <> XType ys = XType $ xs <> ys
+  MType xs <> MType ys = MType $ xs <> ys
 
 -- | @mappend == union@.
-instance Monoid XType where
+instance Monoid MType where
   mempty = xBottom
 
 instance Semigroup DeclSet where
@@ -408,10 +333,6 @@ instance (Monoid an) => Monoid (Program an) where
                    , programLibraries     = mempty
                    }
 
-instance InterpSerial TypePartSet where
-  toMsgp = toMsgp . S.fromList . toList
-  skipMsgp Proxy = False
-
 instance (InterpSerial an) => InterpSerial (ImportDecl an) where
   toMsgp _ = undefined
   skipMsgp Proxy = True
@@ -450,17 +371,17 @@ instance Printable PrimType where
   pprint PrimTypeFloat   = "float"
   pprint PrimTypeString  = "string"
 
-instance Printable TypePart where
-  pprint (TypePartPrim   x    ) = "@" <> pprint x
-  pprint (TypePartRecord name ) = "@" <> pprint name
-  pprint (TypePartTuple  props) = "@t" <> printProps (map pprint props)
-  pprint (TypePartList   prop ) = "@list[" <> pprint prop <> "]"
+instance Printable SType where
+  pprint (STypePrim   x    ) = "@" <> pprint x
+  pprint (STypeRecord name ) = "@" <> pprint name
+  pprint (STypeTuple  props) = "@t" <> printProps (map pprint props)
+  pprint (STypeCons   prop ) = "@list[" <> pprint prop <> "]"
 
-instance Printable XType where
-  pprint XTypeAny = "@any"
-  pprint (XType parts) | null parts' = "@bottom"
+instance Printable MType where
+  pprint MTypeAny = "@any"
+  pprint (MType parts) | null parts' = "@bottom"
                        | otherwise   = T.intercalate "|" $ map pprint parts'
-    where parts' = toList parts
+    where parts' = S.toList parts
 
 instance Printable (UType an) where
   pprint (UType _ typ) = pprint typ
@@ -527,7 +448,7 @@ instance Printable (Cast an) where
     "&["
       <> T.intercalate "," (map pprint path)
       <> ":"
-      <> pprint (XType tparts)
+      <> pprint (MType tparts)
       <> "]"
 
 instance Printable (Next an) where
@@ -601,52 +522,53 @@ printLibrary path lib = "--- " <> path <> "\n" <> pprint lib
 modulePathPrintLength :: Int
 modulePathPrintLength = 5
 
-xBottom :: XType
-xBottom = XType mempty
+xBottom :: MType
+xBottom = MType mempty
 
-xType1 :: TypePart -> XType
-xType1 part = XType [part]
+nilType :: MType
+nilType = mType1 $ STypeRecord $ mkBuiltinSymbol "Nil"
 
--- TODO typePartSetToList typePartSetFromList
+mType1 :: SType -> MType
+mType1 part = MType [part]
 
-typePartSetDisjoint :: TypePartSet -> TypePartSet -> Bool
-typePartSetDisjoint (TypePartSet xPrms xRecs xTups xLsts) (TypePartSet yPrms yRecs yTups yLsts)
-  = S.disjoint xPrms yPrms
-    && S.disjoint xRecs yRecs
-    && and
-         (concat $ M.elems $ M.intersectionWith (zipWith typesDisjoint)
-                                                xTups
-                                                yTups
-         )
-    && and (typesDisjoint <$> xLsts <*> yLsts)
+mkTupleType :: [MType] -> MType
+mkTupleType typs = case sequence <$> traverse m2sTypes typs of
+  Nothing    -> MTypeAny
+  Just props -> MType $ S.fromList $ map STypeTuple props
+ where
+  m2sTypes MTypeAny      = Nothing
+  m2sTypes (MType parts) = Just $ S.toList parts
 
-typesDisjoint :: XType -> XType -> Bool
-typesDisjoint XTypeAny       _              = False
-typesDisjoint _              XTypeAny       = False
-typesDisjoint (XType xParts) (XType yParts) = typePartSetDisjoint xParts yParts
+mkConsType :: MType -> MType
+mkConsType MTypeAny      = MTypeAny
+mkConsType (MType parts) = MType $ S.map STypeCons parts
 
-s2xType :: SType -> XType
-s2xType STypeAny      = XTypeAny
-s2xType (SType1 part) = XType [part]
+mkListType :: MType -> MType
+mkListType mtyp = mkConsType mtyp <> nilType
+
+typesDisjoint :: MType -> MType -> Bool
+typesDisjoint MTypeAny       _              = False
+typesDisjoint _              MTypeAny       = False
+typesDisjoint (MType xParts) (MType yParts) = S.disjoint xParts yParts
 
 -- | Whether the record is opaque or what transparent type it is.
 recordKind :: Symbol an -> RecordKind
-recordKind (Symbol _ mdl loc) | mdl == "" && loc == "T"    = RecordKindTuple
-                              | mdl == "" && loc == "Nil"  = RecordKindNil
-                              | mdl == "" && loc == "Cons" = RecordKindCons
-                              | otherwise                  = RecordKindOpaque
+recordKind sym | sym_ == mkBuiltinSymbol "T"    = RecordKindTuple
+               | sym_ == mkBuiltinSymbol "Cons" = RecordKindCons
+               | otherwise                      = RecordKindOpaque
+  where sym_ = remAnns sym
 
 -- | 'Nothing' if the cast type is @any@.
-mkCast :: an -> [Int] -> XType -> Maybe (Cast an)
-mkCast _   _    XTypeAny      = Nothing
-mkCast ann path (XType parts) = Just $ Cast ann path parts
+mkCast :: an -> [Int] -> MType -> Maybe (Cast an)
+mkCast _   _    MTypeAny      = Nothing
+mkCast ann path (MType parts) = Just $ Cast ann path parts
 
-allPossibleCasts :: XType -> XType -> [CastSurface]
+allPossibleCasts :: MType -> MType -> [CastSurface]
 -- Can't cast to/from any
-allPossibleCasts XTypeAny _        = []
-allPossibleCasts _        XTypeAny = []
-allPossibleCasts (XType xs) (XType ys) =
-  CastSurface <$> toList xs <*> toList ys
+allPossibleCasts MTypeAny _        = []
+allPossibleCasts _        MTypeAny = []
+allPossibleCasts (MType xs) (MType ys) =
+  CastSurface <$> S.toList xs <*> S.toList ys
 
 mkDeclSet
   :: [RecordDecl an]
@@ -691,32 +613,31 @@ builtinDecls = mkDeclSet
   , RecordDecl () "True"  []
   , RecordDecl () "False" []
   , RecordDecl () "None"  []
-  , RecordDecl () "Hole" [UType () $ xType1 $ TypePartPrim PrimTypeInteger]
+  , RecordDecl () "Hole" [UType () $ mType1 $ STypePrim PrimTypeInteger]
   , RecordDecl () "Nil"   []
-  , RecordDecl ()
-               "Cons"
-               [UType () XTypeAny, UType () $ xType1 $ TypePartList XTypeAny]
+    -- @mkConsType MTypeAny == MTypeAny@, but clearer and extensible
+  , RecordDecl () "Cons" [UType () MTypeAny, UType () $ mkConsType MTypeAny]
   ]
   (S.toList transparentDecls)
   []
   []
-  [ TypeAlias () "num" $ UType () $ XType
-    [TypePartPrim PrimTypeInteger, TypePartPrim PrimTypeFloat]
-  , TypeAlias () "prim" $ UType () $ XType
-    [ TypePartPrim PrimTypeInteger
-    , TypePartPrim PrimTypeFloat
-    , TypePartPrim PrimTypeString
+  [ TypeAlias () "num" $ UType () $ MType
+    [STypePrim PrimTypeInteger, STypePrim PrimTypeFloat]
+  , TypeAlias () "prim" $ UType () $ MType
+    [ STypePrim PrimTypeInteger
+    , STypePrim PrimTypeFloat
+    , STypePrim PrimTypeString
     ]
-  , TypeAlias () "bool" $ UType () $ XType
-    [ TypePartRecord $ mkBuiltinSymbol "True"
-    , TypePartRecord $ mkBuiltinSymbol "False"
+  , TypeAlias () "bool" $ UType () $ MType
+    [ STypeRecord $ mkBuiltinSymbol "True"
+    , STypeRecord $ mkBuiltinSymbol "False"
     ]
-  , TypeAlias () "atom" $ UType () $ XType
-    [ TypePartPrim PrimTypeInteger
-    , TypePartPrim PrimTypeFloat
-    , TypePartPrim PrimTypeString
-    , TypePartRecord $ mkBuiltinSymbol "True"
-    , TypePartRecord $ mkBuiltinSymbol "False"
+  , TypeAlias () "atom" $ UType () $ MType
+    [ STypePrim PrimTypeInteger
+    , STypePrim PrimTypeFloat
+    , STypePrim PrimTypeString
+    , STypeRecord $ mkBuiltinSymbol "True"
+    , STypeRecord $ mkBuiltinSymbol "False"
     ]
   ]
   []
