@@ -1,36 +1,29 @@
 &Main[].
-md'\...xs' -> json'{\...ys}',
-  \ys <- \xs &Map[&Section[]];
+g'\...xs' -> g'{\...ys}';
+  \ys <- \xs &Stx_Split[g'\$##'] &Map[&Section[]];
 
 &Section[].
-md'
+g'
 ## \head
 \...xs' -> json'\lhead: [ \...ys ]',
   \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Map[&Item[]];
+  \ys <- \xs &Stx_Split[g'\$###'] &Map[&Item[]];
 
 &Item[].
-md'
+g'
 ### \head
 \...xs' -> json'{ "name": \lhead, \...ys }',
   \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Map[&Detail[]];
+  \ys <- \xs &Stx_Split[g'\$-'] &Map[&Detail[]];
 
 &Detail[].
-md'- \x' -> json'\lhead: \content',
-  Cons[\head; Cons[": "; Cons[\content; Nil[]]]] <- T[\x, ": "] #String_Split[],
+g'- \head: \content' -> json'\lhead: \content',
   \lhead <- T[\head] #String_ToLower[];
-md'
+g'
 - \head
   \...blt1s' -> json'\lhead: [ \...blt2s ]',
   \lhead <- T[\head] #String_ToLower[],
-  \blt2s <- \blt1s &Map[&Bullet[]];
+  \blt2s <- \blt1s &Stx_Split[g'\$  -'] &Map[&Bullet[]];
 
 &Bullet[].
-md'- \x' -> \x;
-
-&Map[&x].
-Nil[] -> Nil[];
-Cons[\x; \xs] -> Cons[\y; \ys],
-  \y <- \x &x[],
-  \ys <- \xs &Map[&x[]];
+g'- \x' -> \x;
