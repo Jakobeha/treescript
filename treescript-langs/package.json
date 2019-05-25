@@ -1,0 +1,37 @@
+{
+  "name": "treescript-langs",
+  "version": "1.0.0",
+  "description": "Parsers and printers for some languages (JS and stxlisp)",
+  "main": "index.js",
+  "scripts": {
+    "build": "find src -name *.pegjs -exec sh -c 'pegjs --plugin ./node_modules/ts-pegjs/src/tspegjs $1 && mv ${1%.pegjs}.js ${1%.pegjs}.ts' _ {} \\; && tsc -p . && cp -r lib/ ../resources/treescript-langs && cp -r node_modules/ ../resources/treescript-langs/node_modules",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jakobeha/treescript.git"
+  },
+  "keywords": [
+    "treescript",
+    "grammar"
+  ],
+  "author": "jakobeha",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/Jakobeha/treescript/issues"
+  },
+  "homepage": "https://github.com/Jakobeha/treescript#readme",
+  "devDependencies": {
+    "@types/node": "^12.0.0",
+    "rollup-plugin-pegjs": "^2.1.3",
+    "typescript": "^3.4.5"
+  },
+  "dependencies": {
+    "@types/escodegen": "0.0.6",
+    "@types/get-stdin": "^7.0.0",
+    "escodegen": "^1.11.1",
+    "get-stdin": "^7.0.0",
+    "readline": "^1.3.0",
+    "ts-pegjs": "^0.2.3"
+  }
+}

@@ -1,5 +1,5 @@
 var x = y;
-var foo = () => {
+var foo = function () {
     console.log('Hello world!');
 };
 x = 42;

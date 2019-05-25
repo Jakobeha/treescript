@@ -1,29 +1,29 @@
 &Main[].
-g'\...xs' -> g'{\...ys}';
-  \ys <- \xs &Stx_Split[g'\$##'] &Map[&Section[]];
+stxlisp'\...xs' -> js'{\...ys}',
+  \ys <- \xs &Stx_Split[stxlisp'$##'] &Map[&Section[]];
 
 &Section[].
-g'
+stxlisp'
 ## \head
-\...xs' -> json'\lhead: [ \...ys ]',
+\...xs' -> js'\lhead: [ \...ys ]',
   \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Stx_Split[g'\$###'] &Map[&Item[]];
+  \ys <- \xs &Stx_Split[stxlisp'$###'] &Map[&Item[]];
 
 &Item[].
-g'
+stxlisp'
 ### \head
-\...xs' -> json'{ "name": \lhead, \...ys }',
+\...xs' -> js'{ "name": \lhead, \...ys }',
   \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Stx_Split[g'\$-'] &Map[&Detail[]];
+  \ys <- \xs &Stx_Split[stxlisp'$-'] &Map[&Detail[]];
 
 &Detail[].
-g'- \head: \content' -> json'\lhead: \content',
+stxlisp'- \head: \content' -> js'\lhead: \content',
   \lhead <- T[\head] #String_ToLower[];
-g'
+stxlisp'
 - \head
-  \...blt1s' -> json'\lhead: [ \...blt2s ]',
+  \...blt1s' -> js'\lhead: [ \...blt2s ]',
   \lhead <- T[\head] #String_ToLower[],
-  \blt2s <- \blt1s &Stx_Split[g'\$  -'] &Map[&Bullet[]];
+  \blt2s <- \blt1s &Stx_Split[stxlisp'$  -'] &Map[&Bullet[]];
 
 &Bullet[].
-g'- \x' -> \x;
+stxlisp'- \x' -> \x;

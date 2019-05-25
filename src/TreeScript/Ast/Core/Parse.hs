@@ -487,11 +487,16 @@ flattenSpliceText :: S.SpliceText Range -> T.Text
 flattenSpliceText = flattenRest 0
  where
   flattenRest :: Int -> S.SpliceText Range -> T.Text
-  flattenRest _ (S.SpliceTextNil _ txt) = txt
+  flattenRest _ (S.SpliceTextNil _ txt) = escapeBackslash txt
   flattenRest n (S.SpliceTextCons _ txt isMulti _ rst) =
-    txt <> "\\" <> printIsMulti isMulti <> pprint n <> flattenRest (n + 1) rst
+    escapeBackslash txt
+      <> "\\"
+      <> printIsMulti isMulti
+      <> pprint n
+      <> flattenRest (n + 1) rst
   printIsMulti False = ""
   printIsMulti True  = "."
+  escapeBackslash = T.replace "\\" "\\\\"
 
 spliceTextSplices :: S.SpliceText Range -> [S.Splice Range]
 spliceTextSplices (S.SpliceTextNil _ _) = []

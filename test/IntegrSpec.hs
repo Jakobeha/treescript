@@ -54,7 +54,7 @@ insertVarMapFailure vars key intentional = do
 spec :: Spec
 spec = do
   sysTmpDir        <- runIO getCanonicalTemporaryDirectory
-  exampleEnv <- runIO $ fmap forceSuccess $ runPreSessionRes $ getInitialEnv
+  exampleEnv <- runIO $ fmap forceSuccess $ runPreSessionRes getInitialEnv
   exampleFiles     <- runIO getExampleFiles
   exampleLexVars   <- runIO $ mkVarMap exampleFiles
   exampleSugarVars <- runIO $ mkVarMap exampleFiles
