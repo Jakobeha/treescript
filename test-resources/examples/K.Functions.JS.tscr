@@ -1,3 +1,0 @@
-&Main[].
-js'function \name() { \body; }' -> js'var \name = () => { \body; }';
-\x -> \x;

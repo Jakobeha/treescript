@@ -5,8 +5,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- TODO Groups out of values, group statements with guards
-
 -- | Types for the @Sugar@ AST.
 module TreeScript.Ast.Sugar.Types
   ( module TreeScript.Ast.Sugar.Types
@@ -16,6 +14,15 @@ import TreeScript.Misc
 
 import qualified Data.Text as T
 import GHC.Generics
+
+-- | Declares an imported module.
+data ImportDecl an
+  = ImportDecl
+  { importDeclAnn :: an
+  , importDeclLiteral :: Symbol an -- ^ Should be "import", but this has to be checked
+  , importDeclMod :: Symbol an
+  , importDeclQualifier :: Maybe (Symbol an)
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a type of record.
 data RecordDecl an
@@ -57,6 +64,27 @@ data Symbol an
   , symbol :: T.Text
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Part of a type which could be a union.
+data TypePart an
+  = TypePartSymbol an (Symbol an)
+  | TypePartTransparent an (Record an)
+  deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | A type.
+data Type an
+  = Type
+  { typeAnn :: an
+  , typeParts :: [TypePart an]
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+-- | Defines a type alias.
+data TypeAlias an
+  = TypeAlias
+  { typeAliasAnn :: an
+  , typeAliasAlias :: Symbol an
+  , typeAliasType :: Type an
+  } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | A subgroup property.
 data SubGroupProperty an
   = SubGroupProperty
@@ -66,7 +94,7 @@ data SubGroupProperty an
 
 -- | Property of a record or group.
 data GenProperty an
-  = GenPropertyDecl (Symbol an) -- ^ Record  declaration property.
+  = GenPropertyDecl (Type an) -- ^ Record  declaration property.
   | GenPropertySubGroup (SubGroupProperty an) -- ^ Subgroup declaration property.
   | GenPropertyRecord (Value an) -- ^ Record property.
   | GenPropertyGroup (Group an) -- ^ Subgroup reference property.
@@ -148,19 +176,28 @@ data Guard an
   , guardNexts :: [Group an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+-- | Whether this is a regular reducer or type cast.
+data ReducerType an
+  = ReducerTypeReg an
+  | ReducerTypeCast an
+  deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Transforms a value into a different value.
 data Reducer an
   = Reducer
   { reducerAnn :: an
+  , reducerType :: ReducerType an
   , reducerMain :: Guard an
   , reducerGuards :: [Guard an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Not nested in anything other than the program.
 data TopLevel an
-  = TopLevelRecordDecl (RecordDecl an)
-  | TopLevelReducer (Reducer an)
+  = TopLevelImportDecl (ImportDecl an)
+  | TopLevelRecordDecl (RecordDecl an)
   | TopLevelGroupDecl (GroupDecl an)
+  | TopLevelTypeAlias (TypeAlias an)
+  | TopLevelReducer (Reducer an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A full TreeScript program.
@@ -169,6 +206,11 @@ data Program an
   { programAnn :: an
   , programTopLevels :: [TopLevel an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
+instance TreePrintable ImportDecl where
+  treePrint par _ (ImportDecl _ lit mdl qual)
+    = "#" <> par lit <> " " <> par mdl <> foldMap printQual qual
+    where printQual = (" -> " <>) . par
 
 instance TreePrintable RecordDecl where
   treePrint par _ (RecordDecl _ record)
@@ -199,11 +241,21 @@ instance TreePrintable Primitive where
 instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
 
+instance TreePrintable TypePart where
+  treePrint par _ (TypePartSymbol _ sym) = "@" <> par sym
+  treePrint par _ (TypePartTransparent _ x) = "@" <> par x
+
+instance TreePrintable Type where
+  treePrint par _ (Type _ parts) = mintercalate "|" $ map par parts
+
+instance TreePrintable TypeAlias where
+  treePrint par _ (TypeAlias _ ali typ) = "@" <> par ali <> " <- " <> par typ <> ";"
+
 instance TreePrintable SubGroupProperty where
   treePrint par _ (SubGroupProperty _ sym) = "&" <> par sym
 
 instance TreePrintable GenProperty where
-  treePrint par _ (GenPropertyDecl key) = par key
+  treePrint par _ (GenPropertyDecl prop) = par prop
   treePrint par _ (GenPropertySubGroup prop) = par prop
   treePrint par _ (GenPropertyRecord prop) = par prop
   treePrint par _ (GenPropertyGroup prop) = par prop
@@ -214,11 +266,8 @@ instance TreePrintable GroupLoc where
   treePrint _ _ (GroupLocFunction _) = "#"
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ loc head' sgs)
-    = par loc <> par head' <> printProps loc sgs
-    where printProps (GroupLocFunction _) [] = ""
-          printProps (GroupLocFunction _) _ = error "functions with properties not valid"
-          printProps _ ps = "[" <> mintercalate ", " (map par ps) <> "]"
+  treePrint par _ (Group _ loc head' props)
+    = par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
   treePrint par _ (GroupDecl _ group)
@@ -226,7 +275,7 @@ instance TreePrintable GroupDecl where
 
 instance TreePrintable Record where
   treePrint par _ (Record _ head' props)
-    = par head' <> "[" <> mintercalate ", " (map par props) <> "]"
+    = par head' <> printProps (map par props)
 
 instance TreePrintable BindTarget where
   treePrint _ _ (BindTargetNone _) = "_"
@@ -255,10 +304,16 @@ instance TreePrintable Guard where
     = par input <> " <- " <> par output <> foldMap printNext nexts
     where printNext next' = " " <> par next'
 
+instance TreePrintable ReducerType where
+  treePrint _ _ (ReducerTypeReg _) = "->"
+  treePrint _ _ (ReducerTypeCast _) = "=>"
+
 instance TreePrintable Reducer where
-  treePrint par _ (Reducer _ (Guard _ input output nexts) guards)
+  treePrint par _ (Reducer _ typ (Guard _ input output nexts) guards)
      = par input
-    <> " -> "
+    <> " "
+    <> par typ
+    <> " "
     <> par output
     <> foldMap printNext nexts
     <> foldMap printGuard guards
@@ -267,9 +322,14 @@ instance TreePrintable Reducer where
           printGuard guard = ",\n  " <> par guard
 
 instance TreePrintable TopLevel where
+  treePrint par _ (TopLevelImportDecl decl) = par decl
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelReducer red) = par red
   treePrint par _ (TopLevelGroupDecl decl) = par decl
+  treePrint par _ (TopLevelTypeAlias ali) = par ali
+  treePrint par _ (TopLevelReducer red) = par red
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
+
+printProps :: (PrintOut o) => [o] -> o
+printProps ps = "[" <> mintercalate ", " ps <> "]"

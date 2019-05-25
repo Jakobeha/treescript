@@ -1,5 +1,6 @@
 extern crate unicode_reader;
-use crate::value::{Float, Prim, Value};
+use crate::value::{Float, Prim, Record, Value};
+use crate::vtype::Symbol;
 use std::io::Read;
 use unicode_reader::CodePoints;
 
@@ -118,10 +119,10 @@ impl<'a, R: Read> Parser<'a, R> {
           for _ in 0..num_props {
             props.push(self.scan_sub_value().unwrap());
           }
-          return Option::Some(Value::Record {
-            head: word,
+          return Option::Some(Value::Record(Record {
+            head: Symbol::from(word),
             props: props,
-          });
+          }));
         } else {
           panic!("word has unknown type: {}", word);
         }

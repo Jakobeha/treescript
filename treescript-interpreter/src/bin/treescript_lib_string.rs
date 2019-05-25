@@ -1,5 +1,6 @@
 extern crate inflector;
 use inflector::cases::camelcase;
+use std::collections::HashMap;
 use treescript_interpreter::lib_process::{BasicLibProcessError, Config, LibProcess};
 use treescript_interpreter::session::LibrarySpec;
 use treescript_interpreter::value::{Prim, Value};
@@ -48,8 +49,8 @@ impl Lib {
 impl LibProcess for Lib {
   type Error = BasicLibProcessError;
 
-  fn dependencies() -> Vec<LibrarySpec> {
-    return Vec::new();
+  fn dependencies() -> HashMap<String, LibrarySpec> {
+    return HashMap::new();
   }
 
   fn configure(&mut self, _config: Config) {}

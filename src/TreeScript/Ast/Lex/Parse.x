@@ -12,6 +12,7 @@ import qualified TreeScript.Misc.Ext.Text as T
 
 import Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as B.C
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as T.L
 import qualified Data.Text.Lazy.Encoding as T.L
@@ -66,8 +67,11 @@ treescript :-
 <0> \& { mkPunc PuncAnd }
 <0> \# { mkPunc PuncHash }
 <0> \\ { mkPunc PuncBackSlash }
+<0> \@ { mkPunc PuncAt }
 <0> \- \> { mkPunc PuncFwdArrow }
 <0> \< \- { mkPunc PuncBwdArrow }
+<0> \= \> { mkPunc PuncFwdEq }
+<0> \| { mkPunc PuncVerticalBar }
 <0> \. { mkPunc PuncPeriod }
 <0> \; { mkPunc PuncSemicolon }
 <0> \, { mkPunc PuncComma }
@@ -349,10 +353,10 @@ parse str
            -> case reads locAndErrMsg of
                 [(loc, errMsg)] -> ResultFail Error
                   { errorStage = StageLex
-                  , errorRange = Just $ singletonRange loc
+                  , errorRange = singletonRange loc
                   , errorMsg = T.pack errMsg
                   }
                 _ -> error $ "bad lexer error format: " ++ locAndErrMsg
-         Right lexemes -> Result [] $ Program $ Annd rng lexemes
+         Right lexemes -> Result S.empty $ Program $ Annd rng lexemes
            where rng = mkRange loc1 str
 }

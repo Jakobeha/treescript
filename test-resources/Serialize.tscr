@@ -1,13 +1,17 @@
-Foo[foo].
+Foo[@Bar].
 Bar[].
+Baz[@foo].
+
+@foo <- @list[@atom];
+
+#Foo[@Foo, @t[@string, @Bar]].
 
 &Main[].
 \x -> \x &Foo[&Bar[]];
 
 &Foo[&foo].
-"bar" -> Foo[\foo],
+"bar" -> Baz[\foo],
   \foo <- 5 &foo[];
-Foo[Bar[]] -> Bar[];
-
+Foo[Bar[]] -> Scheme_SNil[];
 
 &Bar[].

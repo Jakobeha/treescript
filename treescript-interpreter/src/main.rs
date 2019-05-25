@@ -1,4 +1,11 @@
-#![feature(refcell_map_split, generators, generator_trait)]
+#![feature(
+  bind_by_move_pattern_guards,
+  bufreader_seek_relative,
+  refcell_map_split,
+  generators,
+  generator_trait,
+  try_from
+)]
 
 extern crate clap;
 #[macro_use]
@@ -7,9 +14,11 @@ mod parse;
 mod print;
 mod program;
 mod reduce;
+mod resources;
 mod session;
 mod util;
 mod value;
+mod vtype;
 use crate::program::Program;
 use crate::util::AtomicFileCommit;
 use clap::{App, AppSettings, Arg};
@@ -84,7 +93,7 @@ fn main() {
           let inferred_lang = prog
             .inferred_lang()
             .expect("can't infer output language - you must specify an output file explicitly");
-          let output_lang = session.lang_with_name(&inferred_lang).expect(
+          let output_lang = session.lang_with_ext(&inferred_lang).expect(
             format!(
               "program has unsupported inferred language: {}",
               inferred_lang

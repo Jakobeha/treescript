@@ -14,13 +14,22 @@
 		"symbols": {
 			"patterns": [
 				{
+					"include": "#import"
+				},
+				{
 					"include": "#tupleRecordHead"
 				},
 				{
 					"include": "#recordHead"
 				},
 				{
-					"include": "#propKey"
+					"include": "#recordType"
+				},
+				{
+					"include": "#transparentRecordType"
+				},
+				{
+					"include": "#primOrAliasType"
 				},
 				{
 					"include": "#bind"
@@ -32,6 +41,10 @@
 					"include": "#group"
 				}
 			]
+		},
+		"import": {
+			"name": "keyword.control.import.treescript",
+			"match": "#([a-z]\\w*)"
 		},
 		"tupleRecordHead": {
 			"name": "meta.record-head.tuple.treescript",
@@ -46,22 +59,30 @@
 			"name": "entity.name.function.record-head.treescript",
 			"match": "[A-Z]\\w*"
 		},
-		"propKey": {
-			"name": "variable.parameter.prop-key.treescript",
-			"match": "[a-z]\\w*(?!\\w|')"
+		"recordType": {
+			"name": "entity.name.type.record.treescript",
+			"match": "@(?:[A-Z]\\w*_)?[A-Z]\\w*(?!_)"
+		},
+		"transparentRecordType": {
+			"name": "keyword.control.type.transparent-record.treescript",
+			"match": "@[a-z]\\w*(?=\\[)"
+		},
+		"primOrAliasType": {
+			"name": "variable.parameter.type.prim-or-alias.treescript",
+			"match": "@(?:[A-Z]\\w*_)?[a-z]\\w*"
 		},
 		"bind": {
 			"name": "keyword.operator.bind.treescript",
 			"match": "\\\\(_|[0-9]+|[a-z]\\w*)",
 			"captures": {
 				"1": {
-					"name": "entity.name.tag.treescript"
+					"name": "entity.name.tag.bind.treescript"
 				}
 			}
 		},
 		"function": {
 			"name": "support.class.group.function.treescript",
-			"match": "#([A-Za-z]?\\w*)"
+			"match": "#([A-Z]\\w*)"
 		},
 		"group": {
 			"name": "support.class.group.regular.treescript",
@@ -100,7 +121,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -132,7 +153,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -156,7 +177,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -184,7 +205,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},
@@ -208,7 +229,7 @@
 							"match": "\\\\(\\.*(?:_|[0-9]+|[a-z]\\w*))",
 							"captures": {
 								"1": {
-									"name": "entity.name.tag.treescript"
+									"name": "entity.name.tag.bind.treescript"
 								}
 							}
 						},

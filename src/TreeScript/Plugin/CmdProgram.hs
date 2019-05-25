@@ -11,6 +11,7 @@ import TreeScript.Misc
 
 import Control.Monad
 import Control.Monad.Catch
+import Control.Monad.Fail
 import Control.Monad.IO.Class
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -31,12 +32,12 @@ convertErr :: Stage -> T.Text -> Error
 convertErr stage err
   = Error
     { errorStage = stage
-    , errorRange = Nothing
+    , errorRange = r0
     , errorMsg = err
     }
 
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
-runCmdProgramArgs :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
+runCmdProgramArgs :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
 runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
   let liftCmdIO = liftIOAndCatch stage
   parentEnv <- liftCmdIO getEnvironment
@@ -60,12 +61,12 @@ runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
       unless (T.null $ T.strip err) $
         liftCmdIO $ T.putStrLn err
       liftCmdIO $ T.hGetContents pout
-    ExitFailure code -> do
-      if T.null $ T.strip err then
-        mkFail $ convertErr stage $ "unknown error (code " <> pprint code <> ")"
-      else
-        mkFail $ convertErr stage $ T.strip err
+    ExitFailure code
+      | T.null $ T.strip err ->
+          mkFail $ convertErr stage $ "unknown error (code " <> pprint code <> ")"
+      | otherwise ->
+          mkFail $ convertErr stage $ T.strip err
 
 -- | Runs the command-line program without arguments.
-runCmdProgram :: (MonadIO m, MonadCatch m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
+runCmdProgram :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m) => CmdProgram -> T.Text -> m T.Text
 runCmdProgram prog = runCmdProgramArgs prog []

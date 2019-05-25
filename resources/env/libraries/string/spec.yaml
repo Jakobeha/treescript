@@ -1,7 +1,0 @@
-name: String
-functions:
-- name: Append
-  args: 2
-- name: ToCamel
-  args: 1
-records: []

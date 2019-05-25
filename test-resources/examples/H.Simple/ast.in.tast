@@ -1,1 +1,0 @@
-Scheme_Cons 2 Scheme_Cons 2 Scheme_Cons 2 Scheme_Symbol 1 string "lambda" Scheme_Cons 2 Scheme_Cons 2 Scheme_Symbol 1 string "x" Scheme_Nil 0 Scheme_Cons 2 Scheme_Symbol 1 string "x" Scheme_Nil 0 Scheme_Cons 2 Scheme_Atom 1 string "foo" Scheme_Nil 0 Scheme_Cons 2 Scheme_Atom 1 string "bar" Scheme_Nil 0

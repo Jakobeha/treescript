@@ -24,8 +24,11 @@ import Data.Semigroup
   '&' { L.LexemePunc (L.PuncAnd $$) }
   '#' { L.LexemePunc (L.PuncHash $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
+  '@' { L.LexemePunc (L.PuncAt $$) }
   '->' { L.LexemePunc (L.PuncFwdArrow $$) }
   '<-' { L.LexemePunc (L.PuncBwdArrow $$) }
+  '=>' { L.LexemePunc (L.PuncFwdEq $$) }
+  '|' { L.LexemePunc (L.PuncVerticalBar $$) }
   '.' { L.LexemePunc (L.PuncPeriod $$) }
   ';' { L.LexemePunc (L.PuncSemicolon $$) }
   ',' { L.LexemePunc (L.PuncComma $$) }
@@ -50,18 +53,32 @@ Program : eof { Program $1 [] }
 NonEmptyProgram : TopLevel { [$1] }
                 | NonEmptyProgram TopLevel { $2 : $1 }
                 ;
-TopLevel : RecordDecl { TopLevelRecordDecl $1 }
-         | Reducer { TopLevelReducer $1 }
+TopLevel : ImportDecl { TopLevelImportDecl $1 }
+         | RecordDecl { TopLevelRecordDecl $1 }
          | GroupDecl { TopLevelGroupDecl $1 }
+         | TypeAlias { TopLevelTypeAlias $1 }
+         | Reducer { TopLevelReducer $1 }
          ;
+ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 $3 (Just $5) }
+           | '#' LowerSym UpperSym ';'
+           { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4) $2 $3 Nothing }
+           ;
 RecordDecl : Record '.' { RecordDecl (getAnn $1 <> $2) $1 }
            ;
-Reducer : ReducerBase Guards ';'
-        { Reducer (sconcat $ getAnn $1 N.<| $3 N.:| map getAnn $2) $1 (reverse $2) }
-        ;
-ReducerBase : Value '->' Value Groups
-            { Guard (sconcat $ getAnn $1 N.<| $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)}
 GroupDecl : Group '.' { GroupDecl (getAnn $1 <> $2) $1 }
+          ;
+TypeAlias : '@' LowerSym '<-' Type ';' { TypeAlias ($1 <> getAnn $2 <> getAnn $4) $2 $4 }
+          ;
+Reducer : ReducerBase Guards ';'
+        { Reducer (sconcat $ getAnn (snd $1) N.<| $3 N.:| map getAnn $2) (fst $1) (snd $1) (reverse $2) }
+        ;
+ReducerBase : Value ReducerType Value Groups
+            { ($2, Guard (sconcat $ getAnn $1 N.<| getAnn $2 N.<| getAnn $3 N.:| map getAnn $4) $1 $3 (reverse $4)) }
+            ;
+ReducerType : '->' { ReducerTypeReg $1 }
+            | '=>' { ReducerTypeCast $1 }
+            ;
 Guards : { [] }
        | NonEmptyGuards { $1 }
        ;
@@ -90,7 +107,7 @@ Record : UpperSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
        ;
 Group : '&' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocGlobal $1) $2 (annd $3) }
       | '&' LowerSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocLocal $1) $2 (annd $3) }
-      | '#' UpperSym { Group ($1 <> getAnn $2) (GroupLocFunction $1) $2 [] }
+      | '#' UpperSym GenProperties { Group ($1 <> getAnn $2 <> getAnn $3) (GroupLocFunction $1) $2 (annd $3) }
       ;
 GenProperties : '[' ']' { Annd ($1 <> $2) [] }
               | '[' NonEmptyGenProperties ']' { Annd (sconcat $ $1 N.<| $3 N.:| map getAnn $2) (reverse $2) }
@@ -98,11 +115,22 @@ GenProperties : '[' ']' { Annd ($1 <> $2) [] }
 NonEmptyGenProperties : GenProperty { [$1] }
                       | NonEmptyGenProperties ',' GenProperty { $3 : $1 }
                       ;
-GenProperty : LowerSym { GenPropertyDecl $1 }
+GenProperty : Type { GenPropertyDecl $1 }
             | SubGroupProperty { GenPropertySubGroup $1 }
             | Value { GenPropertyRecord $1 }
             | Group { GenPropertyGroup $1 }
             ;
+Type : TypeParts { Type (sconcat $ N.map getAnn $1) (reverse $ N.toList $1) }
+     ;
+TypeParts : TypePart { $1 N.:| [] }
+          | TypeParts '|' TypePart { $3 N.<| $1 }
+          ;
+TypePart : '@' LowerSym { TypePartSymbol ($1 <> getAnn $2) $2 }
+         | '@' UpperSym { TypePartSymbol ($1 <> getAnn $2) $2 }
+         | '@' TransparentTypePart { TypePartTransparent ($1 <> getAnn $2) $2 }
+         ;
+TransparentTypePart : LowerSym GenProperties { Record (getAnn $1 <> getAnn $2) $1 (annd $2) }
+                    ;
 SubGroupProperty : '&' LowerSym { SubGroupProperty ($1 <> getAnn $2) $2 }
                  ;
 Bind : '\\' BindTarget { Bind ($1 <> getAnn $2) $2 }
@@ -143,7 +171,7 @@ desugarError [] = error "unexpected parse error without leftover lexemes - shoul
 desugarError (nextLex : _)
   = ResultFail Error
   { errorStage = StageParse
-  , errorRange = Just nextLexRange
+  , errorRange = nextLexRange
   , errorMsg = "gave up at " <> locDesc
   }
   where nextLexRange = getAnn nextLex

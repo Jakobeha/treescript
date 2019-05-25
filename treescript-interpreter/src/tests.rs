@@ -1,9 +1,13 @@
 extern crate rmp_serde;
 use crate::program::ProgramSerial;
-use crate::reduce::{Consume, GroupDefSerial, GroupLoc, GroupRef, Guard, Reducer};
-use crate::value::{Prim, Value};
+use crate::reduce::{Cast, GroupDefSerial, GroupLoc, GroupRef, Guard, Next, Reducer};
+use crate::session::LibrarySpec;
+use crate::value::{Prim, Record, Value};
+use crate::vtype::{PrimType, SType, Symbol};
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -17,73 +21,127 @@ fn test_resources_path(module: &str) -> PathBuf {
 #[test]
 fn test_serialize_prog() {
   let prog = ProgramSerial {
-    libraries: Default::default(),
+    path: String::from("Serialize"),
+    casts: vec![],
     groups: vec![
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![],
-        reducers: vec![Reducer {
-          main: Guard {
-            input: vec![Consume::Bind(1)],
-            output: Value::Splice(1),
-            nexts: vec![GroupRef {
-              loc: GroupLoc::Global(1),
-              vprops: vec![],
-              gprops: vec![GroupRef {
-                loc: GroupLoc::Global(2),
-                vprops: vec![],
-                gprops: vec![],
-              }],
-            }],
-          },
-          guards: vec![],
-        }],
-      },
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![1],
-        reducers: vec![
-          Reducer {
-            main: Guard {
-              input: vec![Consume::Prim(Prim::String(String::from("bar")))],
-              output: Value::Record {
-                head: String::from("Foo"),
-                props: vec![Value::Splice(1)],
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Bar"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![],
+          reducers: vec![],
+        },
+      ),
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Foo"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![1],
+          reducers: vec![
+            Reducer {
+              main: Guard {
+                input: Value::Prim(Prim::String(String::from("bar"))),
+                output: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Baz"),
+                  },
+                  props: vec![Value::Splice(1)],
+                }),
+                nexts: vec![Next::Cast(Cast {
+                  inner_path: vec![0],
+                  out_types: BTreeSet::from_iter(vec![
+                    SType::Record(Symbol::from("Nil")),
+                    SType::Cons(Box::new(SType::Prim(PrimType::Integer))),
+                    SType::Cons(Box::new(SType::Prim(PrimType::Float))),
+                    SType::Cons(Box::new(SType::Prim(PrimType::String))),
+                    SType::Cons(Box::new(SType::Record(Symbol::from("False")))),
+                    SType::Cons(Box::new(SType::Record(Symbol::from("True")))),
+                  ]),
+                })],
               },
-              nexts: vec![],
+              guards: vec![Guard {
+                input: Value::Splice(1),
+                output: Value::Prim(Prim::Integer(5)),
+                nexts: vec![Next::GroupRef(GroupRef {
+                  loc: GroupLoc::Local(1),
+                  vprops: vec![],
+                  gprops: vec![],
+                })],
+              }],
             },
-            guards: vec![Guard {
-              input: vec![Consume::Bind(1)],
-              output: Value::Prim(Prim::Integer(5)),
-              nexts: vec![GroupRef {
-                loc: GroupLoc::Local(1),
-                vprops: vec![],
-                gprops: vec![],
-              }],
-            }],
-          },
-          Reducer {
-            main: Guard {
-              input: vec![
-                Consume::Record(String::from("Foo")),
-                Consume::Record(String::from("Bar")),
-              ],
-              output: Value::Record {
-                head: String::from("Bar"),
-                props: vec![],
+            Reducer {
+              main: Guard {
+                input: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Foo"),
+                  },
+                  props: vec![Value::Record(Record {
+                    head: Symbol {
+                      module: String::from("Serialize"),
+                      local: String::from("Bar"),
+                    },
+                    props: vec![],
+                  })],
+                }),
+                output: Value::Record(Record {
+                  head: Symbol {
+                    module: String::from("Scheme_Lang"),
+                    local: String::from("SNil"),
+                  },
+                  props: vec![],
+                }),
+                nexts: vec![],
               },
-              nexts: vec![],
+              guards: vec![],
+            },
+          ],
+        },
+      ),
+      (
+        Symbol {
+          module: String::from("Serialize"),
+          local: String::from("Main"),
+        },
+        GroupDefSerial {
+          vprops: vec![],
+          gprops: vec![],
+          reducers: vec![Reducer {
+            main: Guard {
+              input: Value::Splice(1),
+              output: Value::Splice(1),
+              nexts: vec![Next::GroupRef(GroupRef {
+                loc: GroupLoc::Global(Symbol {
+                  module: String::from("Serialize"),
+                  local: String::from("Foo"),
+                }),
+                vprops: vec![],
+                gprops: vec![GroupRef {
+                  loc: GroupLoc::Global(Symbol {
+                    module: String::from("Serialize"),
+                    local: String::from("Bar"),
+                  }),
+                  vprops: vec![],
+                  gprops: vec![],
+                }],
+              })],
             },
             guards: vec![],
-          },
-        ],
-      },
-      GroupDefSerial {
-        vprops: vec![],
-        gprops: vec![],
-        reducers: vec![],
-      },
+          }],
+        },
+      ),
     ],
+    libraries: vec![(
+      String::from("Serialize"),
+      LibrarySpec::JavaScript(String::from("Foo = function(_foo, bar) { return bar; };\n")),
+    )],
   };
 
   let vec = rmp_serde::to_vec(&prog).unwrap();

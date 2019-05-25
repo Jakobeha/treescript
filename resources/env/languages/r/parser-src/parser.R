@@ -40,11 +40,11 @@ writeList <- function(writeElem, lst) {
         name <- lstNames[[idx]]
         writeRecord("Cons", 2)
         if (!is.null(name) && name != "") {
-          writeRecord("R_Named", 2)
+          writeRecord("R_Lang_Named", 2)
           writeString(name)
         }
         if (is_missing(elem)) {
-          writeRecord("R_Missing", 0)
+          writeRecord("R_Lang_Missing", 0)
         } else {
           writeElem(elem)
         }
@@ -55,7 +55,7 @@ writeList <- function(writeElem, lst) {
 }
 writeExpr <- function(expr) {
   if (is_syntactic_literal(expr)) { # Constants
-    writeRecord("R_Literal", 1)
+    writeRecord("R_Lang_Literal", 1)
     if (is.null(expr)) {
       writeRecord("Unit", 0)
     } else if (identical(expr, TRUE)) {
@@ -81,15 +81,15 @@ writeExpr <- function(expr) {
       writeWord("splice")
       writeWord(spliceIdx)
     } else { # Symbol
-      writeRecord("R_Symbol", 1)
+      writeRecord("R_Lang_Symbol", 1)
       writeString(as_string(expr))
     }
   } else if (is_call(expr)) { # Function calls
-    writeRecord("R_Call", 2)
+    writeRecord("R_Lang_Call", 2)
     writeExpr(expr[[1]])
     writeList(writeExpr, as.list(expr[-1]))
   } else if (is_pairlist(expr)) { # Pair lists
-    writeRecord("R_PairList", 1)
+    writeRecord("R_Lang_PairList", 1)
     writeList(writeExpr, expr)
   } else {
     raiseSyntax(paste("expression of unknown type -", str(expr)))

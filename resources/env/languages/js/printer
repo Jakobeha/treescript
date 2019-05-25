@@ -1,1 +1,1 @@
-printer.mjs
+node resources/treescript-langs/index.js print javascript

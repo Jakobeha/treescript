@@ -1,5 +1,3 @@
-Subst[body, old, new].
-
 &Main[].
 \x -> \x &Recurse[&OptimizeFor[]]; // Don't want to apply again
 \x -> \x;
@@ -21,7 +19,8 @@ if (is.data.frame(\x)) {
   R_Symbol[\_] <- \i,
   T[\in2, \_] <- T[\in, 0] &MapAccum[&Count[&Recurse[&OptimizeForReplace[\x, \y, \i]]]],
   \x <- \in &First[&FirstRecurse[&OptimizeForFind[\i]]],
-  \y <- T[R_Symbol[\1]] #Gen_FreeString;
+  \y <- R_Symbol[\yStr],
+  \yStr <- T[\1] #Gen_FreeString[];
 
 &OptimizeForFind[\i].
 r'\x[[\i]] <- \body' -> \x;
@@ -44,18 +43,18 @@ T[Cons[\x, \xs], \ax] -> T[Cons[\y, \ys], \az],
 &Count[&x].
 T[\x, \nx] -> T[\y, \ny],
   \y <- \x &x[],
-  \ny <- T[\nx, 1] #Num_Add;
+  \ny <- T[\nx, 1] #Num_Add[];
 T[\x, \nx] -> T[\x, \nx];
 
 &Recurse[&x].
 \x -> \x &x[];
 R_Call[\fun, \args] -> R_Call[\fun2, \args2],
-  True[] <- T[\a, 0] #Num_GreaterThan,
-  \a <- T[\a1, \a2] #Num_Add,
+  True[] <- T[\a, 0] #Num_GreaterThan[],
+  \a <- T[\a1, \a2] #Num_Add[],
   T[\fun2, \a1] <- T[\fun, 0] &Count[&Recurse[&x[]]],
   T[\args2, \a2] <- T[\args, 0] &MapAccum[&Count[&Recurse[&x[]]]];
 R_PairList[\elems] -> R_PairList[\elems2],
-  True[] <- T[\a, 0] #Num_GreaterThan,
+  True[] <- T[\a, 0] #Num_GreaterThan[],
   T[\elems2, \a] <- T[\elems, 0] &Count[&Recurse[&x[]]];
 
 &FirstRecurse[&x].

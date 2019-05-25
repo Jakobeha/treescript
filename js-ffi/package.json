@@ -1,0 +1,31 @@
+{
+  "name": "treescript-ffi",
+  "version": "0.1.0",
+  "description": "JS FFI for TreeScript (https://github.com/Jakobeha/treescript/blob/master/treescript-ffi-js)",
+  "main": "index.ts",
+  "scripts": {
+    "install": "browserify --standalone ffi --node index.ts -p [ tsify noImplicitAny ] -o ../../ffi.js",
+    "test": "test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jakobeha/treescript.git"
+  },
+  "keywords": [
+    "ffi",
+    "language"
+  ],
+  "author": "jakobeha",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/Jakobeha/treescript/issues"
+  },
+  "homepage": "https://github.com/Jakobeha/treescript#readme",
+  "devDependencies": {
+    "tsify": "^4.0.1",
+    "typescript": "^3.4.5"
+  },
+  "dependencies": {
+    "@types/assert": "^1.4.2"
+  }
+}

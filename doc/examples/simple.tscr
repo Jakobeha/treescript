@@ -1,4 +1,4 @@
-Subst[body, old, new].
+Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
 
 &Main[].
 \x -> \x &Apply[];

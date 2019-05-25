@@ -1,0 +1,87 @@
+Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
+
+&Main[].
+\x -> \x &Recurse[&All[]] &Main[];
+\x -> \x;
+
+&All[].
+\x -> \x &Add[];
+\x -> \x &LT[];
+\x -> \x &If[];
+\x -> \x &Apply[];
+
+&Add[].
+scm'((+ \xAt) \yAt)' -> Scheme_Atom[\xpy],
+  \xpy <- T[\x, \y] #Num_Add[],
+  Scheme_Atom[\x] <- \xAt,
+  Scheme_Atom[\y] <- \yAt;
+
+&LT[].
+scm'((< \xAt) \yAt)' -> Scheme_Atom[\xpy],
+  \xpy <- T[\x, \y] #Num_LessThan[],
+  Scheme_Atom[\x] <- \xAt,
+  Scheme_Atom[\y] <- \yAt;
+
+&If[].
+scm'(if #true \true \false)' -> \true;
+scm'(if #false \true \false)' -> \false;
+
+&Apply[].
+scm'((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[],
+  Scheme_Symbol[\_] <- \x;
+
+&Subst[].
+Subst[\old, \old, \new] -> \new;
+Subst[scm'(lambda (\old) \body)', \old, \_] -> scm'(lambda (\old) \body)',
+  Scheme_Symbol[\_] <- \old;
+Subst[scm'(lambda (\x) \body)', \old, \new] -> scm'(lambda (\x) \body2)',
+  Scheme_Symbol[\_] <- \x,
+  \body2 <- Subst[\body, \old, \new] &Subst[];
+Subst[scm'(\f \x)', \old, \new] -> scm'(\f2 \x2)',
+  \f2 <- Subst[\f, \old, \new] &Subst[],
+  \x2 <- Subst[\x, \old, \new] &Subst[];
+Subst[scm'(\a \x \y \z)', \old, \new] -> scm'(\a \x2 \y2 \z2)',
+  \x2 <- Subst[\x, \old, \new] &Subst[],
+  \y2 <- Subst[\y, \old, \new] &Subst[],
+  \z2 <- Subst[\z, \old, \new] &Subst[];
+Subst[\body, \_, \_] -> \body;
+
+&NonEmpty[].
+Scheme_SCons[\_, \_] -> T[];
+
+&IsEqual[].
+T[\x, \x] -> True[];
+T[\_, \_] -> False[];
+
+&Recurse[&x].
+\x -> \x &x[];
+scm'(\x \y)' -> scm'(\x2 \y2)',
+  True[] <- T[\xr, \yr] &Or[],
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
+  T[\y2, \yr] <- \y &Try[&Recurse[&x[]]];
+scm'(list \x \y \z)' -> scm'(list \x2 \y2 \z2)',
+  True[] <- T[T[\xr, \yr], \zr] &Or[],
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
+  T[\y2, \yr] <- \y &Try[&Recurse[&x[]]],
+  T[\z2, \zr] <- \z &Try[&Recurse[&x[]]];
+scm'(if \x \y \z)' -> scm'(if \x2 \y \z)',
+  True[] <- \xr,
+  T[\x2, \xr] <- \x &Try[&Recurse[&x[]]];
+scm'(lambda (\x) \body)' -> scm'(lambda (\x) \body2)',
+  \body2 <- \body &Recurse[&x[]];
+
+&Try[&x].
+\x -> T[\y, True[]],
+  \y <- \x &x[];
+\x -> T[\x, False[]];
+
+&Or[].
+T[True[], True[]] -> True[];
+T[True[], False[]] -> True[];
+T[False[], True[]] -> True[];
+T[False[], False[]] -> False[];
+T[T[\x, \y], \z] -> T[\xy, \z] &Or[],
+  \xy <- T[\x, \y] &Or[];
+T[\x, \yzu] -> T[\x, \yz] &Or[],
+  T[\_, \_] <- \yzu,
+  \yz <- \yzu &Or[];

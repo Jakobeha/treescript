@@ -1,10 +1,14 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Text location and range.
 module TreeScript.Misc.Loc
   ( Loc (..)
   , Range (..)
+  , loc0
   , loc1
+  , r0
   , advanceLoc
   , mkRange
   , singletonRange
@@ -12,8 +16,10 @@ module TreeScript.Misc.Loc
 
 import TreeScript.Misc.Print
 
+import Data.Binary
 import Data.Semigroup
 import qualified Data.Text as T
+import GHC.Generics
 
 -- | A location in text.
 data Loc
@@ -21,18 +27,21 @@ data Loc
   { locOffset :: Int -- ^ Absolute character offset.
   , locLine :: Int -- ^ Line number.
   , locColumn :: Int -- ^ Column number.
-  } deriving (Eq, Ord, Read, Show)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | A range in text.
 data Range
   = Range
   { rangeStart :: Loc -- ^ Location before the first character.
   , rangeEnd :: Loc -- ^ Location after the last character.
-  } deriving (Eq, Ord, Read, Show)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | The result is the smallest range containing all sub-ranges.
 instance Semigroup Range where
-  Range xStart xEnd <> Range yStart yEnd
+  x@(Range xStart xEnd) <> y@(Range yStart yEnd)
+    | x == r0 = y
+    | y == r0 = x
+    | otherwise
     = Range
     { rangeStart = min xStart yStart
     , rangeEnd = max xEnd yEnd
@@ -40,13 +49,26 @@ instance Semigroup Range where
   sconcat = foldr1 (<>)
   stimes _ x = x
 
+-- | 'r0' is empty.
+instance Monoid Range where
+  mempty = r0
+
 instance Printable Loc where
   pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
 
 instance Printable Range where
   pprint (Range start end) = pprint start <> "-" <> pprint end
 
-  -- | Line 1, column 1
+-- | Line 0, column 0 (null location).
+loc0 :: Loc
+loc0
+  = Loc
+  { locOffset = 0
+  , locLine = 0
+  , locColumn = 0
+  }
+
+-- | Line 1, column 1.
 loc1 :: Loc
 loc1
   = Loc
@@ -54,6 +76,10 @@ loc1
   , locLine = 1
   , locColumn = 1
   }
+
+-- | Null range.
+r0 :: Range
+r0 = singletonRange loc0
 
 -- | Advance location past the given text.
 advanceLoc :: Loc -> T.Text -> Loc

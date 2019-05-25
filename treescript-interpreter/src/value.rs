@@ -1,11 +1,17 @@
 extern crate serde;
 use crate::util::GeneratorIterator;
+use crate::vtype::{PrimType, SType, Symbol};
 use serde::{Deserialize, Serialize};
+use serde_json;
+use serde_json::{Map, Number, Value as JsValue};
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
 use std::ops::Generator;
 use std::slice::{Iter, IterMut};
+use try_map::FlipResultExt;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Float(pub f32);
@@ -18,10 +24,16 @@ pub enum Prim {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Record {
+  pub head: Symbol,
+  pub props: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Value {
-  Splice(usize),
   Prim(Prim),
-  Record { head: String, props: Vec<Value> },
+  Record(Record),
+  Splice(usize),
 }
 
 impl PartialEq for Float {
@@ -61,12 +73,59 @@ impl Display for Prim {
 }
 
 impl Prim {
-  pub fn type_str(&self) -> &'static str {
+  pub fn vtype(&self) -> PrimType {
     match self {
-      Prim::Integer(_) => "integer",
-      Prim::Float(_) => "float",
-      Prim::String(_) => "string",
+      Prim::Integer(_) => return PrimType::Integer,
+      Prim::Float(_) => return PrimType::Float,
+      Prim::String(_) => return PrimType::String,
+    };
+  }
+}
+
+impl Display for Symbol {
+  fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    if self.module.is_empty() {
+      return write!(f, "{}", self.local);
+    } else {
+      return write!(f, "{}_{}", self.module, self.local);
     }
+  }
+}
+
+impl<S: AsRef<str>> From<S> for Symbol {
+  fn from(qualified: S) -> Symbol {
+    let mut iter = qualified.as_ref().rsplitn(2, "_");
+    let local = String::from(
+      iter
+        .next()
+        .expect("expected rsplitn to return at least 1 item"),
+    );
+    let module = String::from(iter.next().unwrap_or(""));
+    return Symbol {
+      module: module,
+      local: local,
+    };
+  }
+}
+
+impl Symbol {
+  pub fn main_group(module: String) -> Symbol {
+    return Symbol {
+      module: module,
+      local: String::from("Main"),
+    };
+  }
+
+  pub fn tuple() -> Symbol {
+    return Symbol::from("T");
+  }
+
+  pub fn nil() -> Symbol {
+    return Symbol::from("Nil");
+  }
+
+  pub fn cons() -> Symbol {
+    return Symbol::from("Cons");
   }
 }
 
@@ -75,7 +134,7 @@ impl Display for Value {
     match self {
       Value::Splice(idx) => write!(f, "\\{}", idx),
       Value::Prim(prim) => prim.fmt(f),
-      Value::Record { head, props } => {
+      Value::Record(Record { head, props }) => {
         write!(f, "{}[", head)?;
         let mut first = true;
         for prop in props {
@@ -94,34 +153,32 @@ impl Display for Value {
 
 #[allow(dead_code)]
 impl Value {
-  pub const TUPLE_HEAD: &'static str = "T";
-
   pub fn unit() -> Value {
-    return Value::Record {
-      head: String::from("Unit"),
+    return Value::Record(Record {
+      head: Symbol::from("Unit"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn true_() -> Value {
-    return Value::Record {
-      head: String::from("True"),
+    return Value::Record(Record {
+      head: Symbol::from("True"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn false_() -> Value {
-    return Value::Record {
-      head: String::from("False"),
+    return Value::Record(Record {
+      head: Symbol::from("False"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn nil() -> Value {
-    return Value::Record {
-      head: String::from("Nil"),
+    return Value::Record(Record {
+      head: Symbol::from("Nil"),
       props: Vec::default(),
-    };
+    });
   }
 
   pub fn bool(x: bool) -> Value {
@@ -133,33 +190,28 @@ impl Value {
   }
 
   pub fn cons(first: Value, rest: Value) -> Value {
-    return Value::Record {
-      head: String::from("Cons"),
+    return Value::Record(Record {
+      head: Symbol::from("Cons"),
       props: vec![first, rest],
-    };
+    });
   }
 
   pub fn hole(idx: i32) -> Value {
-    return Value::Record {
-      head: String::from("Hole"),
+    return Value::Record(Record {
+      head: Symbol::from("Hole"),
       props: vec![Value::Prim(Prim::Integer(idx))],
-    };
+    });
   }
 
   pub fn option(val: Option<Value>) -> Value {
     match val {
       None => {
-        return Value::Record {
-          head: String::from("None"),
+        return Value::Record(Record {
+          head: Symbol::from("None"),
           props: Vec::default(),
-        };
+        });
       }
-      Some(val) => {
-        return Value::Record {
-          head: String::from("Some"),
-          props: vec![val],
-        };
-      }
+      Some(val) => return val,
     };
   }
 
@@ -181,12 +233,37 @@ impl Value {
   }
 
   pub fn to_args(&self) -> Vec<Value> {
-    if let Value::Record { head, props } = self {
-      if head == Value::TUPLE_HEAD {
+    if let Value::Record(Record { head, props }) = self {
+      if head == &Symbol::tuple() {
         return props.clone();
       }
     }
     panic!("to_args: expected tuple, got: {}", self)
+  }
+
+  pub fn vtype(&self) -> Option<SType> {
+    match self {
+      Value::Prim(prim) => return Some(SType::Prim(prim.vtype())),
+      Value::Record(Record { head, props }) => {
+        if head == &Symbol::tuple() {
+          return props
+            .iter()
+            .map(|prop| prop.vtype())
+            .collect::<Vec<Option<SType>>>()
+            .flip()
+            .map(|ptyps| SType::Tuple(ptyps));
+        } else if head == &Symbol::cons() {
+          if let [elem, _] = props.as_slice() {
+            return elem.vtype().map(|etyp| SType::Cons(Box::new(etyp)));
+          } else {
+            panic!("can't get type of malformed list: {}", self);
+          }
+        } else {
+          return Some(SType::Record(head.clone()));
+        }
+      }
+      Value::Splice(_) => return None,
+    };
   }
 
   pub fn is_splice(&self) -> bool {
@@ -198,8 +275,8 @@ impl Value {
   }
 
   pub fn is_hole(&self) -> bool {
-    if let Value::Record { head, .. } = self {
-      return head == "Hole";
+    if let Value::Record(Record { head, .. }) = self {
+      return head == &Symbol::from("Hole");
     } else {
       return false;
     }
@@ -209,11 +286,11 @@ impl Value {
     if self.is_hole() {
       return true;
     }
-    if let Value::Record { head, props } = self {
-      if let Value::Record {
+    if let Value::Record(Record { head, props }) = self {
+      if let Value::Record(Record {
         head: other_head,
         props: other_props,
-      } = other
+      }) = other
       {
         return head == other_head
           && Iterator::zip(props.iter(), other_props.iter())
@@ -228,7 +305,7 @@ impl Value {
   pub fn subst(&mut self, old: &Value, new: &Value) {
     if self == old {
       *self = new.clone();
-    } else if let Value::Record { props, .. } = self {
+    } else if let Value::Record(Record { props, .. }) = self {
       for prop in props {
         prop.subst(old, new);
       }
@@ -239,7 +316,7 @@ impl Value {
     match self {
       Value::Splice(idx) => *self = f(*idx),
       Value::Prim(_) => (),
-      Value::Record { head: _, props } => {
+      Value::Record(Record { head: _, props }) => {
         for prop in props {
           prop.fill_splices(f);
         }
@@ -248,7 +325,7 @@ impl Value {
   }
 
   pub fn modify_children<F: FnMut(&mut Value) -> bool>(&mut self, f: &mut F) {
-    if let Value::Record { props, .. } = self {
+    if let Value::Record(Record { props, .. }) = self {
       for prop in props {
         if f(prop) {
           prop.modify_children(f);
@@ -259,7 +336,7 @@ impl Value {
 
   pub fn breadth_first(&self) -> GeneratorIterator<impl Generator<Yield = &Value, Return = ()>> {
     return GeneratorIterator(move || {
-      if let Value::Record { props, .. } = self {
+      if let Value::Record(Record { props, .. }) = self {
         let mut yielded = true;
         let mut level = 0;
         let mut props_stack: Vec<Iter<Value>> = Vec::new();
@@ -273,10 +350,10 @@ impl Value {
                 yield top_prop;
                 yielded = true;
               } else {
-                if let Value::Record {
+                if let Value::Record(Record {
                   props: top_sub_props,
                   ..
-                } = top_prop
+                }) = top_prop
                 {
                   props_stack.push(top_sub_props.iter())
                 }
@@ -294,7 +371,7 @@ impl Value {
     &mut self,
   ) -> GeneratorIterator<impl Generator<Yield = &mut Value, Return = ()>> {
     return GeneratorIterator(move || unsafe {
-      if let Value::Record { props, .. } = self {
+      if let Value::Record(Record { props, .. }) = self {
         let props = props as *mut Vec<Value>;
         let mut yielded = true;
         let mut level = 0;
@@ -309,10 +386,10 @@ impl Value {
                 yield top_prop;
                 yielded = true;
               } else {
-                if let Value::Record {
+                if let Value::Record(Record {
                   props: top_sub_props,
                   ..
-                } = top_prop
+                }) = top_prop
                 {
                   props_stack.push(top_sub_props.iter_mut())
                 }
@@ -350,40 +427,149 @@ impl Value {
     }
     return false;
   }
+
+  pub fn sub_at_path(&self, path: &Vec<usize>) -> &Value {
+    let mut x = self;
+    for idx in path {
+      if let Value::Record(Record { head: _, props }) = x {
+        x = &props[*idx];
+      } else {
+        panic!(
+          "Value doesn't contain path: {} doesn't contain {:?}",
+          self, path
+        );
+      }
+    }
+    return x;
+  }
+
+  pub fn sub_at_path_mut(&mut self, path: &Vec<usize>) -> &mut Value {
+    let mut x = self;
+    for idx in path {
+      if let Value::Record(Record { head: _, props }) = x {
+        x = &mut props[*idx];
+      } else {
+        panic!(
+          "Value doesn't contain path: ...{} doesn't contain {:?}",
+          x, path
+        );
+      }
+    }
+    return x;
+  }
+}
+
+impl TryFrom<JsValue> for Prim {
+  type Error = ();
+
+  fn try_from(x: JsValue) -> Result<Prim, ()> {
+    match x {
+      JsValue::Number(x) if x.is_i64() => return Ok(Prim::Integer(x.as_i64().unwrap() as i32)),
+      JsValue::Number(x) if x.is_f64() => return Ok(Prim::Float(Float(x.as_f64().unwrap() as f32))),
+      JsValue::String(x) => return Ok(Prim::String(x)),
+      _ => return Err(()),
+    };
+  }
+}
+
+impl TryInto<JsValue> for Prim {
+  type Error = ();
+
+  fn try_into(self) -> Result<JsValue, ()> {
+    match self {
+      Prim::Integer(x) => return Ok(JsValue::Number(Number::from(x))),
+      Prim::Float(Float(x)) => return Ok(JsValue::Number(Number::from_f64(x as f64).ok_or(())?)),
+      Prim::String(x) => return Ok(JsValue::String(x)),
+    };
+  }
+}
+
+impl TryFrom<JsValue> for Value {
+  type Error = ();
+
+  fn try_from(x: JsValue) -> Result<Value, ()> {
+    match x {
+      x @ JsValue::Number(_) | x @ JsValue::String(_) => return Ok(Value::Prim(Prim::try_from(x)?)),
+      JsValue::Object(js_props) => {
+        let head = Symbol::from(js_props.get("head").ok_or(())?.as_str().ok_or(())?);
+        let props = js_props
+          .get("props")
+          .ok_or(())?
+          .as_array()
+          .ok_or(())?
+          .iter()
+          .map(|prop| Value::try_from(prop.clone()))
+          .collect::<Vec<Result<Value, ()>>>()
+          .flip()?;
+        return Ok(Value::Record(Record {
+          head: head,
+          props: props,
+        }));
+      }
+      _ => return Err(()),
+    };
+  }
+}
+
+impl TryInto<JsValue> for Value {
+  type Error = ();
+
+  fn try_into(self) -> Result<JsValue, ()> {
+    match self {
+      Value::Prim(prim) => return Ok(prim.try_into()?),
+      Value::Record(Record { head, props }) => {
+        let js_props: Map<String, JsValue> = Map::from_iter(vec![
+          (String::from("head"), JsValue::String(head.to_string())),
+          (
+            String::from("props"),
+            JsValue::Array(
+              props
+                .into_iter()
+                .map(|prop| prop.try_into() as Result<JsValue, ()>)
+                .collect::<Vec<Result<JsValue, ()>>>()
+                .flip()?,
+            ),
+          ),
+        ]);
+        return Ok(JsValue::Object(js_props));
+      }
+      Value::Splice(_) => return Err(()),
+    };
+  }
 }
 
 #[test]
 fn test_breadth_first_mut() {
-  let mut x = Value::Record {
-    head: String::from("Foo"),
+  let mut x = Value::Record(Record {
+    head: Symbol::from("Foo"),
     props: vec![
-      Value::Record {
-        head: String::from("Bar"),
+      Value::Record(Record {
+        head: Symbol::from("Bar"),
         props: vec![
-          Value::Record {
-            head: String::from("Baz"),
+          Value::Record(Record {
+            head: Symbol::from("Baz"),
             props: vec![Value::Prim(Prim::Integer(2)), Value::Prim(Prim::Integer(3))],
-          },
+          }),
           Value::Prim(Prim::Integer(1)),
-          Value::Record {
-            head: String::from("Qux"),
+          Value::Record(Record {
+            head: Symbol::from("Qux"),
             props: vec![Value::Prim(Prim::Integer(4))],
-          },
+          }),
         ],
-      },
+      }),
       Value::Prim(Prim::Integer(0)),
     ],
-  };
+  });
   for i in 0..5 {
     let mut cur_idx = i;
     for prop in x.breadth_first_mut() {
       if let Value::Prim(Prim::Integer(idx)) = prop {
         if *idx >= 0 {
           assert_eq!(cur_idx, *idx);
-          *prop = Value::Record {
-            head: String::from("Lower"),
+          *prop = Value::Record(Record {
+            head: Symbol::from("Lower"),
             props: vec![Value::Prim(Prim::Integer(-(*idx + 1)))],
-          };
+          });
           cur_idx = cur_idx + 1;
         }
       }

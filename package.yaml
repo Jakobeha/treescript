@@ -21,10 +21,10 @@ description:         Please see the README on GitHub at <https://github.com/jako
 extra-source-files:
 - README.md
 - ChangeLog.md
-- resources/env/**
+- resources/**
 - src/TreeScript/Ast/Lex/Parse.x
 - src/TreeScript/Ast/Sugar/Parse.y
-- test-resources/examples/**
+- test-resources/**
 
 extra-doc-files:
 - doc/**
@@ -37,6 +37,7 @@ build-tools:
 
 dependencies:
 - array
+- aeson
 - autoexporter
 - base >= 4.7 && < 5
 - bifunctors
@@ -70,7 +71,6 @@ library:
   - TreeScript.Ast.Flat
   - TreeScript.Ast.Lex
   - TreeScript.Ast.Sugar
-  - TreeScript.Ast.Translate
   - TreeScript.Misc.Ext.Text
 
 executables:

@@ -95,7 +95,7 @@ for (line in readLines(stdin)) {
         readExpectInteger(2)
         name <- {
           nextAndInp <- peekWord()
-          if (nextAndInp[1] == "R_Named") {
+          if (nextAndInp[1] == "R_Lang_Named") {
             inp <<- nextAndInp[2]
             readExpectInteger(2)
             c(readPrimString())
@@ -126,7 +126,7 @@ for (line in readLines(stdin)) {
   readExpr <- function() {
     word <- readWord()
     switch (word,
-      "R_Literal" = {
+      "R_Lang_Literal" = {
         readExpectInteger(1)
         lit <- readWord()
         switch (lit,
@@ -152,21 +152,21 @@ for (line in readLines(stdin)) {
         idx <- readWord()
         as.symbol(paste0("splice_", idx))
       },
-      "R_Symbol" = {
+      "R_Lang_Symbol" = {
         readExpectInteger(1)
         as.symbol(readPrimString())
       },
-      "R_Call" = {
+      "R_Lang_Call" = {
         readExpectInteger(2)
         head <- readExpr()
         args <- readList(readExpr)
         call2(head, splice(args))
       },
-      "R_PairList" = {
+      "R_Lang_PairList" = {
         readExpectInteger(1)
         as.pairlist(readList(readExpr))
       },
-      "R_Missing" = {
+      "R_Lang_Missing" = {
         readExpectInteger(0)
         missing_arg()
       },

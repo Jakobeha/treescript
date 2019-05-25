@@ -1,0 +1,6 @@
+#Add[@num, @num].
+#Subtract[@num, @num].
+#Multiply[@num, @num].
+#Divide[@num, @num].
+#GreaterThan[@num, @num].
+#LessThan[@num, @num].

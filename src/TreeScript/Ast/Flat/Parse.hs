@@ -3,16 +3,12 @@
 -- | Parse lexemes from AST data.
 module TreeScript.Ast.Flat.Parse
   ( parse
-  , langFromAstData
   ) where
 
 import TreeScript.Ast.Flat.Types
 import TreeScript.Misc
-import TreeScript.Plugin
 
 import Data.Char
-import Data.List
-import Data.Maybe
 import qualified Data.Text as T
 import Data.Void
 import qualified Text.Megaparsec as P
@@ -23,7 +19,7 @@ mkError :: T.Text -> Error
 mkError msg
   = Error
   { errorStage = StageLex
-  , errorRange = Nothing
+  , errorRange = r0
   , errorMsg = msg
   }
 
@@ -65,26 +61,3 @@ parse txt = traverse parse1 $ filter (not . T.null) $ T.lines txt
       separatorParser
       pure res
     separatorParser = (() <$ P.char ' ') P.<|> P.eof
-
-lexLangSrc :: Lexeme -> SessionRes (Maybe T.Text)
-lexLangSrc (LexemeEnterSplice _) = pure Nothing
-lexLangSrc (LexemePrimitive _) = pure Nothing
-lexLangSrc (LexemeRecordHead head' _)
-  = case T.splitOn "_" head' of
-      [] -> mkFail $ mkError $ "output record not in language: ''"
-      [_] -> mkFail $ mkError $ "output record not in language: " <> head'
-      (lang : _ : _) -> pure $ Just lang
-
--- | Infers the language of the AST data.
-langFromAstData :: T.Text -> SessionRes Language
-langFromAstData astData = do
-  lexs <- ResultT $ pure $ concat <$> parse astData
-  lexLangs <- nub . catMaybes <$> traverse lexLangSrc lexs
-  case lexLangs of
-    [] -> mkFail $ mkError $ "output doesn't have a language"
-    [lexLang] -> do
-      langs <- sessionEnvLanguages <$> getSessionEnv
-      case find ((== lexLang) . langSpecName . languageSpec) langs of
-        Nothing -> mkFail $ mkPluginUseError $ "no (valid) plugin for language with name '" <> lexLang <> "'"
-        Just res -> pure res
-    _ -> mkFail $ mkError $ "output has multiple languages: " <> T.intercalate ", " lexLangs
