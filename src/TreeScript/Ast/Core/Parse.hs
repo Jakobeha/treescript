@@ -519,10 +519,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
           <> langExt
       Just lang' -> do
         ress <- lift $ lift $ runLanguageParser rng lang' txt splices
-        case ress of
-          [res] -> pure $ res
-          _ -> mkFail $ desugarError rng $ "expected 1 value, got " <> pprint
-            (length ress)
+        pure $ mkListValue rng ress
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind

@@ -1,4 +1,7 @@
+use std::borrow::Borrow;
 use std::ffi::OsString;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::fs::File;
 #[cfg(unix)]
@@ -8,6 +11,8 @@ use std::ops::{Generator, GeneratorState};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::vec::IntoIter;
 
 #[allow(dead_code)]
 pub struct AtomicFileCommit {
@@ -22,6 +27,17 @@ pub struct AtomicFile {
 }
 
 pub struct GeneratorIterator<G: Generator>(pub G);
+
+pub struct LazyList<Item: Clone, I: Iterator<Item = Item>> {
+  cached: Rc<Vec<Item>>,
+  iter: Rc<I>,
+}
+
+pub struct LazyListIter<Item, I: Iterator<Item = Item>> {
+  cached: Rc<Vec<Item>>,
+  local_cached: IntoIter<Item>,
+  iter: Rc<I>,
+}
 
 #[allow(dead_code)]
 impl AtomicFileCommit {
@@ -78,6 +94,54 @@ where
       GeneratorState::Yielded(x) => Some(x),
       GeneratorState::Complete(()) => None,
     }
+  }
+}
+
+impl<Item: Clone, I: Iterator<Item = Item>, II: IntoIterator<Item = Item, IntoIter = I>> From<II>
+  for LazyList<Item, I>
+{
+  fn from(iter: II) -> LazyList<Item, I> {
+    return LazyList {
+      cached: Rc::new(Vec::new()),
+      iter: Rc::new(iter.into_iter()),
+    };
+  }
+}
+
+impl<Item: Clone + Display, I: Iterator<Item = Item>> Display for LazyList<Item, I> {
+  fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+    return self
+      .iter()
+      .map(|x| x.to_string())
+      .collect::<Vec<String>>()
+      .join(",")
+      .fmt(f);
+  }
+}
+
+impl<Item: Clone, I: Iterator<Item = Item>> LazyList<Item, I> {
+  pub fn is_empty(&self) -> bool {
+    return self.iter().next().is_none();
+  }
+
+  pub fn iter(&self) -> LazyListIter<Item, I> {
+    return LazyListIter {
+      cached: Rc::clone(&self.cached),
+      local_cached: (self.cached.borrow() as &Vec<Item>).clone().into_iter(),
+      iter: Rc::clone(&self.iter),
+    };
+  }
+}
+
+impl<Item: Clone, I: Iterator<Item = Item>> Iterator for LazyListIter<Item, I> {
+  type Item = Item;
+
+  fn next(&mut self) -> Option<Item> {
+    return self.local_cached.next().or_else(|| {
+      let next = Rc::get_mut(&mut self.iter).unwrap().next()?;
+      Rc::get_mut(&mut self.cached).unwrap().push(next.clone());
+      return Some(next);
+    });
   }
 }
 

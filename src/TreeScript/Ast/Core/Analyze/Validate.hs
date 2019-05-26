@@ -63,7 +63,7 @@ vDisjointProps (Record rng head' props) = do
         <> pprint nprops
       -- Validate prop types
       forM_ (zip ptyps' props) $ \(eptyp, prop) ->
-        case mType1 <$> valueType prop of
+        case MType . specialCasts <$> valueType prop of
           -- Prop is a bind, so never guarenteed disjoint
           Nothing    -> pure ()
           Just aptyp -> do

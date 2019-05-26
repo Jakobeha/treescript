@@ -1,10 +1,12 @@
 extern crate serde;
 use crate::session::Session;
+use crate::util::LazyList;
 use crate::value::{Record, Value};
 use crate::vtype::{SType, Symbol};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::Display;
 use std::iter;
 use std::ops::{Index, IndexMut};
 use std::rc::Weak;
@@ -238,28 +240,49 @@ impl GroupDef {
     }
   }
 
-  fn resolve_cast(&self, in_type: &Option<SType>, out_tparts: &BTreeSet<SType>) -> Option<Reducer> {
-    if let Some(in_tpart) = in_type {
-      if out_tparts.contains(in_tpart) {
-        return None;
-      }
+  fn _resolve_cast(
+    &self,
+    in_tpart: &SType,
+    out_tparts: &BTreeSet<SType>,
+  ) -> Result<Option<Reducer>, String> {
+    if out_tparts.contains(in_tpart) {
+      return Ok(None);
+    }
 
-      let casts = &self.env.upgrade().unwrap().casts;
-      let surfaces = out_tparts.iter().map(|out_tpart| CastSurface {
-        input: in_tpart.clone(),
-        output: out_tpart.clone(),
-      });
-      let valid_casts: Vec<Reducer> = surfaces
-        .filter_map(|surface| casts.get(&surface).cloned())
-        .collect();
-      match valid_casts.as_slice() {
-        [] => panic!("can't cast from {:?} to {:?}", in_tpart, out_tparts),
-        [res] => return Some(res.clone()),
-        _ => panic!(
+    let casts = &self.env.upgrade().unwrap().casts;
+    let surfaces = out_tparts.iter().map(|out_tpart| CastSurface {
+      input: in_tpart.clone(),
+      output: out_tpart.clone(),
+    });
+    let valid_casts: Vec<Reducer> = surfaces
+      .filter_map(|surface| casts.get(&surface).cloned())
+      .collect();
+    match valid_casts.as_slice() {
+      [] => {
+        return Err(format!(
+          "can't cast from {:?} to {:?}",
+          in_tpart, out_tparts
+        ));
+      }
+      [res] => return Ok(Some(res.clone())),
+      _ => {
+        return Err(format!(
           "ambiguous: multiple casts from {:?} to {:?}",
           in_tpart, out_tparts
-        ),
-      };
+        ));
+      }
+    };
+  }
+
+  fn resolve_cast(&self, in_type: &Option<SType>, out_tparts: &BTreeSet<SType>) -> Option<Reducer> {
+    if let Some(in_tpart) = in_type {
+      if let SType::Cons(etyp) = in_tpart {
+        let etyp = etyp.as_ref();
+        if let Ok(res) = self._resolve_cast(etyp, out_tparts) {
+          return res;
+        }
+      }
+      return self._resolve_cast(in_tpart, out_tparts).unwrap();
     } else {
       panic!("can't cast bind");
     }
@@ -280,7 +303,7 @@ impl GroupDef {
     };
   }
 
-  fn _consume(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
+  fn consume__(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
     match input {
       Value::Prim(_) => {
         return x == input;
@@ -298,7 +321,7 @@ impl GroupDef {
             return false;
           }
           for (x_prop, in_prop) in Iterator::zip(x_props.iter(), in_props.iter()) {
-            if !self.consume(binds, x_prop, in_prop) {
+            if !self.consume(binds, &LazyList::from(x_prop.to_input()), in_prop) {
               return false;
             }
           }
@@ -327,7 +350,28 @@ impl GroupDef {
     };
   }
 
-  fn consume(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
+  fn _consume<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
+    &self,
+    binds: &mut BindFrame,
+    x: &LazyList<V, I>,
+    input: &Value,
+  ) -> bool {
+    let input = input.to_input();
+    let x = x.iter().take(input.len()).collect::<Vec<V>>();
+    if x.len() != input.len() {
+      return false;
+    }
+    let input = Value::list(input.into_iter().map(|x| x.clone()));
+    let x = Value::list(x.into_iter().map(|x| x.borrow().clone()));
+    return self.consume__(binds, &x, &input);
+  }
+
+  fn consume<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
+    &self,
+    binds: &mut BindFrame,
+    x: &LazyList<V, I>,
+    input: &Value,
+  ) -> bool {
     dprint_wrap!("PRINT_REDUCE", "Consume", self._consume(binds, x, input));
   }
 
@@ -351,7 +395,12 @@ impl GroupDef {
         let mut x = x.clone();
         let child = x.sub_at_path_mut(&next.inner_path);
         if let Some(cast) = self.resolve_cast(&child.vtype(), &next.out_types) {
-          match self.reduce(session, &BindFrame::new(), child, &cast) {
+          match self.reduce(
+            session,
+            &BindFrame::new(),
+            &LazyList::from(child.to_input()),
+            &cast,
+          ) {
             ReduceResult::Fail => return ReduceResult::Fail,
             ReduceResult::Success(new_child) => {
               *child = new_child;
@@ -364,9 +413,11 @@ impl GroupDef {
         match &next.loc {
           GroupLoc::Global(head) => {
             let next = next.map_values(|val| self.apply_produce(binds, val));
-            return self
-              .resolve(head, &next.gprops)
-              .transform_nested(session, next.vprops, &x);
+            return self.resolve(head, &next.gprops).transform_nested(
+              session,
+              next.vprops,
+              &LazyList::from(x.to_input()),
+            );
           }
           GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),
           GroupLoc::Function(head) => return self.apply_function(session, x, head),
@@ -420,7 +471,9 @@ impl GroupDef {
   fn _guard(&self, session: &mut Session, binds: &mut BindFrame, guard: &Guard) -> bool {
     match self.produce(session, binds, &guard.output, &guard.nexts) {
       ReduceResult::Fail => return false,
-      ReduceResult::Success(out) => return self.consume(binds, &out, &guard.input),
+      ReduceResult::Success(out) => {
+        return self.consume(binds, &LazyList::from(out.to_input()), &guard.input);
+      }
     };
   }
 
@@ -438,11 +491,11 @@ impl GroupDef {
     return true;
   }
 
-  fn _reduce(
+  fn _reduce<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
     &self,
     session: &mut Session,
     in_binds: &BindFrame,
-    x: &Value,
+    x: &LazyList<V, I>,
     reducer: &Reducer,
   ) -> ReduceResult {
     let mut binds = in_binds.clone();
@@ -455,25 +508,30 @@ impl GroupDef {
     return self.produce(session, &binds, &reducer.main.output, &reducer.main.nexts);
   }
 
-  fn reduce(
+  fn reduce<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
     &self,
     session: &mut Session,
     in_binds: &BindFrame,
-    x: &Value,
+    x: &LazyList<V, I>,
     reducer: &Reducer,
   ) -> ReduceResult {
     dprint_wrap!(
       "PRINT_REDUCE",
       "Reducer",
-      self._reduce(session, in_binds, &x, &reducer)
+      self._reduce(session, in_binds, x, &reducer)
     );
   }
 
-  fn transform_nested<V: Borrow<Value>, I: IntoIterator<Item = V>>(
+  fn transform_nested<
+    V: Borrow<Value>,
+    I: IntoIterator<Item = V>,
+    V2: Borrow<Value> + Clone + Display,
+    I2: Iterator<Item = V2>,
+  >(
     &self,
     session: &mut Session,
     vprops: I,
-    x: &Value,
+    x: &LazyList<V2, I2>,
   ) -> ReduceResult {
     let in_binds = self.subst_vprops(vprops);
     dprintln!("PRINT_REDUCE", "Reducing {}", x);
@@ -486,7 +544,11 @@ impl GroupDef {
     return ReduceResult::Fail;
   }
 
-  pub fn transform(&self, session: &mut Session, x: &Value) -> ReduceResult {
+  pub fn transform<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
+    &self,
+    session: &mut Session,
+    x: &LazyList<V, I>,
+  ) -> ReduceResult {
     assert!(
       self.vprops.is_empty() && self.gprops.is_empty(),
       "can't reduce as initial group, not the initial group, has properties"

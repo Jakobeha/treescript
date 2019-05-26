@@ -2,6 +2,7 @@ use crate::parse::Parser;
 use crate::print::Printer;
 use crate::reduce::{CastSurface, GroupDef, GroupDefSerial, GroupEnv, ReduceResult, Reducer};
 use crate::session::{LibrarySpec, Session};
+use crate::util::LazyList;
 use crate::value::{Record, Value};
 use crate::vtype::Symbol;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -104,14 +105,19 @@ impl Program {
     input: &mut R,
     output: &mut W,
   ) {
-    let mut parser = Parser { input: input };
+    let parser = Parser { input: input };
     let mut printer = Printer { output: output };
 
     session.start(in_path);
-    while let Option::Some(next) = parser.scan_value() {
-      match self.main_group().transform(session, &next) {
-        ReduceResult::Fail => panic!("couldn't reduce {}", next),
-        ReduceResult::Success(next) => printer.print_value(next).unwrap(),
+    let future_vals = LazyList::from(parser);
+    while !future_vals.is_empty() {
+      match self.main_group().transform(session, &future_vals) {
+        ReduceResult::Fail => panic!("couldn't reduce {}", future_vals),
+        ReduceResult::Success(next) => {
+          for next in next.to_input() {
+            printer.print_value(next.clone()).unwrap();
+          }
+        }
       };
     }
     session.stop();

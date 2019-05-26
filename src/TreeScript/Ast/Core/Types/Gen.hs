@@ -570,6 +570,10 @@ allPossibleCasts _        MTypeAny = []
 allPossibleCasts (MType xs) (MType ys) =
   CastSurface <$> S.toList xs <*> S.toList ys
 
+specialCasts :: SType -> S.Set SType
+specialCasts (STypeCons etyp) = [etyp, STypeCons etyp]
+specialCasts typ              = [typ]
+
 mkDeclSet
   :: [RecordDecl an]
   -> [T.Text]
@@ -644,3 +648,15 @@ builtinDecls = mkDeclSet
 
 transparentDecls :: S.Set T.Text
 transparentDecls = S.fromList ["T", "Nil", "Cons"]
+
+mkListValue :: an -> [Value an] -> Value an
+mkListValue ann [] = ValueRecord Record
+  { recordAnn   = ann
+  , recordHead  = ann <$ mkBuiltinSymbol "Nil"
+  , recordProps = []
+  }
+mkListValue ann (x : xs) = ValueRecord Record
+  { recordAnn   = ann
+  , recordHead  = ann <$ mkBuiltinSymbol "Cons"
+  , recordProps = [x, mkListValue ann xs]
+  }

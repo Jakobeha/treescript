@@ -215,7 +215,8 @@ impl Value {
     };
   }
 
-  pub fn list<I: Iterator<Item = Value>>(vals: &mut I) -> Value {
+  pub fn list<I: IntoIterator<Item = Value>>(vals: I) -> Value {
+    let mut vals = vals.into_iter();
     match vals.next() {
       None => return Value::nil(),
       Some(fst) => return Value::cons(fst, Value::list(vals)),
@@ -239,6 +240,31 @@ impl Value {
       }
     }
     panic!("to_args: expected tuple, got: {}", self)
+  }
+
+  fn try_to_list_rev(&self) -> Option<Vec<&Value>> {
+    if let Value::Record(Record { head, props }) = self {
+      if head == &Symbol::nil() {
+        return Some(vec![]);
+      } else if head == &Symbol::cons() {
+        if let [head, tail] = props.as_slice() {
+          let mut res = tail.try_to_list_rev()?;
+          res.push(head);
+          return Some(res);
+        }
+      }
+    }
+    return None;
+  }
+
+  pub fn try_to_list(&self) -> Option<Vec<&Value>> {
+    let mut res = self.try_to_list_rev()?;
+    res.reverse();
+    return Some(res);
+  }
+
+  pub fn to_input(&self) -> Vec<&Value> {
+    return self.try_to_list().unwrap_or(vec![self]);
   }
 
   pub fn vtype(&self) -> Option<SType> {
