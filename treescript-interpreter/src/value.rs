@@ -184,7 +184,14 @@ impl Value {
 
   pub fn nil() -> Value {
     return Value::Record(Record {
-      head: Symbol::from("Nil"),
+      head: Symbol::nil(),
+      props: Vec::default(),
+    });
+  }
+
+  pub fn inil() -> Value {
+    return Value::Record(Record {
+      head: Symbol::inil(),
       props: Vec::default(),
     });
   }
@@ -199,7 +206,14 @@ impl Value {
 
   pub fn cons(first: Value, rest: Value) -> Value {
     return Value::Record(Record {
-      head: Symbol::from("Cons"),
+      head: Symbol::cons(),
+      props: vec![first, rest],
+    });
+  }
+
+  pub fn icons(first: Value, rest: Value) -> Value {
+    return Value::Record(Record {
+      head: Symbol::icons(),
       props: vec![first, rest],
     });
   }
@@ -228,6 +242,14 @@ impl Value {
     match vals.next() {
       None => return Value::nil(),
       Some(fst) => return Value::cons(fst, Value::list(vals)),
+    };
+  }
+
+  pub fn ilist<I: IntoIterator<Item = Value>>(vals: I) -> Value {
+    let mut vals = vals.into_iter();
+    match vals.next() {
+      None => return Value::inil(),
+      Some(fst) => return Value::icons(fst, Value::ilist(vals)),
     };
   }
 

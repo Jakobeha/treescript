@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -12,7 +12,6 @@ use std::ops::{Generator, GeneratorState};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::vec::IntoIter;
 
 #[allow(dead_code)]
 pub struct AtomicFileCommit {
@@ -29,14 +28,14 @@ pub struct AtomicFile {
 pub struct GeneratorIterator<G: Generator>(pub G);
 
 pub struct LazyList<Item: Clone, I: Iterator<Item = Item>> {
-  cached: Rc<Vec<Item>>,
-  iter: Rc<I>,
+  cached: Rc<RefCell<Vec<Item>>>,
+  iter: Rc<RefCell<I>>,
 }
 
 pub struct LazyListIter<Item, I: Iterator<Item = Item>> {
-  cached: Rc<Vec<Item>>,
-  local_cached: IntoIter<Item>,
-  iter: Rc<I>,
+  idx: usize,
+  cached: Rc<RefCell<Vec<Item>>>,
+  iter: Rc<RefCell<I>>,
 }
 
 #[allow(dead_code)]
@@ -102,8 +101,8 @@ impl<Item: Clone, I: Iterator<Item = Item>, II: IntoIterator<Item = Item, IntoIt
 {
   fn from(iter: II) -> LazyList<Item, I> {
     return LazyList {
-      cached: Rc::new(Vec::new()),
-      iter: Rc::new(iter.into_iter()),
+      cached: Rc::new(RefCell::new(Vec::new())),
+      iter: Rc::new(RefCell::new(iter.into_iter())),
     };
   }
 }
@@ -126,9 +125,9 @@ impl<Item: Clone, I: Iterator<Item = Item>> LazyList<Item, I> {
 
   pub fn iter(&self) -> LazyListIter<Item, I> {
     return LazyListIter {
-      cached: Rc::clone(&self.cached),
-      local_cached: (self.cached.borrow() as &Vec<Item>).clone().into_iter(),
-      iter: Rc::clone(&self.iter),
+      idx: 0,
+      cached: self.cached.clone(),
+      iter: self.iter.clone(),
     };
   }
 }
@@ -137,11 +136,14 @@ impl<Item: Clone, I: Iterator<Item = Item>> Iterator for LazyListIter<Item, I> {
   type Item = Item;
 
   fn next(&mut self) -> Option<Item> {
-    return self.local_cached.next().or_else(|| {
-      let next = Rc::get_mut(&mut self.iter).unwrap().next()?;
-      Rc::get_mut(&mut self.cached).unwrap().push(next.clone());
-      return Some(next);
-    });
+    let mut cached = self.cached.borrow_mut();
+    let mut iter = self.iter.borrow_mut();
+    if cached.len() <= self.idx {
+      cached.push(iter.next()?);
+    }
+    assert!(cached.len() > self.idx);
+    self.idx += 1;
+    return Some(cached[self.idx - 1].clone());
   }
 }
 

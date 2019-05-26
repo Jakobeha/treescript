@@ -303,7 +303,7 @@ impl GroupDef {
     };
   }
 
-  fn consume__(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
+  fn __consume(&self, binds: &mut BindFrame, x: &Value, input: &Value) -> bool {
     match input {
       Value::Prim(_) => {
         return x == input;
@@ -321,7 +321,7 @@ impl GroupDef {
             return false;
           }
           for (x_prop, in_prop) in Iterator::zip(x_props.iter(), in_props.iter()) {
-            if !self.consume(binds, &LazyList::from(x_prop.to_ilist()), in_prop) {
+            if !self.__consume(binds, x_prop, in_prop) {
               return false;
             }
           }
@@ -361,9 +361,9 @@ impl GroupDef {
     if x.len() != input.len() {
       return false;
     }
-    let input = Value::list(input.into_iter().map(|x| x.clone()));
-    let x = Value::list(x.into_iter().map(|x| x.borrow().clone()));
-    return self.consume__(binds, &x, &input);
+    let input = Value::ilist(input.into_iter().map(|x| x.clone()));
+    let x = Value::ilist(x.into_iter().map(|x| x.borrow().clone()));
+    return self.__consume(binds, &x, &input);
   }
 
   fn consume<V: Borrow<Value> + Clone + Display, I: Iterator<Item = V>>(
