@@ -4,7 +4,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
@@ -55,6 +54,7 @@ data PrimType
 data RecordKind
   = RecordKindTuple
   | RecordKindCons
+  | RecordKindICons
   | RecordKindOpaque
   deriving (Eq, Ord, Read, Show, Generic, Binary)
 
@@ -64,6 +64,7 @@ data SType
   | STypeRecord (Symbol ())
   | STypeTuple [SType]
   | STypeCons SType
+  | STypeICons SType
   deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
 
 -- | Type of an expected record property: a union of a fixed # of 'SType's or "any", which is the union of all types.
@@ -376,6 +377,7 @@ instance Printable SType where
   pprint (STypeRecord name ) = "@" <> pprint name
   pprint (STypeTuple  props) = "@t" <> printProps (map pprint props)
   pprint (STypeCons   prop ) = "@list[" <> pprint prop <> "]"
+  pprint (STypeICons  prop ) = "@ilist[" <> pprint prop <> "]"
 
 instance Printable MType where
   pprint MTypeAny = "@any"
@@ -528,6 +530,9 @@ xBottom = MType mempty
 nilType :: MType
 nilType = mType1 $ STypeRecord $ mkBuiltinSymbol "Nil"
 
+inilType :: MType
+inilType = mType1 $ STypeRecord $ mkBuiltinSymbol "INil"
+
 mType1 :: SType -> MType
 mType1 part = MType [part]
 
@@ -546,6 +551,13 @@ mkConsType (MType parts) = MType $ S.map STypeCons parts
 mkListType :: MType -> MType
 mkListType mtyp = mkConsType mtyp <> nilType
 
+mkIConsType :: MType -> MType
+mkIConsType MTypeAny      = MTypeAny
+mkIConsType (MType parts) = MType $ S.map STypeICons parts
+
+mkIListType :: MType -> MType
+mkIListType mtyp = mkIConsType mtyp <> inilType
+
 typesDisjoint :: MType -> MType -> Bool
 typesDisjoint MTypeAny       _              = False
 typesDisjoint _              MTypeAny       = False
@@ -553,9 +565,10 @@ typesDisjoint (MType xParts) (MType yParts) = S.disjoint xParts yParts
 
 -- | Whether the record is opaque or what transparent type it is.
 recordKind :: Symbol an -> RecordKind
-recordKind sym | sym_ == mkBuiltinSymbol "T"    = RecordKindTuple
-               | sym_ == mkBuiltinSymbol "Cons" = RecordKindCons
-               | otherwise                      = RecordKindOpaque
+recordKind sym | sym_ == mkBuiltinSymbol "T"     = RecordKindTuple
+               | sym_ == mkBuiltinSymbol "Cons"  = RecordKindCons
+               | sym_ == mkBuiltinSymbol "ICons" = RecordKindICons
+               | otherwise                       = RecordKindOpaque
   where sym_ = remAnns sym
 
 -- | 'Nothing' if the cast type is @any@.
@@ -571,8 +584,8 @@ allPossibleCasts (MType xs) (MType ys) =
   CastSurface <$> S.toList xs <*> S.toList ys
 
 specialCasts :: SType -> S.Set SType
-specialCasts (STypeCons etyp) = [etyp, STypeCons etyp]
-specialCasts typ              = [typ]
+specialCasts (STypeICons etyp) = [etyp, STypeICons etyp]
+specialCasts typ               = [typ]
 
 mkDeclSet
   :: [RecordDecl an]
@@ -621,6 +634,8 @@ builtinDecls = mkDeclSet
   , RecordDecl () "Nil"   []
     -- @mkConsType MTypeAny == MTypeAny@, but clearer and extensible
   , RecordDecl () "Cons" [UType () MTypeAny, UType () $ mkConsType MTypeAny]
+    -- @mkIConsType MTypeAny == MTypeAny@, but clearer and extensible
+  , RecordDecl () "ICons" [UType () MTypeAny, UType () $ mkIConsType MTypeAny]
   ]
   (S.toList transparentDecls)
   []
@@ -647,16 +662,16 @@ builtinDecls = mkDeclSet
   []
 
 transparentDecls :: S.Set T.Text
-transparentDecls = S.fromList ["T", "Nil", "Cons"]
+transparentDecls = S.fromList ["T", "Cons", "ICons"]
 
-mkListValue :: an -> [Value an] -> Value an
-mkListValue ann [] = ValueRecord Record
+mkIListValue :: an -> [Value an] -> Value an
+mkIListValue ann [] = ValueRecord Record
   { recordAnn   = ann
-  , recordHead  = ann <$ mkBuiltinSymbol "Nil"
+  , recordHead  = ann <$ mkBuiltinSymbol "INil"
   , recordProps = []
   }
-mkListValue ann (x : xs) = ValueRecord Record
+mkIListValue ann (x : xs) = ValueRecord Record
   { recordAnn   = ann
-  , recordHead  = ann <$ mkBuiltinSymbol "Cons"
-  , recordProps = [x, mkListValue ann xs]
+  , recordHead  = ann <$ mkBuiltinSymbol "ICons"
+  , recordProps = [x, mkIListValue ann xs]
   }

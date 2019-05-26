@@ -26,6 +26,7 @@ pub enum SType {
   Record(Symbol),
   Tuple(Vec<SType>),
   Cons(Box<SType>),
+  ICons(Box<SType>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

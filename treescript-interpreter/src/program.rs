@@ -114,7 +114,7 @@ impl Program {
       match self.main_group().transform(session, &future_vals) {
         ReduceResult::Fail => panic!("couldn't reduce {}", future_vals),
         ReduceResult::Success(next) => {
-          for next in next.to_input() {
+          for next in next.to_ilist() {
             printer.print_value(next.clone()).unwrap();
           }
         }

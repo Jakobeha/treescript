@@ -276,7 +276,7 @@ impl GroupDef {
 
   fn resolve_cast(&self, in_type: &Option<SType>, out_tparts: &BTreeSet<SType>) -> Option<Reducer> {
     if let Some(in_tpart) = in_type {
-      if let SType::Cons(etyp) = in_tpart {
+      if let SType::ICons(etyp) = in_tpart {
         let etyp = etyp.as_ref();
         if let Ok(res) = self._resolve_cast(etyp, out_tparts) {
           return res;
@@ -321,7 +321,7 @@ impl GroupDef {
             return false;
           }
           for (x_prop, in_prop) in Iterator::zip(x_props.iter(), in_props.iter()) {
-            if !self.consume(binds, &LazyList::from(x_prop.to_input()), in_prop) {
+            if !self.consume(binds, &LazyList::from(x_prop.to_ilist()), in_prop) {
               return false;
             }
           }
@@ -356,7 +356,7 @@ impl GroupDef {
     x: &LazyList<V, I>,
     input: &Value,
   ) -> bool {
-    let input = input.to_input();
+    let input = input.to_ilist();
     let x = x.iter().take(input.len()).collect::<Vec<V>>();
     if x.len() != input.len() {
       return false;
@@ -398,7 +398,7 @@ impl GroupDef {
           match self.reduce(
             session,
             &BindFrame::new(),
-            &LazyList::from(child.to_input()),
+            &LazyList::from(child.to_ilist()),
             &cast,
           ) {
             ReduceResult::Fail => return ReduceResult::Fail,
@@ -416,7 +416,7 @@ impl GroupDef {
             return self.resolve(head, &next.gprops).transform_nested(
               session,
               next.vprops,
-              &LazyList::from(x.to_input()),
+              &LazyList::from(x.to_ilist()),
             );
           }
           GroupLoc::Local(idx) => panic!("Unexpected unresolved group with index: {}", idx),
@@ -472,7 +472,7 @@ impl GroupDef {
     match self.produce(session, binds, &guard.output, &guard.nexts) {
       ReduceResult::Fail => return false,
       ReduceResult::Success(out) => {
-        return self.consume(binds, &LazyList::from(out.to_input()), &guard.input);
+        return self.consume(binds, &LazyList::from(out.to_ilist()), &guard.input);
       }
     };
   }

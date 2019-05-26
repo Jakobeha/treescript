@@ -377,23 +377,13 @@ parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') pr
   | head' == "t"
   = mkTupleType . map utype <$> traverse parseTypeProp props
   | head' == "cons"
-  = case props of
-    [prop] -> mkConsType . utype <$> parseTypeProp prop
-    _      -> do
-      tellError
-        $  desugarError rng
-        $  "cons type must have 1 property, got "
-        <> pprint (length props)
-      pure MTypeAny
+  = parseListType mkConsType
   | head' == "list"
-  = case props of
-    [prop] -> mkListType . utype <$> parseTypeProp prop
-    _      -> do
-      tellError
-        $  desugarError rng
-        $  "list type must have 1 property, got "
-        <> pprint (length props)
-      pure MTypeAny
+  = parseListType mkListType
+  | head' == "icons"
+  = parseListType mkIConsType
+  | head' == "ilist"
+  = parseListType mkIListType
   | otherwise
   = do
     tellError
@@ -401,6 +391,16 @@ parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') pr
       $  "unknown transparent record type: "
       <> head'
     pure MTypeAny
+ where
+  parseListType mkType = case props of
+    [prop] -> mkType . utype <$> parseTypeProp prop
+    _      -> do
+      tellError
+        $  desugarError rng
+        $  head'
+        <> " type must have 1 property, got "
+        <> pprint (length props)
+      pure MTypeAny
 
 parseType :: S.Type Range -> GlobalSessionRes (UType Range)
 parseType (S.Type rng parts) =
@@ -519,7 +519,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
           <> langExt
       Just lang' -> do
         ress <- lift $ lift $ runLanguageParser rng lang' txt splices
-        pure $ mkListValue rng ress
+        pure $ mkIListValue rng ress
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind

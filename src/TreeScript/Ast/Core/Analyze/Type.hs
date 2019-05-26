@@ -26,6 +26,10 @@ recType (Record _ head' props) = case recordKind head' of
     -- Malformed
     []      -> Just $ STypeRecord $ remAnns head'
     (x : _) -> STypeCons <$> valueType x
+  RecordKindICons -> case props of
+    -- Malformed
+    []      -> Just $ STypeRecord $ remAnns head'
+    (x : _) -> STypeICons <$> valueType x
   RecordKindOpaque -> Just $ STypeRecord $ remAnns head'
 
 valueType :: Value an -> Maybe SType

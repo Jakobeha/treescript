@@ -127,6 +127,14 @@ impl Symbol {
   pub fn cons() -> Symbol {
     return Symbol::from("Cons");
   }
+
+  pub fn inil() -> Symbol {
+    return Symbol::from("INil");
+  }
+
+  pub fn icons() -> Symbol {
+    return Symbol::from("ICons");
+  }
 }
 
 impl Display for Value {
@@ -242,13 +250,13 @@ impl Value {
     panic!("to_args: expected tuple, got: {}", self)
   }
 
-  fn try_to_list_rev(&self) -> Option<Vec<&Value>> {
+  fn try_to_ilist_rev(&self) -> Option<Vec<&Value>> {
     if let Value::Record(Record { head, props }) = self {
-      if head == &Symbol::nil() {
+      if head == &Symbol::inil() {
         return Some(vec![]);
-      } else if head == &Symbol::cons() {
+      } else if head == &Symbol::icons() {
         if let [head, tail] = props.as_slice() {
-          let mut res = tail.try_to_list_rev()?;
+          let mut res = tail.try_to_ilist_rev()?;
           res.push(head);
           return Some(res);
         }
@@ -257,14 +265,14 @@ impl Value {
     return None;
   }
 
-  pub fn try_to_list(&self) -> Option<Vec<&Value>> {
-    let mut res = self.try_to_list_rev()?;
+  pub fn try_to_ilist(&self) -> Option<Vec<&Value>> {
+    let mut res = self.try_to_ilist_rev()?;
     res.reverse();
     return Some(res);
   }
 
-  pub fn to_input(&self) -> Vec<&Value> {
-    return self.try_to_list().unwrap_or(vec![self]);
+  pub fn to_ilist(&self) -> Vec<&Value> {
+    return self.try_to_ilist().unwrap_or(vec![self]);
   }
 
   pub fn vtype(&self) -> Option<SType> {
