@@ -675,3 +675,14 @@ mkIListValue ann (x : xs) = ValueRecord Record
   , recordHead  = ann <$ mkBuiltinSymbol "ICons"
   , recordProps = [x, mkIListValue ann xs]
   }
+
+unwrapIList :: Value an -> [Value an]
+unwrapIList val = case tryUnwrapIList val of
+  Nothing   -> [val]
+  Just vall -> vall
+ where
+  tryUnwrapIList (ValueRecord (Record _ head' []))
+    | remAnns head' == mkBuiltinSymbol "INil" = Just []
+  tryUnwrapIList (ValueRecord (Record _ head' [x, xs]))
+    | remAnns head' == mkBuiltinSymbol "ICons" = (x :) <$> tryUnwrapIList xs
+  tryUnwrapIList _ = Nothing

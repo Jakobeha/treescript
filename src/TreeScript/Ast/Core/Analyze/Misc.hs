@@ -9,6 +9,7 @@ module TreeScript.Ast.Core.Analyze.Misc
   , mapAst
   , moveProgPath
   , allProgramReducers
+  , substBinds
   , maxNumBindsInReducer
   , maxNumBindsInProgram
   , bindsInValue
@@ -125,6 +126,16 @@ moveProgPath = mapAst TProgram TSymbol . moveSymPath
 -- | Reducers in all groups.
 allProgramReducers :: Program an -> [Reducer an]
 allProgramReducers = concatMap groupDefReducers . programGroups
+
+substBinds1 :: [(Int, Value an)] -> Value an -> Value an
+substBinds1 substs x@(ValueBind (Bind rng idx)) =
+  case find (\(old, _) -> idx == old) substs of
+    Nothing       -> x
+    Just (_, new) -> rng <$ new
+substBinds1 _ x = x
+
+substBinds :: [(Int, Value an)] -> Value an -> Value an
+substBinds = mapAst TValue TValue . substBinds1
 
 substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
 substGroupProp1 substs x = case groupRefLoc x of

@@ -59,7 +59,7 @@ TopLevel : ImportDecl { TopLevelImportDecl $1 }
          | TypeAlias { TopLevelTypeAlias $1 }
          | Reducer { TopLevelReducer $1 }
          ;
-ImportDecl : '#' LowerSym UpperSym '->' UpperSym ';' -- SOON: Replace with '=>'
+ImportDecl : '#' LowerSym UpperSym '=>' UpperSym ';'
            { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4 <> getAnn $5 <> $6) $2 $3 (Just $5) }
            | '#' LowerSym UpperSym ';'
            { ImportDecl ($1 <> getAnn $2 <> getAnn $3 <> $4) $2 $3 Nothing }
