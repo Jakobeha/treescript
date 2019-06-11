@@ -49,7 +49,7 @@ dependencies:
 - exceptions
 - filepath
 - io-streams
-- megaparsec >= 7.0.4
+- attoparsec
 - monad-logger
 - monad-loops
 - mtl
