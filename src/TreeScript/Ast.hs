@@ -1,4 +1,7 @@
 -- | Data types for each phase of TreeScript's AST.
 module TreeScript.Ast
-  (
-  ) where
+  ( module TreeScript.Ast.Core
+  )
+where
+
+import           TreeScript.Ast.Core

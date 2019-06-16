@@ -1,10 +1,10 @@
 -- | An input stream which can fail a 'MonadResult' when read.
-module TreeScript.Plugin.ResultInputStream
+module TreeScript.Misc.Error.ResultInputStream
   ( ResultInputStream(ResultInputStream)
   )
 where
 
-import           TreeScript.Misc
+import           TreeScript.Misc.Error.Result
 
 import           Control.Monad
 import           Control.Monad.Catch

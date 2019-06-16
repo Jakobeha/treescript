@@ -47,6 +47,7 @@ dependencies:
 - data-msgpack
 - directory
 - exceptions
+- fastsum
 - filepath
 - io-streams
 - attoparsec
@@ -54,6 +55,7 @@ dependencies:
 - monad-loops
 - mtl
 - process
+- semantic >= 0.6.0.0
 - semigroupoids
 - shelly
 - system-filepath
@@ -69,7 +71,6 @@ library:
   exposed-modules:
   - TreeScript
   - TreeScript.Ast.Core
-  - TreeScript.Ast.Flat
   - TreeScript.Ast.Lex
   - TreeScript.Ast.Sugar
   - TreeScript.Misc.Ext.Text

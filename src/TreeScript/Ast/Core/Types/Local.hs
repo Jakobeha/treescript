@@ -16,7 +16,7 @@ where
 
 import           TreeScript.Ast.Core.Types.Gen
 import           TreeScript.Misc
-import           TreeScript.Plugin
+import           TreeScript.Session
 
 import           Control.Monad
 import           Control.Monad.Catch

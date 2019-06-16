@@ -5,54 +5,61 @@
 -- | Runs actions.
 module Run
   ( runAction
-  ) where
+  )
+where
 
-import Action
-import TreeScript
-import qualified TreeScript.Misc.Ext.Text as T
+import           Action
+import           TreeScript
+import qualified TreeScript.Misc.Ext.Text      as T
 
-import Control.Monad
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import Rainbow
-import System.FilePath
-import System.FSNotify hiding (Action)
+import           Control.Monad
+import           Control.Monad.IO.Class
+import qualified Data.Text                     as T
+import qualified Data.Text.IO                  as T
+import           Rainbow
+import           System.FilePath
+import           System.FSNotify         hiding ( Action )
 
 default (T.Text)
 
 runAction :: Action -> IO ()
-runAction ActionServe = runServe
+runAction ActionServe              = runServe
 runAction (ActionCompile compile') = runCompile compile'
-runAction (ActionRun run') = runRun run'
+runAction (ActionEval    run'    ) = runEval run'
 
 runServe :: IO ()
-runServe = error "TODO implement"
+runServe = runSessionRes $ fail "TODO implement"
 
 runCompile :: Compile -> IO ()
-runCompile (Compile input output True)
-  = runWatching input $ runCompile $ Compile input output False
-runCompile (Compile input output False) = runSessionRes $ compile input output
+runCompile (Compile inp out True) =
+  runWatching inp $ runCompile $ Compile inp out False
+runCompile (Compile inp out False) = runSessionRes $ fail "TODO implement"
 
-runRun :: Run -> IO ()
-runRun (Run exec args) = runSessionRes $ run exec args
+runEval :: Eval -> IO ()
+runEval (Eval prg inp out True) =
+  runWatching inp $ runEval $ Eval prg inp out False
+runEval (Eval prg inp out False) = runSessionRes $ do
+  prg' <- (r0 <$) <$> parse prg
+  evalFile inp out prg'
 
 runWatching :: FilePath -> IO () -> IO ()
-runWatching input action = withManager $ \mgr -> do
-  stop <- watchDir mgr (takeDirectory input) rerunForEvt runEvt
+runWatching inp action = withManager $ \mgr -> do
+  stop <- watchDir mgr (takeDirectory inp) rerunForEvt runEvt
   action
   T.putStrLn "Watcher started. Press 'enter' to stop watching."
   _ <- getLine
   stop
-  where runEvt evt
-          | path == input = do
-            T.putStrLn "Watcher detected change. Re-running..."
-            action
-          | otherwise = pure ()
-          where path = eventPath evt
-        rerunForEvt (Added _ _ _) = True
-        rerunForEvt (Modified _ _ _) = True
-        rerunForEvt (Removed _ _ _) = False
-        rerunForEvt (Unknown _ _ _) = False
+ where
+  runEvt evt
+    | path == inp = do
+      T.putStrLn "Watcher detected change. Re-running..."
+      action
+    | otherwise = pure ()
+    where path = eventPath evt
+  rerunForEvt (Added    _ _ _) = True
+  rerunForEvt (Modified _ _ _) = True
+  rerunForEvt (Removed  _ _ _) = False
+  rerunForEvt (Unknown  _ _ _) = False
 
 runSessionRes :: SessionRes () -> IO ()
 runSessionRes session = do
@@ -64,7 +71,5 @@ runSessionRes session = do
     Result errs ()
       | not (null errs) -> do
         putChunkLn $ fore red $ chunk "Errors:"
-        forM_ errs $ \err ->
-          T.putStrLn $ T.bullet $ pprint err
-      | otherwise ->
-        putChunkLn $ fore green $ chunk "Success."
+        forM_ errs $ \err -> T.putStrLn $ T.bullet $ pprint err
+      | otherwise -> putChunkLn $ fore green $ chunk "Success."

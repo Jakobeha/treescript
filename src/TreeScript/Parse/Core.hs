@@ -5,27 +5,24 @@
 {-# LANGUAGE TupleSections #-}
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST.
-module TreeScript.Ast.Core.Parse.Sugar
+module TreeScript.Parse.Core
   ( parse1
   , parse1_
   , parse
   )
 where
 
-import           TreeScript.Ast.Core.Analyze
-import           TreeScript.Ast.Core.Compile
-import           TreeScript.Ast.Core.Types
-import qualified TreeScript.Ast.Flat           as F
+import           TreeScript.Ast.Core
 import qualified TreeScript.Ast.Lex            as L
 import qualified TreeScript.Ast.Sugar          as S
 import           TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Text      as T
-import           TreeScript.Plugin
+import           TreeScript.Parse.Lang
+import           TreeScript.Session
 
 import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
-import           Data.Bifunctor
 import qualified Data.ByteString.Lazy          as B
 import           Data.Char
 import           Data.Either
@@ -36,7 +33,6 @@ import           Data.Maybe
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
-import qualified Data.Vector                   as V
 import           System.Directory
 import           System.FilePath
 
@@ -449,17 +445,10 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
     let txt             = flattenSpliceText spliceText
         unparsedSplices = spliceTextSplices spliceText
     splices <- traverse parseSplice unparsedSplices
-    lang    <- overErrors (addRangeToErr langExtRng) $ lift $ lift $ langWithExt
-      langExt
-    case lang of
-      Nothing ->
-        mkFail
-          $  desugarError langExtRng
-          $  "unknown language with extension: "
-          <> langExt
-      Just lang' -> do
-        ress <- lift $ lift $ runLanguageParser rng lang' txt splices
-        pure $ mkIListValue rng ress
+    substSplices splices
+      .   mkIListValue rng
+      .   map (rng <$)
+      <$> parseLangSplice langExtRng rng langExt txt
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind

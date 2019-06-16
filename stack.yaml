@@ -18,7 +18,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-13.15
+resolver: lts-13.23
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -40,6 +40,29 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - megaparsec-7.0.4
+- ../semantic
+# Semantic dependencies
+- fastsum-0.1.1.0@sha256:bbc8c27b6dc100a94cef28ab1bebe38155cd95e00e8d27e025a137c8b74118e2
+- fused-effects-0.4.0.0@sha256:e9744131a9140968147389e7bbb7e4b448034af5829a27fffdbefb5688daefa3
+- fused-effects-exceptions-0.1.1.0@sha256:1dd2acfe9e2bd7d2c0422f1a9368c7be0fc8b59c3f0a5952a54dd273cb20f3d4
+- generic-monoid-0.1.0.0@sha256:00d1a7b7ff0890a3e3cba4032be24fe377c26e5e45d73afcacd42c98abb3b7e3
+- http-client-0.6.4@sha256:a74b417345857d4250bdb6d4ac7fd4a89fd2ad8efab3164c1a2b843398d5c13a
+- semilattices-0.0.0.3@sha256:215d40aa231ed1786211809a5f4b7768a708a8ac1625507b9d5ddb4929323a8e
+- tree-sitter-0.1.0.0@sha256:db581da25eddbd31265faf4e7cb25fdf1813e664f8d72b803f65a3bfecbfe46a
+- tree-sitter-go-0.1.0.0@sha256:ed87a3a3bc480359cde868307621eceae98c2dc53874f340b3c4bd0a9557e0ba
+- tree-sitter-haskell-0.1.0.0@sha256:03f63adaedf29e23782a701c7eabe72b698f42de15b075c9825d20fcb1b73089
+- tree-sitter-java-0.1.0.0@sha256:739b6d5f7927c3f06ab319acbaca67346be81cc704cfdeb9747dca12de9e310c
+- tree-sitter-json-0.1.0.0@sha256:363de79c0b61e925c1f6492f6937096c7e549489d8c5aeee16bcb3112fc3dcfe
+- tree-sitter-php-0.1.0.0@sha256:3c62ee8b2fa1a699833a813287b6c9e1ef669900ac6a99fe1c3f123cbb2e7cb4
+- tree-sitter-python-0.1.0.1@sha256:9899df293e996f762ae976ba482de7e50ee455a784842ba7f720af9744615954
+- tree-sitter-ruby-0.1.0.0@sha256:e7aa06c8fc5e48714e82d30c64ceda20bbefb2120dd0e6d3e8bcda9b1a3fb86b
+- tree-sitter-tsx-0.1.0.0@sha256:a6fe0d1d9382ecad18fc0cfc22da3580966a1b5e0b6e5fd717cccc746916868d
+- tree-sitter-typescript-0.1.0.0@sha256:cf645b87a065e84bf7acce3df00b3b592e3af9b2dd6171fe1982733d6b1ba9ff
+- git: 'https://github.com/joshvera/proto3-suite.git'
+  commit: 83f3352f0c7c94ea091e6087f60692eda9991fae
+- git: 'https://github.com/joshvera/proto3-wire.git'
+  commit: 84664e22f01beb67870368f1f88ada5d0ad01f56
+
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

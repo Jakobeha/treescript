@@ -6,19 +6,20 @@
 
 -- | Get a user-friendly description.
 module TreeScript.Misc.Print
-  ( Printable (..)
-  , ReducePrintable (..)
-  , PrintOut (..)
+  ( Printable(..)
+  , ReducePrintable(..)
+  , PrintOut(..)
   , LeafPrintable
-  , TreePrintable (..)
-  ) where
+  , TreePrintable(..)
+  )
+where
 
-import TreeScript.Misc.Ann
-import qualified TreeScript.Misc.Ext.Text as T
+import           TreeScript.Misc.Ann
+import qualified TreeScript.Misc.Ext.Text      as T
 
-import Control.Monad.Catch
-import Data.String
-import qualified Data.Text as T
+import           Control.Monad.Catch
+import           Data.String
+import qualified Data.Text                     as T
 
 newtype ReducePrintText = ReducePrintText{ reducePrintText :: T.Text } deriving (Semigroup, Monoid)
 
@@ -79,6 +80,9 @@ instance Printable T.Text where
 instance Printable SomeException where
   pprint = T.pack . displayException
 
+instance (Printable a) => Printable [a] where
+  pprint xs = "[" <> T.intercalate ", " (map pprint xs) <> "]"
+
 instance ReducePrintable Char where
   reducePrint = T.singleton
 
@@ -112,6 +116,6 @@ treePPrint :: (TreePrintable a) => a an -> T.Text
 treePPrint = treePrint treePPrint pprint
 
 treeReducePrint :: (TreePrintable a) => a an -> T.Text
-treeReducePrint
-  = reducePrintText
-  . treePrint (ReducePrintText . treeReducePrint) (ReducePrintText . reducePrint)
+treeReducePrint = reducePrintText . treePrint
+  (ReducePrintText . treeReducePrint)
+  (ReducePrintText . reducePrint)

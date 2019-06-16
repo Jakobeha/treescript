@@ -3,31 +3,40 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module TreeScript.Ast.Core.Interpret.Interpret
-  ( InterpretRead(..)
-  , interpret
+module TreeScript.Interpret.Eval
+  ( EvalRead(..)
+  , eval
+  , evalFile
+  , evalFileOutText
   )
 where
 
-import           TreeScript.Ast.Core.Analyze
-import           TreeScript.Ast.Core.Interpret.Gen
-import           TreeScript.Ast.Core.Types
+import           TreeScript.Ast
+import           TreeScript.Interpret.Gen
 import           TreeScript.Misc
+import           TreeScript.Parse.Lang
+import           TreeScript.Session
 
+import           Control.Monad.Catch
 import           Control.Monad.Cont
+import           Control.Monad.Logger
 import           Control.Monad.Loops
 import           Control.Monad.RWS.Strict
-import qualified System.IO.Streams             as S
+import qualified Data.ByteString               as B
 import qualified Data.Map.Strict               as M
+import qualified Data.Text                     as T
+import qualified Data.Text.Encoding            as T
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Mutable           as MV
 import           Data.Void
+import           System.IO
+import qualified System.IO.Streams             as S
 
 type LenList a = [a]
 
 -- | TODO Follow naming conventions
-data InterpretRead
-  = InterpretRead
+data EvalRead
+  = EvalRead
   { input :: S.InputStream (Value Range)
   , output :: S.OutputStream (Value Range)
   }
@@ -45,102 +54,102 @@ data Frame
   = FrameG GFrame
   | FrameR RFrame
 
-data InterpretState
-  = InterpretState
+data EvalState
+  = EvalState
   { path :: ModulePath
   , creds :: M.Map CastSurface (Reducer Range)
   , groups :: M.Map (Symbol ()) (GroupDef Range)
-  , panicMsg :: Maybe String
-  , eofC :: () -> Interpret Void
-  , failC :: () -> Interpret Void
-  , successC :: LenList (Value Range) -> Interpret Void
+  , panicMsg :: Maybe T.Text
+  , eofC :: () -> Eval Void
+  , failC :: () -> Eval Void
+  , successC :: LenList (Value Range) -> Eval Void
   , immInput :: LenList (Value Range)
   , immInputFix :: Maybe Int
   , cachedAllInput :: Bool
   , frames :: [Frame]
   }
 
-newtype Interpret a = Interpret{ unInterpret :: RWST InterpretRead () InterpretState (ContT () IO) a }
+newtype Eval a = Eval{ unInterpret :: RWST EvalRead () EvalState (ContT () SessionRes) a }
   deriving (Functor, Applicative, Monad, MonadIO)
 
-instance MonadInterpret Interpret where
-  type IValue Interpret = LenList (Value Range)
-  type IGroup Interpret = GroupDef Range
+instance MonadInterpret Eval where
+  type IValue Eval = LenList (Value Range)
+  type IGroup Eval = GroupDef Range
 
-  mloadPath x = Interpret $ modify $ \s -> s { path = x }
-  mloadCreds x = Interpret $ modify $ \s -> s { creds = x }
-  mloadGroups x = Interpret $ modify $ \s -> s { groups = x }
-  mloadStart = Interpret $ pure ()
-  mloadEnd   = Interpret $ do
+  mlog = Eval . logDebugN
+  mloadPath x = Eval $ modify $ \s -> s { path = x }
+  mloadCreds x = Eval $ modify $ \s -> s { creds = x }
+  mloadGroups x = Eval $ modify $ \s -> s { groups = x }
+  mloadStart = Eval $ pure ()
+  mloadEnd   = Eval $ do
     out <- output <$> ask
     liftIO $ S.write Nothing out
-  mstartLib lib = Interpret $ pure () -- SOON
-  mstopLib lib = Interpret $ pure () -- SOON
-  mcatchEOF expr = Interpret $ callCC $ \k -> do
-    modify $ \s -> s { eofC = Interpret . k }
+  mstartLib lib = Eval $ pure () -- SOON
+  mstopLib lib = Eval $ pure () -- SOON
+  mcatchEOF expr = Eval $ callCC $ \k -> do
+    modify $ \s -> s { eofC = Eval . k }
     unInterpret expr
-  mcatchFail expr = Interpret $ callCC $ \k -> do
-    modify $ \s -> s { failC = Interpret . k }
+  mcatchFail expr = Eval $ callCC $ \k -> do
+    modify $ \s -> s { failC = Eval . k }
     unInterpret expr
-  mcatchSuccess expr = Interpret $ callCC $ \k -> do
-    modify $ \s -> s { successC = Interpret . k }
+  mcatchSuccess expr = Eval $ callCC $ \k -> do
+    modify $ \s -> s { successC = Eval . k }
     unInterpret expr
-  mifail = Interpret $ do
+  mjmpFail = Eval $ do
     k <- failC <$> get
     unInterpret $ absurd <$> k ()
-  misucceed res = Interpret $ do
+  mjmpSucceed res = Eval $ do
     k <- successC <$> get
     unInterpret $ absurd <$> k res
-  mieof = Interpret $ do
+  mjmpEof = Eval $ do
     k <- eofC <$> get
     unInterpret $ absurd <$> k ()
-  mipanic msg = Interpret $ do
+  mjmpPanic msg = Eval $ do
     modify $ \s -> s { panicMsg = Just msg }
     unInterpret mieof
-  mreadInput = Interpret $ do
+  mreadInput = Eval $ do
     inp <- input <$> ask
-    let stopReading st = length (immInput st) < 8 || cachedAllInput st
-    whileM_ (stopReading <$> get) $ do
+    let keepReading st = length (immInput st) < 8 && not (cachedAllInput st)
+    whileM_ (keepReading <$> get) $ do
       next <- liftIO $ S.read inp
       case next of
         Nothing    -> modify $ \s -> s { cachedAllInput = True }
         Just next' -> modify $ \s -> s { immInput = next' : immInput s }
-  mwriteOutput xl = Interpret $ do
+    immInp <- immInput <$> get
+    when (null immInp) $ unInterpret mieof
+  mwriteOutput xl = Eval $ do
     out <- output <$> ask
     forM_ xl $ \x -> liftIO $ S.write (Just x) out
-  mpushGFrame vprops gprops = Interpret $ modify $ \s ->
+  mpushGFrame vprops gprops = Eval $ modify $ \s ->
     s { frames = FrameG (GFrame vprops gprops) : frames s }
-  mgframe2rframe vprops gprops = Interpret $ do
+  mgframe2rframe vprops gprops = Eval $ do
     FrameG f : fs <- frames <$> get
     f'            <- unInterpret $ FrameR <$> mgframe2rframe' f vprops gprops
     modify $ \s -> s { frames = f' : fs }
-  mdupRFrame = Interpret $ modify $ \s ->
+  mdupRFrame = Eval $ modify $ \s ->
     let (f : fs) = frames s in s { frames = f : f : fs }
-  mpopRFrame  = Interpret $ modify $ \s -> s { frames = tail $ frames s }
+  mpopRFrame  = Eval $ modify $ \s -> s { frames = tail $ frames s }
   mtransformI = mtransform
 -- | Stores length of input in register
-  mpushFixedInput inp = Interpret $ modify $ \s ->
+  mpushFixedInput inp = Eval $ modify $ \s ->
     s { immInputFix = Just $ length inp, immInput = inp ++ immInput s }
 -- | Fails if not enough input left, or if fixed input was pushed and len is different
-  mpeekInput len = Interpret $ do
+  mpeekInput len = Eval $ do
     st <- get
     when (any (/= len) (immInputFix st) || length (immInput st) < len)
       $ unInterpret mifail
     pure $ take len $ immInput st
-  mdropInput len = Interpret $ do
+  mdropInput len = Eval $ do
     st <- get
     when (any (/= len) (immInputFix st) || length (immInput st) < len)
       $ unInterpret mifail
     put $ st { immInput = drop len $ immInput st, immInputFix = Nothing }
   mval2Ival x = pure [x]
-  mresolveGlobal sym = Interpret $ (M.! remAnns sym) . groups <$> get
-  madvanceLocalGroup new rng _ idx lvps lgps = Interpret $ do
-    frame <- unInterpret topRFrame
+  mresolveGlobal sym = Eval $ (M.! remAnns sym) . groups <$> get
+  madvanceLocalGroup new rng _ idx lvps lgps = do
+    frame <- topRFrame
     let GroupRef _ loc rvps rgps = rframeLocalGroups frame V.! idx
-    unInterpret $ madvanceGroup new $ GroupRef rng
-                                               loc
-                                               (rvps ++ lvps)
-                                               (rgps ++ lgps)
+    madvanceGroup new $ GroupRef rng loc (rvps ++ lvps) (rgps ++ lgps)
   mcheckLengthEq val len = when (length val /= len) mifail
   mconsumePrim []       _   = mifail
   mconsumePrim (x : xs) inp = do
@@ -175,9 +184,9 @@ instance MonadInterpret Interpret where
     pure new
 
 mgframe2rframe'
-  :: GFrame -> [GroupDefProp Range] -> [GroupDefProp Range] -> Interpret RFrame
-mgframe2rframe' (GFrame vprops gprops) vpropIdxs gpropIdxs = Interpret $ do
-  binds <- MV.replicate 16 Nothing
+  :: GFrame -> [GroupDefProp Range] -> [GroupDefProp Range] -> Eval RFrame
+mgframe2rframe' (GFrame vprops gprops) vpropIdxs gpropIdxs = Eval $ do
+  binds <- liftIO $ MV.replicate 16 Nothing
   when (length vprops /= length vpropIdxs) $ unInterpret $ mipanic
     "# of value props is different"
   when (length gprops /= length gpropIdxs) $ unInterpret $ mipanic
@@ -186,35 +195,59 @@ mgframe2rframe' (GFrame vprops gprops) vpropIdxs gpropIdxs = Interpret $ do
     $ unInterpret
     $ mipanic
         "expected group props to be in sequence (TODO replace with a simple int to enforce this)"
-  zipWithM_ (\vprop idx -> MV.write binds idx $ Just vprop)
+  zipWithM_ (\vprop idx -> liftIO $ MV.write binds idx $ Just vprop)
             vprops
             (map groupDefPropIdx vpropIdxs)
   let localGroups = V.fromList gprops
   pure RFrame { rframeBinds = binds, rframeLocalGroups = localGroups }
 
 -- | This is here because RFrame isn't representable by the compiler
-topRFrame :: Interpret RFrame
-topRFrame = Interpret $ do
+topRFrame :: Eval RFrame
+topRFrame = Eval $ do
   FrameR top <- head . frames <$> get
   pure top
 
-initialState :: InterpretState
-initialState = InterpretState { path           = error "not set"
-                              , creds          = error "not set"
-                              , groups         = error "not set"
-                              , panicMsg       = Nothing
-                              , eofC           = error "not set"
-                              , failC          = error "not set"
-                              , successC       = error "not set"
-                              , immInput       = []
-                              , immInputFix    = Nothing
-                              , cachedAllInput = False
-                              , frames         = []
-                              }
+initialState :: EvalState
+initialState = EvalState { path           = error "not set"
+                         , creds          = error "not set"
+                         , groups         = error "not set"
+                         , panicMsg       = Nothing
+                         , eofC           = error "not set"
+                         , failC          = error "not set"
+                         , successC       = error "not set"
+                         , immInput       = []
+                         , immInputFix    = Nothing
+                         , cachedAllInput = False
+                         , frames         = []
+                         }
 
-runInterpret :: InterpretRead -> Interpret () -> IO ()
-runInterpret env (Interpret x) =
-  (`runContT` pure) $ () <$ runRWST x env initialState
+runEval :: EvalRead -> Eval () -> SessionRes ()
+runEval env (Eval x) = (`runContT` pure) $ () <$ runRWST x env initialState
 
-interpret :: InterpretRead -> Program Range -> IO ()
-interpret env = runInterpret env . minterpret
+eval :: EvalRead -> Program Range -> SessionRes ()
+eval env = runEval env . minterpret
+
+withFileAsOutput
+  :: (MonadMask m, MonadIO m)
+  => FilePath
+  -> (S.OutputStream B.ByteString -> m a)
+  -> m a
+withFileAsOutput pth f =
+  bracket (liftIO $ openFile pth WriteMode) (liftIO . hClose) $ \hdl -> do
+    out <- liftIO (S.handleToOutputStream hdl)
+    f out
+
+
+evalFile :: FilePath -> FilePath -> Program Range -> SessionRes ()
+evalFile inp out prg = do
+  sinp <- liftIOAndCatch StageReadInput . S.map (r0 <$) =<< parseLang inp
+  ResultT $ withFileAsOutput out $ \out' -> runResultT $ do
+    sout <- liftIOAndCatch StageEval $ S.contramap (T.encodeUtf8 . pprint) out'
+    eval EvalRead { input = sinp, output = sout } prg
+
+evalFileOutText :: FilePath -> Program Range -> SessionRes T.Text
+evalFileOutText inp prg = do
+  sinp <- liftIOAndCatch StageReadInput . S.map (r0 <$) =<< parseLang inp
+  (out', getRes) <- liftIOAndCatch StageReadInput S.listOutputStream
+  eval EvalRead { input = sinp, output = out' } prg
+  T.unlines . map pprint <$> liftIOAndCatch StageReadInput getRes
