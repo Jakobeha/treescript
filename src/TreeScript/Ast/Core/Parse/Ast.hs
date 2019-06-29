@@ -5,11 +5,12 @@
 -- | Extracts a 'Core' AST from raw text using an external language parser.
 module TreeScript.Ast.Core.Parse.Ast
   ( parseAstList
-  , parseAstStream
+  , parseAstFile
   )
 where
 
 import           TreeScript.Ast.Core.Types
+import           TreeScript.Ast.Core.Parse.StxLisp
 import qualified TreeScript.Ast.Flat           as F
 import           TreeScript.Misc
 import           TreeScript.Plugin
@@ -17,7 +18,6 @@ import           TreeScript.Plugin
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Bifunctor
-import qualified Data.ByteString               as B
 import qualified Data.Text                     as T
 import qualified Data.Vector                   as V
 import qualified System.IO.Streams             as S
@@ -77,35 +77,34 @@ decodeAstDataList rng txt splices = traverse (decodeAstData1 rng splicesVec)
   =<< ResultT (pure $ F.parseList txt)
   where splicesVec = V.fromList splices
 
-decodeAstDataStream
+decodeAstDataFile
   :: (MonadIO m)
   => Range
   -> ResultInputStream T.Text
   -> [Value Range]
-  -> ResultT m (ResultInputStream (Value Range))
-decodeAstDataStream rng srm splices =
-  mapImpureInputStream (runResultT . decodeAstData1 rng splicesVec)
+  -> m (ResultInputStream (Value Range))
+decodeAstDataFile rng srm splices =
+  mapImpureInputStream (S.mapM $ runResultT . decodeAstData1 rng splicesVec)
     =<< mapPureInputStream F.parseStream srm
   where splicesVec = V.fromList splices
 
 parseAstList
   :: Range -> Language -> T.Text -> [Value Range] -> SessionRes [Value Range]
-parseAstList rng lang txt splices = do
-  let parser = languageParser lang
-  astData <-
-    overErrors (addRangeToErr rng . prependMsgToErr "couldn't parse code")
-      $ runCmdProgram (languageParser lang) txt
-  decodeAstDataList rng astData splices
+parseAstList rng lang txt splices = case lang of
+  LanguageStx      -> parseStxText rng txt splices
+  LanguageExt lext -> do
+    astData <-
+      overErrors (addRangeToErr rng . prependMsgToErr "couldn't parse code")
+        $ runCmdProgram (langExtParser lext) txt
+    decodeAstDataList rng astData splices
 
-parseAstStream
-  :: Range
-  -> Language
-  -> S.OutputStream B.ByteString
-  -> [Value Range]
-  -> SessionRes (ResultInputStream (Value Range))
-parseAstStream rng lang srm splices = do
-  let parser = languageParser lang
-  astData <-
-    overStreamErrors (addRangeToErr rng . prependMsgToErr "couldn't parse code")
-      $ runCmdProgramStream (languageParser lang) srm
-  decodeAstDataStream rng astData splices
+parseAstFile :: FilePath -> SessionRes (ResultInputStream (Value Range))
+parseAstFile pinp = do
+  lang <- forceLangForPath pinp
+  case lang of
+    LanguageStx      -> liftInputStream =<< parseStxFile pinp
+    LanguageExt lext -> do
+      astData <-
+        overStreamErrors (prependMsgToErr "couldn't parse code")
+          =<< runCmdProgramFile (langExtParser lext) pinp
+      decodeAstDataFile r0 astData []

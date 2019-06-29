@@ -10,6 +10,7 @@ module TreeScript.Ast.Core.Analyze.Misc
   , moveProgPath
   , allProgramReducers
   , substBinds
+  , substSplices
   , maxNumBindsInReducer
   , maxNumBindsInProgram
   , bindsInValue
@@ -136,6 +137,9 @@ substBinds1 _ x = x
 
 substBinds :: [(Int, Value an)] -> Value an -> Value an
 substBinds = mapAst TValue TValue . substBinds1
+
+substSplices :: [Value an] -> Value an -> Value an
+substSplices = substBinds . zip [1 ..]
 
 substGroupProp1 :: [(Int, GroupRef an)] -> GroupRef an -> GroupRef an
 substGroupProp1 substs x = case groupRefLoc x of

@@ -14,9 +14,9 @@ import qualified TreeScript.Misc.Ext.Attoparsec
 
 import           Control.Applicative
 import           Control.Monad
+import qualified Data.Attoparsec.Text          as P
 import           Data.Char
 import qualified Data.Text                     as T
-import qualified Data.Attoparsec.Text          as P
 import qualified System.IO.Streams             as S
 import qualified System.IO.Streams.Attoparsec.Text
                                                as S
@@ -50,7 +50,7 @@ lexemeParser = do
       separatorParser
       pure $ LexemePrimitive $ PrimFloat value
     "string" -> do
-      value <- P.stringLiteral
+      value <- P.stringLiteral '"'
       separatorParser
       pure $ LexemePrimitive $ PrimString value
     _
@@ -67,7 +67,7 @@ parseList :: T.Text -> Result [[Lexeme]]
 parseList txt = case P.parseOnly parser txt of
   Left  err -> mkFail $ mkError $ T.pack err
   Right xs  -> pure $ filter (not . null) xs
-  where parser = many astParser <* P.endOfInput
+  where parser = astParser `P.manyTill` P.endOfInput
 
 parseStream :: S.InputStream T.Text -> IO (S.InputStream [Lexeme])
 parseStream = S.filter (not . null) <=< S.parserToInputStream parser

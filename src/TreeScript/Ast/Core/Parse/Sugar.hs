@@ -12,10 +12,10 @@ module TreeScript.Ast.Core.Parse.Sugar
   )
 where
 
+import           TreeScript.Ast.Core.Parse.Ast
 import           TreeScript.Ast.Core.Analyze
 import           TreeScript.Ast.Core.Compile
 import           TreeScript.Ast.Core.Types
-import qualified TreeScript.Ast.Flat           as F
 import qualified TreeScript.Ast.Lex            as L
 import qualified TreeScript.Ast.Sugar          as S
 import           TreeScript.Misc
@@ -25,7 +25,6 @@ import           TreeScript.Plugin
 import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
-import           Data.Bifunctor
 import qualified Data.ByteString.Lazy          as B
 import           Data.Char
 import           Data.Either
@@ -36,7 +35,6 @@ import           Data.Maybe
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
-import qualified Data.Vector                   as V
 import           System.Directory
 import           System.FilePath
 
@@ -449,17 +447,11 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
     let txt             = flattenSpliceText spliceText
         unparsedSplices = spliceTextSplices spliceText
     splices <- traverse parseSplice unparsedSplices
-    lang    <- overErrors (addRangeToErr langExtRng) $ lift $ lift $ langWithExt
-      langExt
-    case lang of
-      Nothing ->
-        mkFail
-          $  desugarError langExtRng
-          $  "unknown language with extension: "
-          <> langExt
-      Just lang' -> do
-        ress <- lift $ lift $ runLanguageParser rng lang' txt splices
-        pure $ mkIListValue rng ress
+    lang    <-
+      overErrors (addRangeToErr langExtRng) $ lift $ lift $ forceLangWithExt
+        langExt
+    ress <- lift $ lift $ parseAstList rng lang txt splices
+    pure $ mkIListValue rng ress
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind

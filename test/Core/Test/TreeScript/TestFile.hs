@@ -26,9 +26,8 @@ data ExecTest
   { execTestName :: T.Text
   , execTestInputPath :: FilePath
   , execTestInput :: T.Text
-  , execTestInputExt :: T.Text
+  , execTestOutputPath :: FilePath
   , execTestOutput :: T.Text
-  , execTestOutputExt :: T.Text
   } deriving (Eq, Ord, Read, Show)
 
 data TestFile
@@ -132,9 +131,8 @@ mkExecTest dir (inName, inExt) (outName, outExt)
     pure ExecTest { execTestName      = T.pack inName
                   , execTestInputPath = inputPath
                   , execTestInput     = input
-                  , execTestInputExt  = T.pack inExt
+                  , execTestOutputPath  = outputPath
                   , execTestOutput    = output
-                  , execTestOutputExt = T.pack outExt
                   }
 
 -- | Finds executable input/output tests in the given directory with the given name.

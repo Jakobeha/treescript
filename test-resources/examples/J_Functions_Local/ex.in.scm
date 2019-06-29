@@ -1,5 +1,0 @@
-(index-path of foo in (foo (bar (baz)) 4 (qux #t)))
-(index-path of bar in (foo (bar (baz)) 4 (qux #t)))
-(index-path of baz in (foo (bar (baz)) 4 ((qux #t))))
-(index-path of 4 in (foo (bar (baz)) 4 (qux #t)))
-(index-path of (qux #t) in (foo (bar (baz)) 4 ((qux #t))))

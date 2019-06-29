@@ -1,10 +1,11 @@
 -- | Parses actions from the command line.
 module Parse
   ( prompt
-  ) where
+  )
+where
 
-import Action
-import Options.Applicative
+import           Action
+import           Options.Applicative
 
 prompt :: IO Action
 prompt = execParser actionP
@@ -18,8 +19,8 @@ serveP = info (helper <*> serveP_) serveInfo
 compileP :: ParserInfo Compile
 compileP = info (helper <*> compileP_) compileInfo
 
-runP :: ParserInfo Run
-runP = info (helper <*> runP_) runInfo
+evalP :: ParserInfo Eval
+evalP = info (helper <*> evalP_) evalInfo
 
 serveP_ :: Parser ()
 serveP_ = pure ()
@@ -31,69 +32,68 @@ actionCommands :: [Mod CommandFields Action]
 actionCommands =
   [ command "serve" $ ActionServe <$ serveP
   , command "compile" $ ActionCompile <$> compileP
-  , command "run" $ ActionRun <$> runP
+  , command "eval" $ ActionEval <$> evalP
   ]
 
 compileP_ :: Parser Compile
 compileP_ = mkCompile <$> srcP <*> outP <*> watchP
-  where srcP
-           = strArgument
-           $ metavar "SRC"
-          <> help "path to the source code"
-        outP
-           = optional
-           $ strOption
-           $ metavar "OUT"
-          <> long "output"
-          <> short 'o'
-          <> help "path for the compiled executable, defaults to (SRC).tprg"
-        watchP
-           = switch
-           $ long "watch"
-          <> short 'w'
-          <> help "run every time the source changes"
+ where
+  srcP = strArgument $ metavar "SRC" <> help "path to the source code"
+  outP =
+    optional $ strOption $ metavar "OUT" <> long "output" <> short 'o' <> help
+      "path for the compiled executable, defaults to (SRC).tprg"
+  watchP = switch $ long "watch" <> short 'w' <> help
+    "eval every time the source changes"
 
 
-runP_ :: Parser Run
-runP_ = Run <$> execP <*> many argP
-  where execP
-           = strArgument
-           $ metavar "EXEC"
-          <> help "path to the source code"
-        argP
-           = strArgument
-           $ metavar "ARG"
-          <> help "argument to be passed to the executable"
+evalP_ :: Parser Eval
+evalP_ = mkEval <$> prgP <*> inpP <*> outP <*> watchP
+ where
+  prgP = strArgument $ metavar "PRG" <> help "path to the TreeScript"
+  inpP = strArgument $ metavar "INP" <> help "path to the input code"
+  outP =
+    optional
+      $  strOption
+      $  metavar "OUT"
+      <> long "output"
+      <> short 'o'
+      <> help
+           "path for the compiled executable, defaults to (SRC), so the file will be overwritten"
+  watchP = switch $ long "watch" <> short 'w' <> help
+    "eval every time the source changes"
 
 actionInfo :: InfoMod a
-actionInfo
-   = fullDesc
-  <> progDesc "treescript compile, treescript run, treescript serve"
-  <> header "treescript - compile and run TreeScript source code, start the TreeScript language server"
-  <> footer "This is the interface for the TreeScript programming language: a DSL to manipulate syntax of other languages.\n\
-            \It can compile TreeScript source code into executables and run those executables.\n\
+actionInfo =
+  fullDesc
+    <> progDesc "treescript compile, treescript eval, treescript serve"
+    <> header "treescript - simple syntax transformation tool"
+    <> footer
+         "TreeScript is a DSL to manipulate syntax of other languages.\n\
+            \This is the CLI for TreeScript.\n\
             \It also includes a language server ('treescript serve'), which adds TreeScript support to editors like VSCode."
 
 serveInfo :: InfoMod a
-serveInfo
-   = fullDesc
-  <> progDesc "start the language server"
-  <> header "treescript serve - start the language server"
-  <> footer "You probably don't want to call this yourself - this command should be called by language clients, \
+serveInfo =
+  fullDesc
+    <> progDesc "start the language server"
+    <> header "treescript serve - start the language server"
+    <> footer
+         "You probably don't want to call this yourself - this command should be called by language clients, \
             \such as the 'treescript-vscode' plugin, once they want to edit TreeScript files. \
             \Only need one server per system, even if there are multiple workspaces and clients."
 
 compileInfo :: InfoMod a
-compileInfo
-   = fullDesc
-  <> progDesc "compile a TreeScript source file (.tscr) into an executable (.tprg)"
-  <> header "treescript compile - compile a TreeScript source file (.tscr) into an executable (.tprg)"
-  <> footer "In order to be applied to source code, a TreeScript program needs to be compiled into an executable.\
-            \You can't run this executable on the source code itself (unless compiling with -s) - instead use 'treescript run'."
+compileInfo =
+  fullDesc
+    <> progDesc
+         "compile a TreeScript source file (.tscr) into an executable (.tprg)"
+    <> header
+         "treescript compile - compile a TreeScript source file (.tscr) into an executable (.tprg)"
+    <> footer "Compiled TreeScript programs run faster."
 
-runInfo :: InfoMod a
-runInfo
-   = fullDesc
-  <> progDesc "interpret a TreeScript source file"
-  <> header "treescript run - interpret a TreeScript source file"
-  <> footer "Compiles the source into a temporary directory, then runs it with the given arguments."
+evalInfo :: InfoMod a
+evalInfo =
+  fullDesc
+    <> progDesc "apply TreeScript to source code"
+    <> header "treescript eval - apply TreeScript to source code"
+    <> footer "Evalautes the TreeScript program on the given input."

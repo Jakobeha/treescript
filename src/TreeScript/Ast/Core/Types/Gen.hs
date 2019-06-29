@@ -624,6 +624,10 @@ mkBuiltinSymbol :: T.Text -> Symbol ()
 mkBuiltinSymbol txt =
   Symbol { symbolAnn = (), symbolModule = "", symbol = txt }
 
+mkLangSymbol :: T.Text -> Symbol ()
+mkLangSymbol txt =
+  Symbol { symbolAnn = (), symbolModule = "Lang", symbol = txt }
+
 builtinDecls :: DeclSet
 builtinDecls = mkDeclSet
   [ RecordDecl () "Unit"  []

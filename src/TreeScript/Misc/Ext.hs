@@ -1,18 +1,14 @@
 -- | Helper functions for dependencies.
 module TreeScript.Misc.Ext
-  ( module TreeScript.Misc.Ext.Applicative
-  , module TreeScript.Misc.Ext.Exception
-  , module TreeScript.Misc.Ext.IO
-  , module TreeScript.Misc.Ext.Lifted
-  , module TreeScript.Misc.Ext.List
-  , module TreeScript.Misc.Ext.Maybe
-  , module TreeScript.Misc.Ext.Monoid
-  ) where
+  ( module M
+  )
+where
 
-import TreeScript.Misc.Ext.Applicative
-import TreeScript.Misc.Ext.Exception
-import TreeScript.Misc.Ext.IO
-import TreeScript.Misc.Ext.Lifted
-import TreeScript.Misc.Ext.List
-import TreeScript.Misc.Ext.Maybe
-import TreeScript.Misc.Ext.Monoid
+import           TreeScript.Misc.Ext.Applicative as M
+import           TreeScript.Misc.Ext.Exception as M
+import           TreeScript.Misc.Ext.IO        as M
+import           TreeScript.Misc.Ext.Lifted    as M
+import           TreeScript.Misc.Ext.List      as M
+import           TreeScript.Misc.Ext.Maybe     as M
+import           TreeScript.Misc.Ext.Monoid    as M
+import           TreeScript.Misc.Ext.Streams as M

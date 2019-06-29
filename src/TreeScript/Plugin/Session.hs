@@ -4,17 +4,19 @@
 -- | Integrates plugins into compilation and other actions.
 module TreeScript.Plugin.Session
   ( Settings(..)
+  , LangExt(..)
   , Language(..)
   , SessionEnv(..)
   , Session
   , SessionRes
-  , mkPluginUseError
   , getInitialEnv
   , getSessionEnv
   , runSessionResVirtual
   , runPreSessionRes
   , runSessionResReal
   , langWithExt
+  , forceLangWithExt
+  , forceLangForPath
   )
 where
 
@@ -45,18 +47,23 @@ data Settings
   { settingsLogLevel :: LogLevel
   } deriving (Eq, Ord, Read, Show)
 
--- | Describes a language and provides programs to parse and print it.
-data Language
-  = Language
-  { languageParser :: CmdProgram
-  , languagePrinter :: CmdProgram
+-- | Provides programs to parse and print an external language.
+data LangExt
+  = LangExt
+  { langExtParser :: CmdProgram
+  , langExtPrinter :: CmdProgram
   } deriving (Read, Show)
+
+-- | Describes a language.
+data Language
+  = LanguageStx
+  | LanguageExt LangExt
 
 -- | General global data for every session.
 data SessionEnv
   = SessionEnv
   { sessionEnvSettings :: Settings
-  , sessionEnvLanguages :: M.Map T.Text Language
+  , sessionEnvLanguages :: M.Map T.Text LangExt
   , sessionEnvBuiltinModsPath :: FilePath
   }
 
@@ -97,18 +104,14 @@ mkPluginLoadError :: T.Text -> Error
 mkPluginLoadError msg =
   Error { errorStage = StagePluginLoad, errorRange = r0, errorMsg = msg }
 
-mkPluginUseError :: T.Text -> Error
-mkPluginUseError msg =
-  Error { errorStage = StagePluginUse, errorRange = r0, errorMsg = msg }
-
 liftLoadIO :: IO a -> PreSessionRes a
 liftLoadIO = liftIOAndCatch StagePluginLoad
 
 getRealPluginPath :: PreSessionRes FilePath
 getRealPluginPath = liftLoadIO $ getRealAppDataDirectory "treescript"
 
-mkLanguage :: FilePath -> String -> PreSessionRes (T.Text, Language)
-mkLanguage pluginPath ext = do
+mkLangExt :: FilePath -> String -> PreSessionRes (T.Text, LangExt)
+mkLangExt pluginPath ext = do
   let path        = pluginPath </> ext
       parserPath  = path </> "parser"
       printerPath = path </> "printer"
@@ -120,15 +123,15 @@ mkLanguage pluginPath ext = do
     <> ext'
   pure
     ( ext'
-    , Language
-      { languageParser  = CmdProgram { cmdProgramStage = StagePluginUse
-                                     , cmdProgramPath  = parserPath
-                                     , cmdProgramEnv   = []
-                                     }
-      , languagePrinter = CmdProgram { cmdProgramStage = StagePluginUse
-                                     , cmdProgramPath  = printerPath
-                                     , cmdProgramEnv   = []
-                                     }
+    , LangExt
+      { langExtParser  = CmdProgram { cmdProgramStage = StageReadInput
+                                    , cmdProgramPath  = parserPath
+                                    , cmdProgramEnv   = []
+                                    }
+      , langExtPrinter = CmdProgram { cmdProgramStage = StageWriteOutput
+                                    , cmdProgramPath  = printerPath
+                                    , cmdProgramEnv   = []
+                                    }
       }
     )
 
@@ -151,7 +154,7 @@ getEnvAtPath pluginPath = do
     Right res -> pure res
   languages <-
     fmap M.fromList
-    .   traverseDropFatals (mkLanguage languagesPath)
+    .   traverseDropFatals (mkLangExt languagesPath)
     =<< listDirPlugins languagesPath
   pure SessionEnv { sessionEnvSettings        = settings
                   , sessionEnvLanguages       = languages
@@ -204,6 +207,28 @@ runSessionResReal session = runPreSessionRes $ do
 
 -- | Gets the language for the given extension in the session.
 langWithExt :: T.Text -> SessionRes (Maybe Language)
-langWithExt ext = do
-  langs <- sessionEnvLanguages <$> getSessionEnv
-  pure $ langs M.!? ext
+langWithExt ext
+  | T.null ext = pure $ Just LanguageStx
+  | otherwise = do
+    langs <- sessionEnvLanguages <$> getSessionEnv
+    pure $ LanguageExt <$> langs M.!? ext
+
+-- | Gets the language for the given extension. Fails if it can't find.
+forceLangWithExt :: T.Text -> SessionRes Language
+forceLangWithExt ext = do
+  lang <- langWithExt ext
+  case lang of
+    Nothing -> mkFail Error
+      { errorStage = StageReadInput
+      , errorRange = r0
+      , errorMsg   = "unknown language with extension: " <> ext
+      }
+    Just lang' -> pure lang'
+
+-- | Gets the language for the given path in the session. Fails if it can't find.
+forceLangForPath :: FilePath -> SessionRes Language
+forceLangForPath = forceLangWithExt . T.pack . dropDot . takeExtension
+ where
+  dropDot ('.' : ext) = ext
+  dropDot "" = ""
+  dropDot ext = error $ "impossible: takeExtension returned " ++ show ext

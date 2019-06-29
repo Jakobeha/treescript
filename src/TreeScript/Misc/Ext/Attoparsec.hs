@@ -2,6 +2,7 @@
 
 module TreeScript.Misc.Ext.Attoparsec
   ( stringLiteral
+  , between
   )
 where
 
@@ -133,13 +134,13 @@ escapeCode =
 -- languages quite closely).
 --
 -- Stolen from parsec: https://hackage.haskell.org/package/parsers-0.12.10/docs/src/Text.Parser.Token.html#stringLiteral
-stringLiteral :: (IsString s) => P.Parser s
-stringLiteral = fromString <$> lit where
+stringLiteral :: (IsString s) => Char -> P.Parser s
+stringLiteral qot = fromString <$> lit where
   lit :: P.Parser [Char]
   lit =
     Prelude.foldr (maybe id (:)) ""
-      <$>   between (P.char '"')
-                    (P.char '"' P.<?> "end of string")
+      <$>   between (P.char qot)
+                    (P.char qot P.<?> "end of string")
                     (many stringChar)
       P.<?> "string"
 
@@ -148,7 +149,7 @@ stringLiteral = fromString <$> lit where
     Just <$> stringLetter <|> stringEscape P.<?> "string P.character"
 
   stringLetter :: P.Parser Char
-  stringLetter = P.satisfy (\c -> (c /= '"') && (c /= '\\') && (c > '\026'))
+  stringLetter = P.satisfy (\c -> (c /= qot) && (c /= '\\') && (c > '\026'))
 
   stringEscape :: P.Parser (Maybe Char)
   stringEscape = P.char '\\' *> esc

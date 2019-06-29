@@ -6,13 +6,12 @@ module TreeScript.Ast.Core.Compile
   ( decompile
   , export
   , exportFile
-  , exportInterp
   )
 where
 
 import           TreeScript.Ast.Core.Types
 import           TreeScript.Misc
-import           TreeScript.Plugin
+import TreeScript.Plugin
 
 import           Control.Monad
 import qualified Data.ByteString.Lazy.Char8    as B
@@ -62,22 +61,17 @@ decompile ser =
         pure sprog
 
 -- | Serialize the program, and add a shebang which makes it run as an executable.
-export :: Program () -> B.ByteString
-export prog = runPut $ do
-  putStringUtf8 "#! /usr/bin/env treescript-interpreter\n"
+export :: Program () -> B.ByteString -> B.ByteString
+export prog cpld = runPut $ do
+  putStringUtf8 "#! /usr/bin/env treescript eval\n"
   putByteString64 $ encode prog
-  putByteString64 $ encodeInterp prog
+  putByteString64 cpld
 
 exportFileMode :: FileMode
 exportFileMode = CMode 0o755 -- Everyone can read and execute, owner can write
 
 -- | Serialize the program as an executable into the output path.
-exportFile :: FilePath -> Program () -> SessionRes ()
-exportFile outPath prog = liftIOAndCatch StageWriteCompiled $ do
-  B.writeFile outPath $ export prog
+exportFile :: FilePath -> Program () -> B.ByteString -> SessionRes ()
+exportFile outPath prog cpld = liftIOAndCatch StageCompile $ do
+  B.writeFile outPath $ export prog cpld
   setFileMode outPath exportFileMode
-
--- | Serialize the interpreter data into the output path, for testing.
-exportInterp :: FilePath -> Program () -> SessionRes ()
-exportInterp outPath =
-  liftIOAndCatch StageWriteCompiled . B.writeFile outPath . encodeInterp
