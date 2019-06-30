@@ -38,12 +38,13 @@ class (Monad m, Printable (IValue m)) => MonadInterpret m where
   mcatchEOF :: m () -> m ()
   mcatchFail :: m () -> m ()
   mcatchSuccess :: m (IValue m) -> m (IValue m)
+  mjmpEof :: m a
   mjmpFail :: m a
   mjmpSucceed :: IValue m -> m a
-  mjmpEof :: m a
   mjmpPanic :: T.Text -> m a
   mreadInput :: m ()
   mwriteOutput :: IValue m -> m ()
+  -- Also fills binds in vprops
   mpushGFrame :: [Value Range] -> [GroupRef Range] -> m ()
   mgframe2rframe :: [GroupDefProp Range] -> [GroupDefProp Range] -> m ()
   mdupRFrame :: m ()
@@ -51,6 +52,8 @@ class (Monad m, Printable (IValue m)) => MonadInterpret m where
   mtransformI :: IGroup m -> m ()
   -- | Stores length of input in register
   mpushFixedInput :: IValue m -> m ()
+  -- | Does nothing is input isn't fixed
+  mdropFixedInput :: m ()
   -- | Fails if not enough input left, or if fixed input was pushed and len is different
   mpeekInput :: Int -> m (IValue m)
   mdropInput :: Int -> m ()
@@ -147,7 +150,9 @@ madvance' new (NextGroup grp             ) = madvanceGroup new grp
 madvance :: (MonadInterpret m) => IValue m -> Next Range -> m (IValue m)
 madvance new next = do
   mlog $ "Advance: " <> pprint new <> " " <> pprint next <> " ..."
-  madvance' new next
+  res <- madvance' new next
+  mlog $ "Succeeded advance: " <> pprint next
+  pure res
 
 mproduce :: (MonadInterpret m) => Value Range -> [Next Range] -> m (IValue m)
 mproduce out nexts = do
@@ -175,6 +180,7 @@ mreduce red@(Reducer _ (Guard _ inp out nexts) guards) = do
   mdropInput $ length inpl
   mpopRFrame -- For local reducer
   mpopRFrame -- For group
+  mlog $ "Succeeded reduce: " <> pprint red
   misucceed new
 
 mtransform :: (MonadInterpret m) => GroupDef Range -> m ()
@@ -184,8 +190,11 @@ mtransform (GroupDef _ vprops gprops reds) = do
   forM_ reds $ \red -> do
     mdupRFrame
     mcatchFail $ mreduce red
+    mlog $ "Failed reduce: " <> pprint red
     mpopRFrame
   mpopRFrame
+  mdropFixedInput
+  mlog "* Transform fail"
   mifail
 
 mtransformD

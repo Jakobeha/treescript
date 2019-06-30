@@ -8,12 +8,13 @@
 -- | Types for the @Sugar@ AST.
 module TreeScript.Ast.Sugar.Types
   ( module TreeScript.Ast.Sugar.Types
-  ) where
+  )
+where
 
-import TreeScript.Misc
+import           TreeScript.Misc
 
-import qualified Data.Text as T
-import GHC.Generics
+import qualified Data.Text                     as T
+import           GHC.Generics
 
 -- | Declares an imported module.
 data ImportDecl an
@@ -208,13 +209,12 @@ data Program an
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 instance TreePrintable ImportDecl where
-  treePrint par _ (ImportDecl _ lit mdl qual)
-    = "#" <> par lit <> " " <> par mdl <> foldMap printQual qual
+  treePrint par _ (ImportDecl _ lit mdl qual) =
+    "#" <> par lit <> " " <> par mdl <> foldMap printQual qual
     where printQual = (" -> " <>) . par
 
 instance TreePrintable RecordDecl where
-  treePrint par _ (RecordDecl _ record)
-    = par record <> "."
+  treePrint par _ (RecordDecl _ record) = par record <> "."
 
 instance TreePrintable Splice where
   treePrint par _ (SpliceBind bind) = par bind
@@ -222,114 +222,121 @@ instance TreePrintable Splice where
 
 instance TreePrintable SpliceText where
   treePrint par leaf spliceText = "'" <> printRest spliceText
-    where printRest (SpliceTextNil _ txt) = leaf txt <> "'"
-          printRest (SpliceTextCons _ txt isElps val rst)
-            = leaf txt <> "\\" <> printEllipsis isElps <> printSpliced val <> printRest rst
-          printEllipsis False = ""
-          printEllipsis True = "..."
-          printSpliced (SpliceBind tgt) = par tgt
-          printSpliced (SpliceHole (HoleIdx _ idx)) = leaf idx
+   where
+    printRest (SpliceTextNil _ txt) = leaf txt <> "'"
+    printRest (SpliceTextCons _ txt isElps val rst) =
+      leaf txt
+        <> "\\"
+        <> printEllipsis isElps
+        <> printSpliced val
+        <> printRest rst
+    printEllipsis False = ""
+    printEllipsis True  = "..."
+    printSpliced (SpliceBind tgt            ) = par tgt
+    printSpliced (SpliceHole (HoleIdx _ idx)) = leaf idx
 
 instance TreePrintable SpliceCode where
   treePrint par _ (SpliceCode _ lang txt) = par lang <> par txt
 
 instance TreePrintable Primitive where
-  treePrint _ leaf (PrimInteger _ int) = leaf int
-  treePrint _ leaf (PrimFloat _ float) = leaf float
-  treePrint _ leaf (PrimString _ string) = leaf string
+  treePrint _ leaf (PrimInteger _ int   ) = leaf int
+  treePrint _ leaf (PrimFloat   _ float ) = leaf float
+  treePrint _ leaf (PrimString  _ string) = leaf string
 
 instance TreePrintable Symbol where
   treePrint _ _ (Symbol _ lit) = fromLiteral lit
 
 instance TreePrintable TypePart where
-  treePrint par _ (TypePartSymbol _ sym) = "@" <> par sym
-  treePrint par _ (TypePartTransparent _ x) = "@" <> par x
+  treePrint par _ (TypePartSymbol      _ sym) = "@" <> par sym
+  treePrint par _ (TypePartTransparent _ x  ) = "@" <> par x
 
 instance TreePrintable Type where
   treePrint par _ (Type _ parts) = mintercalate "|" $ map par parts
 
 instance TreePrintable TypeAlias where
-  treePrint par _ (TypeAlias _ ali typ) = "@" <> par ali <> " <- " <> par typ <> ";"
+  treePrint par _ (TypeAlias _ ali typ) =
+    "@" <> par ali <> " <- " <> par typ <> ";"
 
 instance TreePrintable SubGroupProperty where
   treePrint par _ (SubGroupProperty _ sym) = "&" <> par sym
 
 instance TreePrintable GenProperty where
-  treePrint par _ (GenPropertyDecl prop) = par prop
+  treePrint par _ (GenPropertyDecl     prop) = par prop
   treePrint par _ (GenPropertySubGroup prop) = par prop
-  treePrint par _ (GenPropertyRecord prop) = par prop
-  treePrint par _ (GenPropertyGroup prop) = par prop
+  treePrint par _ (GenPropertyRecord   prop) = par prop
+  treePrint par _ (GenPropertyGroup    prop) = par prop
 
 instance TreePrintable GroupLoc where
-  treePrint _ _ (GroupLocGlobal _) = "&"
-  treePrint _ _ (GroupLocLocal _) = "&"
+  treePrint _ _ (GroupLocGlobal   _) = "&"
+  treePrint _ _ (GroupLocLocal    _) = "&"
   treePrint _ _ (GroupLocFunction _) = "#"
 
 instance TreePrintable Group where
-  treePrint par _ (Group _ loc head' props)
-    = par loc <> par head' <> printProps (map par props)
+  treePrint par _ (Group _ loc head' props) =
+    par loc <> par head' <> printProps (map par props)
 
 instance TreePrintable GroupDecl where
-  treePrint par _ (GroupDecl _ group)
-    = par group <> "."
+  treePrint par _ (GroupDecl _ group) = par group <> "."
 
 instance TreePrintable Record where
-  treePrint par _ (Record _ head' props)
-    = par head' <> printProps (map par props)
+  treePrint par _ (Record _ head' props) =
+    par head' <> printProps (map par props)
 
 instance TreePrintable BindTarget where
-  treePrint _ _ (BindTargetNone _) = "_"
+  treePrint _   _ (BindTargetNone _  ) = "_"
   treePrint par _ (BindTargetSome sym) = par sym
 
 instance TreePrintable Bind where
-  treePrint par _ (Bind _ tgt)
-    = "\\" <> par tgt
+  treePrint par _ (Bind _ tgt) = "\\" <> par tgt
 
 instance TreePrintable HoleIdx where
   treePrint _ leaf (HoleIdx _ idx) = leaf idx
 
 instance TreePrintable Hole where
-  treePrint par _ (Hole _ idx)
-    = "\\" <> par idx
+  treePrint par _ (Hole _ idx) = "\\" <> par idx
 
 instance TreePrintable Value where
-  treePrint par _ (ValuePrimitive prim) = par prim
-  treePrint par _ (ValueRecord record) = par record
-  treePrint par _ (ValueBind bind) = par bind
-  treePrint par _ (ValueSpliceCode code) = par code
-  treePrint par _ (ValueHole hole) = par hole
+  treePrint par _ (ValuePrimitive  prim  ) = par prim
+  treePrint par _ (ValueRecord     record) = par record
+  treePrint par _ (ValueBind       bind  ) = par bind
+  treePrint par _ (ValueSpliceCode code  ) = par code
+  treePrint par _ (ValueHole       hole  ) = par hole
 
 instance TreePrintable Guard where
-  treePrint par _ (Guard _ input output nexts)
-    = par input <> " <- " <> par output <> foldMap printNext nexts
+  treePrint par _ (Guard _ input output nexts) =
+    par input <> " <- " <> par output <> foldMap printNext nexts
     where printNext next' = " " <> par next'
 
 instance TreePrintable ReducerType where
-  treePrint _ _ (ReducerTypeReg _) = "->"
+  treePrint _ _ (ReducerTypeReg  _) = "->"
   treePrint _ _ (ReducerTypeCast _) = "=>"
 
 instance TreePrintable Reducer where
-  treePrint par _ (Reducer _ typ (Guard _ input output nexts) guards)
-     = par input
-    <> " "
-    <> par typ
-    <> " "
-    <> par output
-    <> foldMap printNext nexts
-    <> foldMap printGuard guards
-    <> ";"
-    where printNext next' = " " <> par next'
-          printGuard guard = ",\n  " <> par guard
+  treePrint par _ (Reducer _ typ (Guard _ input output nexts) guards) =
+    par input
+      <> " "
+      <> par typ
+      <> " "
+      <> par output
+      <> foldMap printNext  nexts
+      <> foldMap printGuard guards
+      <> ";"
+   where
+    printNext next' = " " <> par next'
+    printGuard guard = ",\n  " <> par guard
 
 instance TreePrintable TopLevel where
   treePrint par _ (TopLevelImportDecl decl) = par decl
   treePrint par _ (TopLevelRecordDecl decl) = par decl
-  treePrint par _ (TopLevelGroupDecl decl) = par decl
-  treePrint par _ (TopLevelTypeAlias ali) = par ali
-  treePrint par _ (TopLevelReducer red) = par red
+  treePrint par _ (TopLevelGroupDecl  decl) = par decl
+  treePrint par _ (TopLevelTypeAlias  ali ) = par ali
+  treePrint par _ (TopLevelReducer    red ) = par red
 
 instance TreePrintable Program where
   treePrint par _ (Program _ topLevels) = mintercalate "\n" $ map par topLevels
+
+nullSymbol :: Symbol Range
+nullSymbol = Symbol r0 ""
 
 printProps :: (PrintOut o) => [o] -> o
 printProps ps = "[" <> mintercalate ", " ps <> "]"

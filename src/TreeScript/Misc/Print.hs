@@ -65,6 +65,9 @@ instance IsString ReducePrintText where
 instance Printable () where
   pprint () = "()"
 
+instance Printable Bool where
+  pprint = T.pack . show
+
 instance Printable Char where
   pprint = T.pack . show
 

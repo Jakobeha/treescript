@@ -14,7 +14,6 @@ import qualified TreeScript.Misc.Ext.Attoparsec
 import           TreeScript.Plugin
 
 import           Control.Applicative
-import           Control.Monad
 import qualified Data.Attoparsec.Text          as P
 import qualified Data.Text                     as T
 import qualified System.IO.Streams             as S
@@ -27,18 +26,29 @@ mkError msg =
 
 exprParser :: P.Parser Stx
 exprParser =
-  wordParser <|> puncParser <|> stringParser <|> intParser <|> blockParser
+  wordParser
+    <|> spliceParser
+    <|> puncParser
+    <|> stringParser
+    <|> intParser
+    <|> blockParser
  where
-  wordParser = StxWord <$> P.takeWhile1 (P.inClass "A-Za-z_")
-  puncParser = StxPunc <$> P.takeWhile1 (P.inClass "#$%&*+,-./:;<=>?@\\^_`|~!")
+  wordParser = (P.<?> "word") $ StxWord <$> P.takeWhile1 (P.inClass "A-Za-z_")
+  puncParser = (P.<?> "punc") $ StxPunc <$> P.takeWhile1
+    (P.inClass "#$%&*+,-./:;<=>?@\\^_`|~!")
   stringParser =
-    (StxString '"' <$> P.stringLiteral '"')
+    (P.<?> "string")
+      $   (StxString '"' <$> P.stringLiteral '"')
       <|> (StxString '\'' <$> P.stringLiteral '\'')
   intParser =
-    (StxInt 10 <$> P.signed P.decimal)
+    (P.<?> "int")
+      $   (StxInt 10 <$> P.signed P.decimal)
       <|> (StxInt 16 <$> P.signed (P.string "0x" *> P.hexadecimal))
+  spliceParser = (P.<?> "splice") $ StxSplice <$> P.try
+    (P.char '\\' *> ((+ 1) <$> P.decimal))
   blockParser =
-    (StxBlock '(' <$> (P.char '(' *> exprsParser (P.char ')')))
+    (P.<?> "block")
+      $   (StxBlock '(' <$> (P.char '(' *> exprsParser (P.char ')')))
       <|> (StxBlock '[' <$> (P.char '[' *> exprsParser (P.char ']')))
       <|> (StxBlock '{' <$> (P.char '{' *> exprsParser (P.char '}')))
 
@@ -52,7 +62,7 @@ parseStxStream :: S.InputStream T.Text -> IO (S.InputStream (Value Range))
 parseStxStream = S.parserToInputStream parser
  where
   parser =
-    (Nothing <$ (P.try P.skipSpace *> P.endOfInput))
+    (Nothing <$ P.try (P.skipSpace *> P.endOfInput))
       <|> (Just . stx2Value <$> (P.skipSpace *> exprParser))
 
 parseStxText :: Range -> T.Text -> [Value Range] -> SessionRes [Value Range]
@@ -63,6 +73,6 @@ parseStxText rng txt splices = case P.parseOnly astParser txt of
 parseStxFile :: FilePath -> SessionRes (S.InputStream (Value Range))
 parseStxFile pinp =
   liftIOAndCatch StageReadInput
-    $   withFileAsInput pinp
     $   parseStxStream
-    <=< S.decodeUtf8
+    =<< S.decodeUtf8
+    =<< fileToInputStream pinp

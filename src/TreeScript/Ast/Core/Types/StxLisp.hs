@@ -31,6 +31,16 @@ instance Printable Stx where
     10 -> pprint num
     16 -> "0x" <> T.pack (showHex num "")
     _  -> pprint base <> "?" <> T.pack (showIntAtBase base intToDigit num "")
+  pprint (StxSplice splice) = "\\" <> pprint splice
+  pprint (StxBlock delim contents) =
+    T.singleton delim <> T.intercalate " " (map pprint contents) <> T.singleton
+      (oppositeDelim delim)
+
+oppositeDelim :: Char -> Char
+oppositeDelim '(' = ')'
+oppositeDelim '[' = ']'
+oppositeDelim '{' = '}'
+oppositeDelim x   = error $ "Invalid delimiter: " ++ [x]
 
 stxModule :: T.Text
 stxModule = "Stx"
@@ -87,4 +97,7 @@ value2Stx (ValueRecord (Record _ (Symbol _ mdl head') props))
         "(" -> pure $ StxBlock '(' children'
         "[" -> pure $ StxBlock '[' children'
         "{" -> pure $ StxBlock '{' children'
+        _   -> Nothing
+    _ -> Nothing
+  | otherwise = Nothing
 value2Stx (ValueBind (Bind _ idx)) = Just $ StxSplice idx

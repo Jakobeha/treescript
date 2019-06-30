@@ -139,6 +139,7 @@ BindTarget : '_' { BindTargetNone $1 }
            | LowerSym { BindTargetSome $1 }
            ;
 SpliceCode : LowerSym SpliceText { SpliceCode (getAnn $1 <> getAnn $2) $1 $2 }
+           | SpliceText { SpliceCode (getAnn $1) nullSymbol $1 }
            ;
 SpliceText : codeWhole { SpliceTextNil (getAnn $1) (annd $1) }
            | codeStart Splice SpliceTextTail

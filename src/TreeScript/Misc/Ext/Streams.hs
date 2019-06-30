@@ -1,6 +1,7 @@
 module TreeScript.Misc.Ext.Streams
   ( withFileAsInput
   , withFileAsOutput
+  , fileToInputStream
   )
 where
 
@@ -29,3 +30,13 @@ withFileAsOutput pth f =
   bracket (liftIO $ openFile pth WriteMode) (liftIO . hClose) $ \hdl -> do
     out <- liftIO $ S.handleToOutputStream hdl
     f out
+
+-- TODO Handle exceptions properly
+fileToInputStream
+  :: (MonadMask m, MonadIO m) => FilePath -> m (S.InputStream B.ByteString)
+fileToInputStream pth = do
+  hdl <- liftIO $ openFile pth ReadMode
+  liftIO
+    $   S.lockingInputStream
+    =<< S.atEndOfInput (hClose hdl)
+    =<< S.handleToInputStream hdl

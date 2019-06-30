@@ -1,17 +1,17 @@
 //Requires at least some interpretation
 &Main[].
-scm'((lambda (\x) \body) \arg)' -> \body &Subst[\x, \arg] &Try[&Main[]];
-scm'(\x \y)' -> scm'(\x2 \y)' &Try[&Main[]],
-  \x2 <- \x &Main[];
-scm'(\x \y)' -> scm'(\x \y2)' &Try[&Main[]],
+'(\x \y)' -> '(\x \y2)' &Try[&Main[]],
   \y2 <- \y &Main[];
+'((lambda (\x) \body) \arg)' -> \body &Subst[\x, \arg] &Try[&Main[]];
+'(\x \y)' -> '(\x2 \y)' &Try[&Main[]],
+  \x2 <- \x &Main[];
 
 &Subst[\old, \new].
 \old -> \new;
-scm'(lambda (\old) \body)' -> scm'(lambda (\old) \body)';
-scm'(lambda (\x) \body)' -> scm'(lambda (\x) \body2)',
+'(lambda (\old) \body)' -> '(lambda (\old) \body)';
+'(lambda (\x) \body)' -> '(lambda (\x) \body2)',
   \body2 <- \body &Subst[\old, \new];
-scm'(\f \x)' -> scm'(\f2 \x2)',
+'(\f \x)' -> '(\f2 \x2)',
   \f2 <- \f &Subst[\old, \new],
   \x2 <- \x &Subst[\old, \new];
 \body -> \body;

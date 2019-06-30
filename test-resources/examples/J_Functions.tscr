@@ -11,36 +11,36 @@ Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Sch
 \x -> \x &Apply[];
 
 &Add[].
-scm'((+ \xAt) \yAt)' -> Scheme_Atom[\xpy],
+'((+ \xAt) \yAt)' -> Scheme_Atom[\xpy],
   \xpy <- T[\x, \y] #Num_Add[],
   Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 
 &LT[].
-scm'((< \xAt) \yAt)' -> Scheme_Atom[\xpy],
+'((< \xAt) \yAt)' -> Scheme_Atom[\xpy],
   \xpy <- T[\x, \y] #Num_LessThan[],
   Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 
 &If[].
-scm'(if #true \true \false)' -> \true;
-scm'(if #false \true \false)' -> \false;
+'(if #true \true \false)' -> \true;
+'(if #false \true \false)' -> \false;
 
 &Apply[].
-scm'((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[],
+'((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[],
   Scheme_Symbol[\_] <- \x;
 
 &Subst[].
 Subst[\old, \old, \new] -> \new;
-Subst[scm'(lambda (\old) \body)', \old, \_] -> scm'(lambda (\old) \body)',
+Subst['(lambda (\old) \body)', \old, \_] -> '(lambda (\old) \body)',
   Scheme_Symbol[\_] <- \old;
-Subst[scm'(lambda (\x) \body)', \old, \new] -> scm'(lambda (\x) \body2)',
+Subst['(lambda (\x) \body)', \old, \new] -> '(lambda (\x) \body2)',
   Scheme_Symbol[\_] <- \x,
   \body2 <- Subst[\body, \old, \new] &Subst[];
-Subst[scm'(\f \x)', \old, \new] -> scm'(\f2 \x2)',
+Subst['(\f \x)', \old, \new] -> '(\f2 \x2)',
   \f2 <- Subst[\f, \old, \new] &Subst[],
   \x2 <- Subst[\x, \old, \new] &Subst[];
-Subst[scm'(\a \x \y \z)', \old, \new] -> scm'(\a \x2 \y2 \z2)',
+Subst['(\a \x \y \z)', \old, \new] -> '(\a \x2 \y2 \z2)',
   \x2 <- Subst[\x, \old, \new] &Subst[],
   \y2 <- Subst[\y, \old, \new] &Subst[],
   \z2 <- Subst[\z, \old, \new] &Subst[];
@@ -55,19 +55,19 @@ T[\_, \_] -> False[];
 
 &Recurse[&x].
 \x -> \x &x[];
-scm'(\x \y)' -> scm'(\x2 \y2)',
+'(\x \y)' -> '(\x2 \y2)',
   True[] <- T[\xr, \yr] &Or[],
   T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
   T[\y2, \yr] <- \y &Try[&Recurse[&x[]]];
-scm'(list \x \y \z)' -> scm'(list \x2 \y2 \z2)',
+'(list \x \y \z)' -> '(list \x2 \y2 \z2)',
   True[] <- T[T[\xr, \yr], \zr] &Or[],
   T[\x2, \xr] <- \x &Try[&Recurse[&x[]]],
   T[\y2, \yr] <- \y &Try[&Recurse[&x[]]],
   T[\z2, \zr] <- \z &Try[&Recurse[&x[]]];
-scm'(if \x \y \z)' -> scm'(if \x2 \y \z)',
+'(if \x \y \z)' -> '(if \x2 \y \z)',
   True[] <- \xr,
   T[\x2, \xr] <- \x &Try[&Recurse[&x[]]];
-scm'(lambda (\x) \body)' -> scm'(lambda (\x) \body2)',
+'(lambda (\x) \body)' -> '(lambda (\x) \body2)',
   \body2 <- \body &Recurse[&x[]];
 
 &Try[&x].

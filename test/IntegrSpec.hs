@@ -169,7 +169,7 @@ spec = do
                 $ denoteFailIn ("executable test " <> name)
                 $ do
                     progOutRes <- runSessionResVirtual exampleEnv $ do
-                      olang <- forceLangForPath outPath
+                      let olang = LanguageStx
                       evalFileOutText inPath olang (r0 <$ prg)
                     if name `elem` testInfoCantRun testInfo
                       then assertProperFailure testInfo progOutRes
