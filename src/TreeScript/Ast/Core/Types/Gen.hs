@@ -527,11 +527,17 @@ modulePathPrintLength = 5
 xBottom :: MType
 xBottom = MType mempty
 
+nilSType :: SType
+nilSType = STypeRecord $ mkBuiltinSymbol "Nil"
+
 nilType :: MType
-nilType = mType1 $ STypeRecord $ mkBuiltinSymbol "Nil"
+nilType = mType1 nilSType
+
+inilSType :: SType
+inilSType = STypeRecord $ mkBuiltinSymbol "INil"
 
 inilType :: MType
-inilType = mType1 $ STypeRecord $ mkBuiltinSymbol "INil"
+inilType = mType1 inilSType
 
 mType1 :: SType -> MType
 mType1 part = MType [part]
@@ -553,7 +559,7 @@ mkListType mtyp = mkConsType mtyp <> nilType
 
 mkIConsType :: MType -> MType
 mkIConsType MTypeAny      = MTypeAny
-mkIConsType (MType parts) = MType $ S.map STypeICons parts
+mkIConsType (MType parts) = MType $ S.map STypeICons parts `S.union` parts
 
 mkIListType :: MType -> MType
 mkIListType mtyp = mkIConsType mtyp <> inilType
@@ -679,6 +685,10 @@ mkIListValue ann (x : xs) = ValueRecord Record
   , recordHead  = ann <$ mkBuiltinSymbol "ICons"
   , recordProps = [x, mkIListValue ann xs]
   }
+
+rewrapIList :: (Monoid an) => [Value an] -> Value an
+rewrapIList [x] = x
+rewrapIList xs  = mkIListValue (foldMap getAnn xs) xs
 
 unwrapIList :: Value an -> [Value an]
 unwrapIList val = case tryUnwrapIList val of

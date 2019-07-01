@@ -73,7 +73,7 @@ stx2Value (StxInt base num) = mkStxRecord "Int" [mkStxInt base, mkStxInt num]
 stx2Value (StxSplice idx) = ValueBind $ Bind r0 idx
 stx2Value (StxBlock delim children) = mkStxRecord
   "Block"
-  [mkStxString $ T.singleton delim, mkIListValue r0 $ map stx2Value children]
+  [mkStxString $ T.singleton delim, rewrapIList $ map stx2Value children]
 
 value2Stx :: Value Range -> Maybe Stx
 value2Stx (ValuePrimitive _) = Nothing

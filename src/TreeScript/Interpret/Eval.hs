@@ -24,7 +24,8 @@ import           Control.Monad.RWS.Strict
 import           Data.Foldable
 import qualified Data.Map.Strict               as M
 import           Data.Maybe
-import qualified Data.Sequence                 as Se
+import qualified Data.Sequence                 as Seq
+import qualified Data.Set                      as Set
 import qualified Data.Text                     as T
 import qualified Data.Text.Encoding            as T
 import qualified Data.Vector                   as V
@@ -65,7 +66,7 @@ data EvalState
   , evalStateGroups :: M.Map (Symbol ()) (GroupDef Range)
   , evalStatePanicMsg :: Maybe T.Text
   , evalStateCStack :: [EvalCont]
-  , evalStateImmInput :: Se.Seq (Value Range)
+  , evalStateImmInput :: Seq.Seq (Value Range)
   , evalStateImmInputFix :: [Int]
   , evalStateCachedAllInput :: Bool
   , evalStateFrames :: [Frame]
@@ -75,10 +76,14 @@ newtype Eval a = Eval{ unEval :: RWST EvalRead () EvalState (ContT () SessionRes
   deriving (Functor, Applicative, Monad, MonadIO)
 
 instance MonadInterpret Eval where
+  type IType Eval = SType
   type IValue Eval = LenList (Value Range)
+  type ICast Eval = Reducer Range
   type IGroup Eval = GroupDef Range
 
-  mlog = Eval . logDebugN
+  mlog typ msg
+    | typ `Set.member` Set.fromList ["Interpret", "Reduce", "Guard", "Produce", "Advance", "Cast", "Consume", "Control"] = Eval $ logDebugN msg
+    | otherwise = pure ()
   mloadPath x = Eval $ modify $ \s -> s { evalStatePath = x }
   mloadCreds x = Eval $ modify $ \s -> s { evalStateCreds = x }
   mloadGroups x = Eval $ modify $ \s -> s { evalStateGroups = x }
@@ -115,7 +120,7 @@ instance MonadInterpret Eval where
   mjmpEof = Eval $ do
     panicMsg <- evalStatePanicMsg <$> get
     case panicMsg of
-      Nothing        -> unEval $ mlog "Got eof"
+      Nothing        -> pure ()
       Just panicMsg' -> logWarnN $ "Panic: " <> panicMsg'
     k <- unEval $ popCsUntilInclusive $ \case
       (EvalContEof x) -> Just x
@@ -146,9 +151,9 @@ instance MonadInterpret Eval where
       case next of
         Nothing    -> modify $ \s -> s { evalStateCachedAllInput = True }
         Just next' -> modify
-          $ \s -> s { evalStateImmInput = evalStateImmInput s Se.|> next' }
+          $ \s -> s { evalStateImmInput = evalStateImmInput s Seq.|> next' }
     immInp <- evalStateImmInput <$> get
-    unEval $ mlog $ "Immediate input: " <> pprint (toList immInp)
+    unEval $ mlog "IO" $ "Immediate input: " <> pprint (toList immInp)
     when (null immInp) $ unEval mieof
   mwriteOutput xl = Eval $ do
     out <- evalReadOutput <$> ask
@@ -177,14 +182,14 @@ instance MonadInterpret Eval where
 -- | Stores length of input in register
   mpushFixedInput inp = Eval $ modify $ \s -> s
     { evalStateImmInputFix = length inp : evalStateImmInputFix s
-    , evalStateImmInput    = Se.fromList inp <> evalStateImmInput s
+    , evalStateImmInput    = Seq.fromList inp <> evalStateImmInput s
     }
   mdropFixedInput = Eval $ do
     st <- get
     let immInputFix' = evalStateImmInputFix st
         immInput     = evalStateImmInput st
     unEval
-      $  mlog
+      $  mlog "IO"
       $  "Dropping fixed input if "
       <> pprint (length immInputFix')
       <> " > 0 from "
@@ -193,7 +198,7 @@ instance MonadInterpret Eval where
       []                -> s
       immInputFix : fxs -> s
         { evalStateImmInputFix = fxs
-        , evalStateImmInput    = Se.drop immInputFix $ evalStateImmInput s
+        , evalStateImmInput    = Seq.drop immInputFix $ evalStateImmInput s
         }
 -- | Fails if not enough input left, or if fixed input was pushed and len is different
   mpeekInput len = Eval $ do
@@ -204,7 +209,7 @@ instance MonadInterpret Eval where
         <  len
         )
       $ unEval mifail
-    pure $ toList $ Se.take len $ evalStateImmInput st
+    pure $ toList $ Seq.take len $ evalStateImmInput st
   mdropInput len = Eval $ do
     st <- get
     let immInputFix = evalStateImmInputFix st
@@ -215,12 +220,23 @@ instance MonadInterpret Eval where
         <  len
         )
       $ unEval mifail
-    unEval $ mlog $ "Dropping " <> pprint len <> " from " <> pprint
+    unEval $ mlog "IO" $ "Dropping " <> pprint len <> " from " <> pprint
       (toList immInput)
     put $ st { evalStateImmInputFix = drop 1 immInputFix
-             , evalStateImmInput    = Se.drop len immInput
+             , evalStateImmInput    = Seq.drop len immInput
              }
   mval2Ival x = pure $ unwrapIList x
+  mmapMPath x ps f = unwrapIList
+    <$> mmapMPath' (rewrapIList x) ps (fmap rewrapIList . f . unwrapIList)
+  mgetType vall = case valueType val of
+    Nothing  -> mipanic $ "Value doesn't have type: " <> pprint val
+    Just typ -> pure typ
+    where val = rewrapIList vall
+  misSubtype typ = pure . Set.member typ
+  mlookupCast ityp otyp = Eval $ do
+    creds <- evalStateCreds <$> get
+    pure $ creds M.!? CastSurface ityp otyp
+  mreduceCast = mreduceLocal
   mresolveGlobal sym = Eval $ (M.! remAnns sym) . evalStateGroups <$> get
   madvanceLocalGroup new rng _ idx lvps lgps = do
     frame <- topRFrame
@@ -246,7 +262,7 @@ instance MonadInterpret Eval where
     prev  <- liftIO $ MV.read binds (idx - 1)
     case prev of
       Nothing    -> pure ()
-      Just prev' -> mlog $ "Prev: " <> pprint prev'
+      Just prev' -> mlog "Consume" $ "Prev: " <> pprint prev'
     case prev of
       Nothing -> liftIO $ MV.write binds (idx - 1) $ Just x
       Just prev' | remAnns prev' == remAnns x -> pure ()
@@ -298,11 +314,11 @@ logFrames :: T.Text -> Eval a -> Eval a
 logFrames desc action = do
   bfrms  <- Eval $ evalStateFrames <$> get
   pbfrms <- printFrames bfrms
-  mlog $ "Before " <> desc <> ": " <> pbfrms
+  mlog "Stack" $ "Before " <> desc <> ": " <> pbfrms
   res    <- action
   afrms  <- Eval $ evalStateFrames <$> get
   pafrms <- printFrames afrms
-  mlog $ "After " <> desc <> ": " <> pafrms
+  mlog "Stack" $ "After " <> desc <> ": " <> pafrms
   pure res
 
 dupRFrame :: RFrame -> Eval RFrame
@@ -341,13 +357,32 @@ popCsUntilInclusive f = Eval $ do
   modify $ \s -> s { evalStateCStack = cs' }
   pure c'
 
+mmapMPath'
+  :: Value Range
+  -> [Int]
+  -> (Value Range -> Eval (Value Range))
+  -> Eval (Value Range)
+mmapMPath' x   []       f = f x
+mmapMPath' val (p : ps) f = case val of
+  ValueRecord (Record ann head' props) | p < length props ->
+    ValueRecord . Record ann head' <$> zipWithM mapMProp [0 ..] props
+  _ ->
+    mipanic
+      $  "Path expects record with at least "
+      <> pprint (p + 1)
+      <> " props, got: "
+      <> pprint val
+ where
+  mapMProp idx prop | idx == p  = mmapMPath' prop ps f
+                    | otherwise = pure prop
+
 initialState :: EvalState
 initialState = EvalState { evalStatePath           = error "not set"
                          , evalStateCreds          = error "not set"
                          , evalStateGroups         = error "not set"
                          , evalStatePanicMsg       = Nothing
                          , evalStateCStack         = []
-                         , evalStateImmInput       = Se.empty
+                         , evalStateImmInput       = Seq.empty
                          , evalStateImmInputFix    = []
                          , evalStateCachedAllInput = False
                          , evalStateFrames         = []

@@ -451,7 +451,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
       overErrors (addRangeToErr langExtRng) $ lift $ lift $ forceLangWithExt
         langExt
     ress <- lift $ lift $ parseAstList rng lang txt splices
-    pure $ mkIListValue rng ress
+    pure $ rewrapIList ress
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
