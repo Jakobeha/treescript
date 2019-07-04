@@ -105,7 +105,6 @@ data GenProperty an
 data GroupLoc an
   = GroupLocGlobal an
   | GroupLocLocal an
-  | GroupLocFunction an
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Declares a group (subgroups will be symbols), or references it (subgroups will be groups).
@@ -168,13 +167,18 @@ data Value an
   | ValueHole (Hole an)
   deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
+data Next an
+  = NextEval an
+  | NextGroup (Group an)
+  deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
+
 -- | Matches an input value against an output value.
 data Guard an
   = Guard
   { guardAnn :: an
   , guardInput :: Value an
   , guardOutput :: Value an
-  , guardNexts :: [Group an]
+  , guardNexts :: [Next an]
   } deriving (Eq, Ord, Read, Show, Printable, ReducePrintable, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Whether this is a regular reducer or type cast.
@@ -267,9 +271,8 @@ instance TreePrintable GenProperty where
   treePrint par _ (GenPropertyGroup    prop) = par prop
 
 instance TreePrintable GroupLoc where
-  treePrint _ _ (GroupLocGlobal   _) = "&"
-  treePrint _ _ (GroupLocLocal    _) = "&"
-  treePrint _ _ (GroupLocFunction _) = "#"
+  treePrint _ _ (GroupLocGlobal _) = "&"
+  treePrint _ _ (GroupLocLocal  _) = "&"
 
 instance TreePrintable Group where
   treePrint par _ (Group _ loc head' props) =
@@ -301,6 +304,10 @@ instance TreePrintable Value where
   treePrint par _ (ValueBind       bind  ) = par bind
   treePrint par _ (ValueSpliceCode code  ) = par code
   treePrint par _ (ValueHole       hole  ) = par hole
+
+instance TreePrintable Next where
+  treePrint _   _ NextEval        = "!"
+  treePrint par _ (NextGroup grp) = par grp
 
 instance TreePrintable Guard where
   treePrint par _ (Guard _ input output nexts) =

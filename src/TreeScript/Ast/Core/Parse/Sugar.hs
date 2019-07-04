@@ -363,15 +363,11 @@ parseRecordDecl :: S.RecordDecl Range -> GlobalSessionRes (RecordDecl Range)
 parseRecordDecl (S.RecordDecl rng (S.Record _ (S.Symbol _ head') props)) =
   RecordDecl rng head' <$> traverse parseTypeProp props
 
-parseGroupDecl
-  :: S.GroupDecl Range
-  -> GlobalSessionRes (Either (GroupDecl Range) (FunctionDecl Range))
+parseGroupDecl :: S.GroupDecl Range -> GlobalSessionRes (GroupDecl Range)
 parseGroupDecl (S.GroupDecl rng (S.Group _ loc (S.Symbol hrng head') props)) =
   case loc of
-    S.GroupLocGlobal _ -> pure $ Left $ GroupDecl rng head' nvps ngps -- TODO Error on other properties
-    S.GroupLocFunction _ ->
-      fmap Right $ FunctionDecl rng head' <$> traverse parseTypeProp props
-    S.GroupLocLocal lrng -> mkFail
+    S.GroupLocGlobal _    -> pure $ GroupDecl rng head' nvps ngps -- TODO Error on other properties
+    S.GroupLocLocal  lrng -> mkFail
       $ desugarError (lrng <> hrng) "can't declare local (lowercase) group"
  where
   nvps = length $ filter
@@ -450,8 +446,7 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
     lang    <-
       overErrors (addRangeToErr langExtRng) $ lift $ lift $ forceLangWithExt
         langExt
-    ress <- lift $ lift $ parseAstList rng lang txt splices
-    pure $ rewrapIList ress
+    lift $ lift $ wrapLang . rewrapIList <$> parseAstList rng LanguageStx txt splices
 
 parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
 parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
@@ -475,9 +470,6 @@ parseGroupHead (S.GroupLocLocal _) (S.Symbol rng txt) = do
   let (idx, newEnv) = bindEnvLookup txt $ gvEnvGroup env
   put env { gvEnvGroup = newEnv }
   pure $ GroupLocLocal rng idx
-parseGroupHead (S.GroupLocFunction lrng) head'@(S.Symbol hrng _) =
-  GroupLocFunction (lrng <> hrng)
-    <$> lift (parseSymbol SymbolTypeFunction head')
 
 parseGroupProperty
   :: S.GenProperty Range
@@ -497,8 +489,9 @@ parseGroupRef (S.Group rng isProp head' props) = do
     partitionEithers <$> traverseDropFatals parseGroupProperty props
   pure $ GroupRef rng loc vprops gprops
 
-parseNext :: S.Group Range -> GVBindSessionRes (Next Range)
-parseNext = fmap NextGroup . parseGroupRef
+parseNext :: S.Next Range -> GVBindSessionRes (Next Range)
+parseNext (S.NextEval  rng) = pure $ NextEval rng
+parseNext (S.NextGroup grp) = NextGroup <$> parseGroupRef grp
 
 parseGuard :: S.Guard Range -> GVBindSessionRes (Guard Range)
 parseGuard (S.Guard rng input output nexts) =
@@ -564,8 +557,6 @@ parseEmptyGroupDef (S.GroupDecl rng (S.Group _ loc (S.Symbol headRng lhead) prop
     S.GroupLocLocal _ -> mkFail $ desugarError
       headRng
       "can't declare a lowercase group, lowercase groups are group properties"
-    S.GroupLocFunction _ -> mkFail
-      $ desugarError headRng "can't declare a function after declaring groups"
 
 parseRestGroupDefs
   :: S.GroupDecl Range
@@ -681,9 +672,9 @@ parseLocal (S.Program rng topLevels) = do
   putLocals $ mkDeclSet rdecls0 [] [] [] [] []
   alis' <- traverseDropFatals parseTypeAlias alis
   putLocals $ mkDeclSet rdecls0 [] [] [] alis' []
-  rdecls'           <- traverse parseRecordDecl rdecls
-  (gdecls', fdecls) <- partitionEithers <$> traverse parseGroupDecl gdecls
-  putLocals $ mkDeclSet rdecls' [] gdecls' fdecls alis' []
+  rdecls' <- traverse parseRecordDecl rdecls
+  gdecls' <- traverse parseGroupDecl gdecls
+  putLocals $ mkDeclSet rdecls' [] gdecls' alis' []
   reds'  <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
   groups <- parseAllGroupDefs topLevelsInGroups
   libs   <- findLibraries
@@ -699,20 +690,19 @@ parseLocal (S.Program rng topLevels) = do
       =<< traverseDropFatals
             (\red -> (, red) <$> getCastSurfaceType red)
             castReds
-  let exps = mkDeclSet rdecls' [] gdecls' fdecls alis' $ M.keysSet castReds'
+  let exps = mkDeclSet rdecls' [] gdecls' alis' $ M.keysSet castReds'
   putLocals exps
   -- TODO: Syntax sugar a main group
   tellErrors $ map notGroupedReducerError regReds
-  pure Program { programAnn           = rng
-               , programPath          = globalEnvModulePath genv
-               , programImportDecls   = idecls'
-               , programRecordDecls   = rdecls'
-               , programFunctionDecls = fdecls
-               , programExports       = exps
-               , programTypeAliases   = alis'
-               , programCastReducers  = castReds'
-               , programGroups        = groups
-               , programLibraries     = libs
+  pure Program { programAnn          = rng
+               , programPath         = globalEnvModulePath genv
+               , programImportDecls  = idecls'
+               , programRecordDecls  = rdecls'
+               , programExports      = exps
+               , programTypeAliases  = alis'
+               , programCastReducers = castReds'
+               , programGroups       = groups
+               , programLibraries    = libs
                }
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result.

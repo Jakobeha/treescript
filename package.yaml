@@ -49,6 +49,8 @@ dependencies:
 - exceptions
 - extra
 - filepath
+- inline-js
+- inline-js-core
 - io-streams
 - attoparsec
 - monad-logger

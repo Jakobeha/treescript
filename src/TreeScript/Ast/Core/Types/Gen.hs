@@ -15,14 +15,11 @@ module TreeScript.Ast.Core.Types.Gen
   )
 where
 
-import           TreeScript.Ast.Core.Types.InterpSerial
 import           TreeScript.Misc
 
 import qualified Data.ByteString.Lazy          as B
 import           Data.Binary
 import qualified Data.Map.Strict               as M
-import           Data.MessagePack
-import           Data.Proxy
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 import           GHC.Generics
@@ -48,7 +45,7 @@ data PrimType
   = PrimTypeInteger
   | PrimTypeFloat
   | PrimTypeString
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | Whether the record is a regular or special type.
 data RecordKind
@@ -65,13 +62,13 @@ data SType
   | STypeTuple [SType]
   | STypeCons SType
   | STypeICons SType
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | Type of an expected record property: a union of a fixed # of 'SType's or "any", which is the union of all types.
 data MType
   = MTypeAny
   | MType (S.Set SType)
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | Type defined by the user, with annotations.
 data UType an
@@ -90,7 +87,6 @@ data PropsType
 data DeclSet
   = DeclSet
   { declSetRecords :: M.Map T.Text PropsType
-  , declSetFunctions :: M.Map T.Text [MType]
   , declSetGroups :: M.Map T.Text (Int, Int)
   , declSetAliases :: M.Map T.Text MType
   , declSetCasts :: S.Set CastSurface
@@ -125,14 +121,6 @@ data GroupDecl an
   , groupDeclNumGroupProps :: Int
   } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
--- | Declares a function.
-data FunctionDecl an
-  = FunctionDecl
-  { functionDeclAnn :: an
-  , functionDeclHead :: T.Text
-  , functionDeclProps :: [UType an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
-
 -- | Defines a type alias.
 data TypeAlias an
   = TypeAlias
@@ -146,13 +134,12 @@ data Primitive an
   = PrimInteger an Int
   | PrimFloat an Float
   | PrimString an T.Text
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Type of symbol (used in resolution).
 data SymbolType a where
   SymbolTypeRecord ::SymbolType PropsType
   SymbolTypeGroup ::SymbolType (Int, Int)
-  SymbolTypeFunction ::SymbolType [MType]
   SymbolTypeAlias ::SymbolType MType
 
 -- | An identifier, such as a record head or property key.
@@ -161,7 +148,7 @@ data Symbol an
   { symbolAnn :: an
   , symbolModule :: ModulePath
   , symbol :: T.Text
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Contains a head and properties. A parent in the AST.
 data Record an
@@ -169,7 +156,7 @@ data Record an
   { recordAnn :: an
   , recordHead :: Symbol an
   , recordProps :: [Value an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | In an input value, assigns an index identifier to a value so it can be referenced later, and checks that if the identifier is already assigned the values match. If it's an output value, refers to the value already assigned the identifier. The identifier can be '0' in an input value, in which case the value is discarded, but not in an output value.
 data Bind an
@@ -183,14 +170,13 @@ data Value an
   = ValuePrimitive (Primitive an)
   | ValueRecord (Record an)
   | ValueBind (Bind an)
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | The type and identifier of a group.
 data GroupLoc an
   = GroupLocGlobal an (Symbol an)
   | GroupLocLocal an Int
-  | GroupLocFunction an (Symbol an)
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | References a group in a reducer clause. If in an input clause, it requires the group's reducers to match for the reducer to be applied. If in an output clause, the group's reducers get applied when the reducer gets applied.
 data GroupRef an
@@ -199,7 +185,7 @@ data GroupRef an
   , groupRefLoc :: GroupLoc an
   , groupRefValueProps :: [Value an]
   , groupRefGroupProps :: [GroupRef an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Casts a value.
 data Cast an
@@ -207,13 +193,14 @@ data Cast an
   { castAnn :: an
   , castPath :: [Int] -- ^ Index path in the value.
   , castType :: S.Set SType -- ^ Expected type.
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Transforms a reducers.
 data Next an
-  = NextCast (Cast an)
+  = NextEval an
+  | NextCast (Cast an)
   | NextGroup (GroupRef an)
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Matches a value against a different value. Like a "let" statement.
 data Guard an
@@ -222,14 +209,14 @@ data Guard an
   , guardInput :: Value an
   , guardOutput :: Value an
   , guardNexts :: [Next an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | The input and output type of a cast reducer.
 data CastSurface
   = CastSurface
   { castSurfaceInput :: SType
   , castSurfaceOutput :: SType
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | Transforms a value into a different value. Like a case in a "match" statement.
 data Reducer an
@@ -237,7 +224,7 @@ data Reducer an
   { reducerAnn :: an
   , reducerMain :: Guard an
   , reducerSubGuards :: [Guard an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | Group def property.
 data GroupDefProp an
@@ -254,13 +241,13 @@ data GroupDef an
   , groupDefValueProps :: [GroupDefProp an]
   , groupDefGroupProps :: [GroupDefProp an]
   , groupDefReducers :: [Reducer an]
-  } deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial, Functor, Foldable, Traversable, Generic1, Annotatable)
+  } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable, Generic1, Annotatable)
 
 -- | A foreign program this script uses.
 data Library
   = LibraryCmdBinary B.ByteString
   | LibraryJavaScript T.Text
-  deriving (Eq, Ord, Read, Show, Generic, Binary, InterpSerial)
+  deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 -- | A TreeScript program or module, containing all the source data, used by the compiler.
 data Program an
@@ -269,7 +256,6 @@ data Program an
   , programPath :: ModulePath
   , programImportDecls :: [ImportDecl an]
   , programRecordDecls :: [RecordDecl an]
-  , programFunctionDecls :: [FunctionDecl an]
   , programTypeAliases :: [TypeAlias an]
   , programExports :: DeclSet
   , programCastReducers :: M.Map CastSurface (Reducer an)
@@ -291,7 +277,6 @@ instance Monoid MType where
 instance Semigroup DeclSet where
   DeclSet xRecs xFuns xGrps xAlis xCasts <> DeclSet yRecs yFuns yGrps yAlis yCasts
     = DeclSet { declSetRecords   = xRecs <> yRecs
-              , declSetFunctions = xFuns <> yFuns
               , declSetGroups    = xGrps <> yGrps
               , declSetAliases   = xAlis <> yAlis
               , declSetCasts     = xCasts <> yCasts
@@ -299,7 +284,6 @@ instance Semigroup DeclSet where
 
 instance Monoid DeclSet where
   mempty = DeclSet { declSetRecords   = mempty
-                   , declSetFunctions = mempty
                    , declSetGroups    = mempty
                    , declSetAliases   = mempty
                    , declSetCasts     = mempty
@@ -312,7 +296,6 @@ instance (Semigroup an) => Semigroup (Program an) where
               , programPath          = xPath
               , programImportDecls   = xIdecls
               , programRecordDecls   = xRdecls
-              , programFunctionDecls = xFdecls
               , programTypeAliases   = xAlis
               , programExports       = xExps
               , programCastReducers  = xCastReds <> yCastReds
@@ -326,7 +309,6 @@ instance (Monoid an) => Monoid (Program an) where
                    , programPath          = undefined
                    , programImportDecls   = undefined
                    , programRecordDecls   = undefined
-                   , programFunctionDecls = undefined
                    , programTypeAliases   = undefined
                    , programExports       = mempty
                    , programCastReducers  = mempty
@@ -334,38 +316,8 @@ instance (Monoid an) => Monoid (Program an) where
                    , programLibraries     = mempty
                    }
 
-instance (InterpSerial an) => InterpSerial (ImportDecl an) where
-  toMsgp _ = undefined
-  skipMsgp Proxy = True
-
-instance (InterpSerial an) => InterpSerial (RecordDecl an) where
-  toMsgp _ = undefined
-  skipMsgp Proxy = True
-
-instance (InterpSerial an) => InterpSerial (FunctionDecl an) where
-  toMsgp _ = undefined
-  skipMsgp Proxy = True
-
-instance (InterpSerial an) => InterpSerial (TypeAlias an) where
-  toMsgp _ = undefined
-  skipMsgp Proxy = True
-
-instance InterpSerial DeclSet where
-  toMsgp _ = undefined
-  skipMsgp Proxy = True
-
-instance (InterpSerial an) => InterpSerial (Bind an) where
-  toMsgp = toMsgp . bindIdx
-  skipMsgp Proxy = False
-
-instance (InterpSerial an) => InterpSerial (GroupDefProp an) where
-  toMsgp = toMsgp . groupDefPropIdx
-  skipMsgp Proxy = False
-
-instance (InterpSerial an) => InterpSerial (Program an) where
-  toMsgp (Program _ path _ _ _ _ _ xCastReds xGrps xLibs) =
-    ObjectArray [toMsgp path, toMsgp xCastReds, toMsgp xGrps, toMsgp xLibs]
-  skipMsgp Proxy = False
+instance FromJSON (Primitive an) where
+  fromJson (Prim)
 
 instance Printable PrimType where
   pprint PrimTypeInteger = "int"
@@ -407,10 +359,6 @@ instance Printable (RecordDecl an) where
   pprint (RecordDecl _ head' props) =
     head' <> printProps (map pprint props) <> "."
 
-instance Printable (FunctionDecl an) where
-  pprint (FunctionDecl _ head' props) =
-    "#" <> head' <> printProps (map pprint props) <> "."
-
 instance Printable (TypeAlias an) where
   pprint (TypeAlias _ ali typ) =
     "@" <> pprint ali <> " -> " <> pprint typ <> ";"
@@ -439,7 +387,6 @@ instance Printable (Value an) where
 instance Printable (GroupLoc an) where
   pprint (GroupLocGlobal   _ sym) = "&" <> pprint sym
   pprint (GroupLocLocal    _ idx) = "&" <> pprint idx
-  pprint (GroupLocFunction _ sym) = "#" <> pprint sym
 
 instance Printable (GroupRef an) where
   pprint (GroupRef _ loc vprops gprops) =
@@ -454,6 +401,7 @@ instance Printable (Cast an) where
       <> "]"
 
 instance Printable (Next an) where
+  pprint NextEval _ = "!"
   pprint (NextCast  cast) = pprint cast
   pprint (NextGroup grp ) = pprint grp
 
@@ -470,7 +418,7 @@ instance Printable (Reducer an) where
 
 instance Printable Library where
   pprint (LibraryCmdBinary  _  ) = "<command-line binary>"
-  pprint (LibraryJavaScript txt) = pprint txt
+  pprint (LibraryJavaScript txt) = txt
 
 instance Printable (Program an) where
   pprint (Program _ mpath idecls rdecls fdecls alis _ castReds grps libs) =
@@ -597,7 +545,6 @@ mkDeclSet
   :: [RecordDecl an]
   -> [T.Text]
   -> [GroupDecl an]
-  -> [FunctionDecl an]
   -> [TypeAlias an]
   -> S.Set CastSurface
   -> DeclSet
@@ -612,9 +559,6 @@ mkDeclSet frdecls vrheads gdecls fdecls alis casts = DeclSet
   , declSetGroups    = M.fromList $ map
                          (\(GroupDecl _ head' nvps ngps) -> (head', (nvps, ngps)))
                          gdecls
-  , declSetFunctions = M.fromList $ map
-                         (\(FunctionDecl _ head' ps) -> (head', map utype ps))
-                         fdecls
   , declSetAliases   = M.fromList
                          $ map (\(TypeAlias _ ali typ) -> (ali, utype typ)) alis
   , declSetCasts     = casts
@@ -623,7 +567,6 @@ mkDeclSet frdecls vrheads gdecls fdecls alis casts = DeclSet
 declSetLookup :: SymbolType a -> T.Text -> DeclSet -> Maybe a
 declSetLookup SymbolTypeRecord   local = (M.!? local) . declSetRecords
 declSetLookup SymbolTypeGroup    local = (M.!? local) . declSetGroups
-declSetLookup SymbolTypeFunction local = (M.!? local) . declSetFunctions
 declSetLookup SymbolTypeAlias    local = (M.!? local) . declSetAliases
 
 mkBuiltinSymbol :: T.Text -> Symbol ()
@@ -700,3 +643,11 @@ unwrapIList val = case tryUnwrapIList val of
   tryUnwrapIList (ValueRecord (Record _ head' [x, xs]))
     | remAnns head' == mkBuiltinSymbol "ICons" = (x :) <$> tryUnwrapIList xs
   tryUnwrapIList _ = Nothing
+
+langHead :: T.Text ->
+
+wrapLang :: Language -> Value an -> Value an
+wrapLang LanguageStx x = x
+wrapLang (LanguageExt name) x = ValueRecord Record
+  { recordAnn = getAnn x
+  , recordHead = langHead name

@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -21,6 +22,7 @@ import           Control.Monad.Cont
 import           Control.Monad.Logger
 import           Control.Monad.Loops
 import           Control.Monad.RWS.Strict
+import qualified Data.ByteString.Builder as B
 import           Data.Foldable
 import qualified Data.Map.Strict               as M
 import           Data.Maybe
@@ -31,6 +33,8 @@ import qualified Data.Text.Encoding            as T
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Mutable           as MV
 import           Data.Void
+import           Language.JavaScript.Inline hiding (eval)
+import           System.FilePath
 import qualified System.IO.Streams             as St
 
 type LenList a = [a]
@@ -62,6 +66,7 @@ data EvalCont
 data EvalState
   = EvalState
   { evalStatePath :: ModulePath
+  , evalStateSession :: JSSession
   , evalStateCreds :: M.Map CastSurface (Reducer Range)
   , evalStateGroups :: M.Map (Symbol ()) (GroupDef Range)
   , evalStatePanicMsg :: Maybe T.Text
@@ -82,17 +87,43 @@ instance MonadInterpret Eval where
   type IGroup Eval = GroupDef Range
 
   mlog typ msg
-    | typ `Set.member` Set.fromList ["Interpret", "Reduce", "Guard", "Produce", "Advance", "Cast", "Consume", "Control"] = Eval $ logDebugN msg
-    | otherwise = pure ()
+    | typ `Set.member` Set.fromList
+      [ "Interpret"
+      , "Reduce"
+      , "Guard"
+      , "Produce"
+      , "Advance"
+      , "Cast"
+      , "Consume"
+      , "Control"
+      ]
+    = Eval $ logDebugN msg
+    | otherwise
+    = pure ()
   mloadPath x = Eval $ modify $ \s -> s { evalStatePath = x }
   mloadCreds x = Eval $ modify $ \s -> s { evalStateCreds = x }
   mloadGroups x = Eval $ modify $ \s -> s { evalStateGroups = x }
-  mloadStart = Eval $ pure ()
-  mloadEnd   = Eval $ do
+  mloadStart = Eval $ do
+    pth     <- evalStatePath <$> get
+    session <- unEval $ mliftIO StageStartLib
+      $ newJSSession defJSSessionOpts { nodeWorkDir = Just $ takeDirectory $ T.unpack pth }
+    modify $ \s -> s { evalStateSession = session }
+    unEval $ mrunJs [block|
+      import * as jsFfi from "js-ffi"
+    |]
+  mloadEnd = Eval $ do
     out <- evalReadOutput <$> ask
-    liftIO $ St.write Nothing out
-  mstartLib lib = Eval $ pure () -- SOON
-  mstopLib lib = Eval $ pure () -- SOON
+    unEval $ mliftIO StageWriteOutput $ St.write Nothing out
+    session <- evalStateSession <$> get
+    unEval $ mliftIO StageShutdown $ closeJSSession session
+  mstartLib _ _ = mipanic "Libraries not supported, "
+  mstartLib name (LibraryJavaScript js) = mrunJs [block|
+    module $name {
+      $code
+    }
+  |]
+    where code = JSCode $ B.byteString $ T.encodeUtf8 js
+  mstopLib _ _ = Eval $ pure () -- All libs stop on shutdown
   mcatchEOF expr = Eval $ callCC $ \k -> do
     modify $ \s ->
       s { evalStateCStack = EvalContEof (Eval . k) : evalStateCStack s }
@@ -242,6 +273,10 @@ instance MonadInterpret Eval where
     frame <- topRFrame
     let GroupRef _ loc rvps rgps = rframeLocalGroups frame V.! (idx - 1)
     madvanceGroup new $ GroupRef rng loc (rvps ++ lvps) (rgps ++ lgps)
+  -- TODO Use group props?
+  mcallFunction val (Symbol _ lib fun) _ _ = mrunJs [expr|
+    jsFfi.callFfi($lib, $val...)
+  |] -- Interop will convert everything
   mcheckLengthEq val len = when (length val /= len) mifail
   mconsumePrim []       _   = mifail
   mconsumePrim (x : xs) inp = do
@@ -321,6 +356,9 @@ logFrames desc action = do
   mlog "Stack" $ "After " <> desc <> ": " <> pafrms
   pure res
 
+mliftIO :: Stage -> IO a -> Eval a
+mliftIO stage = Eval . lift . lift . liftIOAndCatch stage
+
 dupRFrame :: RFrame -> Eval RFrame
 dupRFrame (RFrame bnds grps) = RFrame <$> liftIO (MV.clone bnds) <*> pure grps
 
@@ -375,6 +413,11 @@ mmapMPath' val (p : ps) f = case val of
  where
   mapMProp idx prop | idx == p  = mmapMPath' prop ps f
                     | otherwise = pure prop
+
+mrunJs :: (JSSession -> IO a) -> Eval a
+mrunJs fjs = Eval $ do
+  session <- evalStateSession <$> get
+  unEval $ mliftIO StageUseLib $ fjs session
 
 initialState :: EvalState
 initialState = EvalState { evalStatePath           = error "not set"

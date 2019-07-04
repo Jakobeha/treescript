@@ -38,8 +38,8 @@ class (Monad m, Printable (IType m), Printable (IValue m), Printable (ICast m)) 
   mloadGroups :: M.Map (Symbol ()) (GroupDef Range) -> m ()
   mloadStart :: m ()
   mloadEnd :: m ()
-  mstartLib :: Library -> m ()
-  mstopLib :: Library -> m ()
+  mstartLib :: T.Text -> Library -> m ()
+  mstopLib :: T.Text -> Library -> m ()
   mcatchEOF :: m () -> m ()
   mcatchFail :: m () -> m ()
   mcatchSuccess :: m (IValue m) -> m (IValue m)
@@ -70,6 +70,7 @@ class (Monad m, Printable (IType m), Printable (IValue m), Printable (ICast m)) 
   mreduceCast :: ICast m -> IValue m -> m (IValue m)
   mresolveGlobal :: Symbol Range -> m (IGroup m)
   madvanceLocalGroup :: IValue m -> Range -> Range -> Int -> [Value Range] -> [GroupRef Range] -> m (IValue m)
+  mcallFunction :: IValue m -> Symbol Range -> [Value Range] -> [GroupRef Range] -> m (IValue m)
   mcheckLengthEq :: IValue m -> Int -> m ()
   mconsumePrim :: IValue m -> Primitive Range -> m (IValue m)
   mconsumeRecordHead :: IValue m -> Symbol Range -> Int -> m (IValue m)
@@ -179,8 +180,8 @@ madvanceGroup new (GroupRef _ (GroupLocGlobal _ ghead) vprops gprops) = do
   mtransformD grp vprops gprops new
 madvanceGroup new (GroupRef rng (GroupLocLocal lrng idx) vprops gprops) =
   madvanceLocalGroup new rng lrng idx vprops gprops
-madvanceGroup new (GroupRef _ (GroupLocFunction _ grp) vprops gprops) =
-  undefined -- SOON
+madvanceGroup new (GroupRef _ (GroupLocFunction _ name) vprops gprops) =
+  mcallFunction new name vprops gprops
 
 madvance' :: (MonadInterpret m) => IValue m -> Next Range -> m (IValue m)
 madvance' new (NextCast  cast) = madvanceCast new cast
@@ -276,7 +277,8 @@ minterpret (Program _ pth _ _ _ _ _ creds grps libs) = do
   mloadGroups grps
   mloadStart
   mlog "Interpret" "Starting Libs"
-  forM_ libs mstartLib
+  let libs' = M.toList libs
+  forM_ libs' $ uncurry mstartLib
   grp <- mresolveGlobal Symbol { symbolAnn    = r0
                                , symbolModule = pth
                                , symbol       = "Main"
@@ -287,6 +289,6 @@ minterpret (Program _ pth _ _ _ _ _ creds grps libs) = do
     new <- mtransformMain grp
     mwriteOutput new
   mlog "Interpret" "Stopping Libs"
-  forM_ libs mstopLib
+  forM_ libs' $ uncurry mstopLib
   mlog "Interpret" "Finishing"
   mloadEnd

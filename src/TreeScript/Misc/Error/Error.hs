@@ -29,10 +29,13 @@ data Stage
   | StageDesugar
   | StageValidate
   | StageType
-  | StageEval
   | StageCompile
+  | StageEval
+  | StageStartLib
   | StageReadInput
+  | StageUseLib
   | StageWriteOutput
+  | StageShutdown
   deriving (Eq, Ord, Read, Show)
 
 -- | An error which occurs while compiling a program. Fatal and nonfatal errors share this type.
@@ -51,9 +54,12 @@ instance Printable Stage where
   pprint StageValidate    = "validating"
   pprint StageType        = "type checking / casting"
   pprint StageEval        = "evaluating"
-  pprint StageCompile        = "compiling"
+  pprint StageCompile     = "compiling"
+  pprint StageStartLib    = "starting librares"
   pprint StageReadInput   = "reading input"
+  pprint StageUseLib      = "using a library"
   pprint StageWriteOutput = "writing output"
+  pprint StageShutdown    = "shutting down"
 
 instance Printable Error where
   pprint (Error stage _ msg) = "while " <> pprint stage <> " - " <> msg
