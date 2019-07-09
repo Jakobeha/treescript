@@ -306,7 +306,7 @@ instance TreePrintable Value where
   treePrint par _ (ValueHole       hole  ) = par hole
 
 instance TreePrintable Next where
-  treePrint _   _ NextEval        = "!"
+  treePrint _   _ (NextEval  _  ) = "!"
   treePrint par _ (NextGroup grp) = par grp
 
 instance TreePrintable Guard where

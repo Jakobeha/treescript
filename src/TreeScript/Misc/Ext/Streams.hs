@@ -2,6 +2,8 @@ module TreeScript.Misc.Ext.Streams
   ( withFileAsInput
   , withFileAsOutput
   , fileToInputStream
+  , peekn
+  , dropn
   )
 where
 
@@ -40,3 +42,32 @@ fileToInputStream pth = do
     $   S.lockingInputStream
     =<< S.atEndOfInput (hClose hdl)
     =<< S.handleToInputStream hdl
+
+peekn :: Int -> S.InputStream a -> IO (Maybe [a])
+peekn len inp = do
+  let unReadn' = mapM_ (`S.unRead` inp)
+      readn' 0 = pure $ Just []
+      readn' n = do
+        oxs <- readn' $ n - 1
+        case oxs of
+          Nothing -> pure Nothing
+          Just xs -> do
+            ox <- S.read inp
+            case ox of
+              Nothing -> do
+                unReadn' xs
+                pure Nothing
+              Just x -> pure $ Just $ x : xs
+  oxs <- readn' len
+  case oxs of
+    Nothing -> pure ()
+    Just xs -> unReadn' xs
+  pure oxs
+
+dropn :: Int -> S.InputStream a -> IO Bool
+dropn 0 _   = pure True
+dropn n inp = do
+  x <- S.read inp
+  case x of
+    Nothing -> pure False
+    Just _  -> dropn (n - 1) inp

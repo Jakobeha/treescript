@@ -3,7 +3,20 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module TreeScript.Interpret.Gen
-  ( MonadInterpret(..)
+  ( GlobalPipe(..)
+  , LocalPipe(..)
+  , Pipe(..)
+  , IText
+  , ILanguage
+  , IType
+  , IValue
+  , IValueList
+  , IGlobalPipe
+  , ILocalPipe
+  , IPipe
+  , ICast
+  , IGroup
+  , MonadInterpret(..)
   , mifail
   , misucceed
   , mieof
@@ -17,52 +30,82 @@ where
 
 import           TreeScript.Ast
 import           TreeScript.Misc
+import           TreeScript.Plugin
 
 import           Control.Monad.Reader
 import           Control.Monad.Extra
 import qualified Data.Map.Strict               as M
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
+import qualified System.IO.Streams             as St
+
+data GlobalPipe
+  = GlobalPipe
+  { globalPipeInput :: St.InputStream (Idd Stx)
+  , globalPipeOutput :: St.OutputStream (Idd Stx)
+  }
+
+data LocalPipe
+  = LocalPipe
+  { localPipeInput :: Either (St.InputStream (Idd Stx)) (Value Range)
+  , localPipeOutput :: St.OutputStream (Either (Idd Stx) (Value Range))
+  , localPipeGetOutputRaw :: IO [Either (Idd Stx) (Value Range)]
+  }
+
+data Pipe
+  = PipeGlobal GlobalPipe
+  | PipeLocal LocalPipe
+
+type IText m = IData m T.Text
+type ILanguage m = IData m Language
+type IType m = IData m SType
+type IValue m = IData m (Value Range)
+type IValueList m = IData m [Value Range]
+type ICast m = IData m (Reducer Range)
+type IGroup m = IData m (GroupDef Range)
+type ILocalPipe m = IData m LocalPipe
+type IGlobalPipe m = IData m GlobalPipe
+type IPipe m = IData m Pipe
 
 -- | Abstracts minterpret, compile, debug, and low-level static analysis:
 -- Larger operations are composed of these functions, which correspond to "opcodes"
-class (Monad m, Printable (IType m), Printable (IValue m), Printable (ICast m)) => MonadInterpret m where
-  type IType m :: *
-  type IValue m :: *
-  type ICast m :: *
-  type IGroup m :: *
+class (Functor (IData m), Monad m) => MonadInterpret m where
+  data IData m :: * -> *
 
+  mprintv :: IValue m -> m T.Text
+  mprintv = mprint
+  mprint :: (Printable a) => IData m a -> m T.Text
   mlog :: T.Text -> T.Text -> m ()
   mloadPath :: ModulePath -> m ()
   mloadCreds :: M.Map CastSurface (Reducer Range) -> m ()
   mloadGroups :: M.Map (Symbol ()) (GroupDef Range) -> m ()
   mloadStart :: m ()
   mloadEnd :: m ()
-  mstartLib :: T.Text -> Library -> m ()
-  mstopLib :: T.Text -> Library -> m ()
+  mloadInits :: [LStxBlob] -> m ()
   mcatchEOF :: m () -> m ()
   mcatchFail :: m () -> m ()
-  mcatchSuccess :: m (IValue m) -> m (IValue m)
+  mcatchSuccess :: m () -> m ()
   mjmpEof :: m a
   mjmpFail :: m a
-  mjmpSucceed :: IValue m -> m a
+  mjmpSucceed :: m a
   mjmpPanic :: T.Text -> m a
-  mreadInput :: m ()
-  mwriteOutput :: IValue m -> m ()
+  mgetGlobalPipe :: m (IGlobalPipe m)
+  mmkLocalPipe :: IValue m -> m (ILocalPipe m)
+  mgetLocalPipeOut :: ILocalPipe m -> m (IValue m)
   -- Also fills binds in vprops
   mpushGFrame :: [Value Range] -> [GroupRef Range] -> m ()
   mgframe2rframe :: [GroupDefProp Range] -> [GroupDefProp Range] -> m ()
   mdupRFrame :: m ()
   mpopRFrame :: m ()
-  mtransformI :: IGroup m -> m ()
-  -- | Stores length of input in register
-  mpushFixedInput :: IValue m -> m ()
-  -- | Does nothing is input isn't fixed
-  mdropFixedInput :: m ()
-  -- | Fails if not enough input left, or if fixed input was pushed and len is different
-  mpeekInput :: Int -> m (IValue m)
-  mdropInput :: Int -> m ()
+  mtransformI :: IPipe m -> IGroup m -> m ()
+  -- | Fails if not enough input left
+  mpeekInput :: IPipe m -> Int -> m (IValue m)
+  mdropInput :: IPipe m -> Int -> m ()
+  mpushOutput :: IPipe m -> IValue m -> m ()
   mval2Ival :: Value Range -> m (IValue m)
+  munwrapLang :: IValue m -> m (ILanguage m, IValue m)
+  mval2Stx :: IValue m -> m (IText m)
+  meval :: ILanguage m -> IText m -> m (IValue m)
   mmapMPath :: IValue m -> [Int] -> (IValue m -> m (IValue m)) -> m (IValue m)
   mgetType :: IValue m -> m (IType m)
   misSubtype :: IType m -> S.Set SType -> m Bool
@@ -70,12 +113,12 @@ class (Monad m, Printable (IType m), Printable (IValue m), Printable (ICast m)) 
   mreduceCast :: ICast m -> IValue m -> m (IValue m)
   mresolveGlobal :: Symbol Range -> m (IGroup m)
   madvanceLocalGroup :: IValue m -> Range -> Range -> Int -> [Value Range] -> [GroupRef Range] -> m (IValue m)
-  mcallFunction :: IValue m -> Symbol Range -> [Value Range] -> [GroupRef Range] -> m (IValue m)
   mcheckLengthEq :: IValue m -> Int -> m ()
-  mconsumePrim :: IValue m -> Primitive Range -> m (IValue m)
-  mconsumeRecordHead :: IValue m -> Symbol Range -> Int -> m (IValue m)
-  mconsumeTrue :: IValue m -> m (IValue m)
-  mconsumeBind :: IValue m -> Int -> m (IValue m)
+  mvalList1 :: IValue m -> m (IValueList m)
+  mconsumePrim :: IValueList m -> Primitive Range -> m (IValueList m)
+  mconsumeRecordHead :: IValueList m -> Symbol Range -> Int -> m (IValueList m)
+  mconsumeTrue :: IValueList m -> m (IValueList m)
+  mconsumeBind :: IValueList m -> Int -> m (IValueList m)
   mfillBinds :: IValue m -> m (IValue m)
 
 -- * NOTE: In a compiler these all push/pop from the same stack, but the names help clarify
@@ -102,10 +145,10 @@ mifail = do
   mlog "Control" "* Fail"
   mjmpFail
 
-misucceed :: (MonadInterpret m) => IValue m -> m a
-misucceed res = do
-  mlog "Control" $ "* Succeed: " <> pprint res
-  mjmpSucceed res
+misucceed :: (MonadInterpret m) => m ()
+misucceed = do
+  mlog "Control" "* Succeed"
+  mjmpSucceed
 
 mieof :: (MonadInterpret m) => m a
 mieof = do
@@ -117,27 +160,33 @@ mipanic msg = do
   mlog "Control" $ "** Panic: " <> msg
   mjmpPanic msg
 
-mconsume1 :: (MonadInterpret m) => IValue m -> Value Range -> m (IValue m)
-mconsume1 old (ValuePrimitive x) = do
-  mlog "Consume" $ "  Consume Primitive: " <> pprint old <> " -> " <> pprint x
-  mconsumePrim old x
+mconsume1
+  :: (MonadInterpret m) => IValueList m -> Value Range -> m (IValueList m)
+mconsume1 old (ValuePrimitive inp) = do
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Primitive: " <> pprint inp <> " -> " <> oldp
+  mconsumePrim old inp
 mconsume1 old (ValueRecord inp@(Record _ head' props)) = do
-  mlog "Consume" $ "  Consume Record: " <> pprint old <> " -> " <> pprint inp
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Record: " <> pprint inp <> " -> " <> oldp
   old' <- mconsumeRecordHead old head' $ length props
   mlog "Consume" "  Consume Props"
   foldM mconsume1 old' props
 mconsume1 old (ValueBind (Bind _ 0)) = do
-  mlog "Consume" $ "  Consume Bind 0: " <> pprint old
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Bind 0 -> " <> oldp
   mconsumeTrue old
 mconsume1 old (ValueBind (Bind _ idx)) = do
-  mlog "Consume" $ "  Consume Bind " <> pprint idx <> ": " <> pprint old
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Bind " <> pprint idx <> " -> " <> oldp
   mconsumeBind old idx
 
-mconsume :: (MonadInterpret m) => IValue m -> [Value Range] -> m ()
-mconsume old inpl = do
-  mlog "Consume" $ "Consume: " <> pprint old <> " -> " <> pprint inpl
-  rest <- foldM mconsume1 old inpl
-  mcheckLengthEq rest 0
+mconsume :: (MonadInterpret m) => IValue m -> Value Range -> m ()
+mconsume old inp = do
+  oldp <- mprintv old
+  mlog "Consume" $ "Consume: " <> oldp <> " -> " <> pprint inp
+  oldl <- mvalList1 old
+  () <$ foldM mconsume1 oldl [inp]
 
 mproduce1 :: (MonadInterpret m) => Value Range -> m (IValue m)
 mproduce1 out = do
@@ -146,14 +195,16 @@ mproduce1 out = do
 
 mcast :: (MonadInterpret m) => IValue m -> S.Set SType -> m (IValue m)
 mcast new typ = do
-  ntyp <- mgetType new
+  ntyp  <- mgetType new
+  newp  <- mprintv new
+  ntypp <- mprint ntyp
   mlog "Cast"
     $  "Casting "
-    <> pprint ntyp
+    <> ntypp
     <> " to "
     <> pprint (S.toList typ)
     <> "\n  in "
-    <> pprint new
+    <> newp
   sub <- misSubtype ntyp typ
   if sub
     then do
@@ -167,7 +218,8 @@ mcast new typ = do
           mlog "Cast" "Cast failed"
           mifail
         Just cast -> do
-          mlog "Cast" $ "Success - found " <> pprint cast
+          castp <- mprint cast
+          mlog "Cast" $ "Success - found " <> castp
           mreduceCast cast new
 
 madvanceCast :: (MonadInterpret m) => IValue m -> Cast Range -> m (IValue m)
@@ -180,16 +232,19 @@ madvanceGroup new (GroupRef _ (GroupLocGlobal _ ghead) vprops gprops) = do
   mtransformD grp vprops gprops new
 madvanceGroup new (GroupRef rng (GroupLocLocal lrng idx) vprops gprops) =
   madvanceLocalGroup new rng lrng idx vprops gprops
-madvanceGroup new (GroupRef _ (GroupLocFunction _ name) vprops gprops) =
-  mcallFunction new name vprops gprops
 
 madvance' :: (MonadInterpret m) => IValue m -> Next Range -> m (IValue m)
+madvance' new (NextEval _) = do
+  (lang, val) <- munwrapLang new
+  txt         <- mval2Stx val
+  meval lang txt
 madvance' new (NextCast  cast) = madvanceCast new cast
 madvance' new (NextGroup grp ) = madvanceGroup new grp
 
 madvance :: (MonadInterpret m) => IValue m -> Next Range -> m (IValue m)
 madvance new next = do
-  mlog "Advance" $ "Advance: " <> pprint new <> " " <> pprint next <> " ..."
+  newp <- mprintv new
+  mlog "Advance" $ "Advance: " <> newp <> " " <> pprint next <> " ..."
   res <- madvance' new next
   mlog "Advance" $ "Succeeded advance: " <> pprint next
   pure res
@@ -205,46 +260,43 @@ mproduce out nexts = do
 mguard :: (MonadInterpret m) => Guard Range -> m ()
 mguard grd@(Guard _ inp out nexts) = do
   mlog "Guard" $ "Guard: " <> pprint grd
-  let inpl = unwrapIList inp
   new <- mproduce out nexts
-  mcheckLengthEq new $ length inpl
-  mconsume new inpl
+  mcheckLengthEq new $ valBlobLength inp
+  mconsume new inp
 
 mreduceLocal :: (MonadInterpret m) => Reducer Range -> IValue m -> m (IValue m)
 mreduceLocal red@(Reducer _ (Guard _ inp out nexts) guards) old = do
   mlog "Reduce" $ "Reduce local: " <> pprint red
-  let inpl = unwrapIList inp
-  mconsume old inpl
+  mconsume old inp
   forM_ (reverse guards) mguard
   new <- mproduce out nexts
   mlog "Reduce" $ "Succeeded reduce local: " <> pprint red
   pure new
 
-mreduce :: (MonadInterpret m) => Reducer Range -> m ()
-mreduce red@(Reducer _ (Guard _ inp out nexts) guards) = do
+mreduce :: (MonadInterpret m) => IPipe m -> Reducer Range -> m ()
+mreduce pipe red@(Reducer _ (Guard _ inp out nexts) guards) = do
   mlog "Reduce" $ "Reduce: " <> pprint red
-  let inpl = unwrapIList inp
-  old <- mpeekInput $ length inpl
-  mconsume old inpl
+  old <- mpeekInput pipe $ valBlobLength inp
+  mconsume old inp
   forM_ (reverse guards) mguard
   new <- mproduce out nexts
-  mdropInput $ length inpl
+  mdropInput pipe $ valBlobLength inp
   mpopRFrame -- For local reducer
   mpopRFrame -- For group
   mlog "Reduce" $ "Succeeded reduce: " <> pprint red
-  misucceed new
+  mpushOutput pipe new
+  misucceed
 
-mtransform :: (MonadInterpret m) => GroupDef Range -> m ()
-mtransform (GroupDef _ vprops gprops reds) = do
+mtransform :: (MonadInterpret m) => IPipe m -> GroupDef Range -> m ()
+mtransform pipe (GroupDef _ vprops gprops reds) = do
   mlog "Transform" "Transform"
   mgframe2rframe vprops gprops
   forM_ reds $ \red -> do
     mdupRFrame
-    mcatchFail $ mreduce red
+    mcatchFail $ mreduce pipe red
     mlog "Transform" $ "Failed reduce: " <> pprint red
     mpopRFrame
   mpopRFrame
-  mdropFixedInput
   mlog "Transform" "* Transform fail"
   mifail
 
@@ -256,39 +308,36 @@ mtransformD
   -> IValue m
   -> m (IValue m)
 mtransformD grp inVProps inGProps new = do
-  mpushFixedInput new
-  mpushGFrame inVProps inGProps
-  mcatchSuccess $ do
-    mtransformI grp -- pops GFrame
-    mipanic "didn't succeed or fail"
+  pipe <- mmkLocalPipe new
+  mcatchEOF $ forever $ do
+    mpushGFrame inVProps inGProps
+    mcatchSuccess $ do
+      mtransformI (PipeLocal <$> pipe) grp -- pops GFrame
+      mipanic "didn't succeed or fail"
+  mgetLocalPipeOut pipe
 
-mtransformMain :: (MonadInterpret m) => IGroup m -> m (IValue m)
+mtransformMain :: (MonadInterpret m) => IGroup m -> m ()
 mtransformMain grp = do
+  pipe <- mgetGlobalPipe
   mpushGFrame [] []
   mcatchSuccess $ do
-    mcatchFail $ mtransformI grp
+    mcatchFail $ mtransformI (PipeGlobal <$> pipe) grp
     mipanic "can't transform this value"
 
 minterpret :: (MonadInterpret m) => Program Range -> m ()
-minterpret (Program _ pth _ _ _ _ _ creds grps libs) = do
+minterpret (Program _ pth _ _ _ _ its creds grps) = do
   mlog "Interpret" "Loading"
   mloadPath pth
   mloadCreds creds
   mloadGroups grps
   mloadStart
-  mlog "Interpret" "Starting Libs"
-  let libs' = M.toList libs
-  forM_ libs' $ uncurry mstartLib
+  mloadInits its
   grp <- mresolveGlobal Symbol { symbolAnn    = r0
                                , symbolModule = pth
                                , symbol       = "Main"
                                }
   mcatchEOF $ forever $ do
     mlog "Interpret" "Move Index"
-    mreadInput
-    new <- mtransformMain grp
-    mwriteOutput new
-  mlog "Interpret" "Stopping Libs"
-  forM_ libs' $ uncurry mstopLib
+    mtransformMain grp
   mlog "Interpret" "Finishing"
   mloadEnd

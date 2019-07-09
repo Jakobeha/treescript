@@ -64,6 +64,7 @@ dependencies:
 - text
 - transformers
 - unix
+- uuid
 - vector
 - yaml
 

@@ -1,9 +1,9 @@
 &Main[].
-r'
+'
 for (\i in \iter) {
   \x[[\i]] <- \expr
 }
-' -> r'{
+' -> '{
 y <- as.list(\x)
 
 for (\i in \iter) {

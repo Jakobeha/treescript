@@ -4,8 +4,6 @@
 -- | Integrates plugins into compilation and other actions.
 module TreeScript.Plugin.Session
   ( Settings(..)
-  , LangExt(..)
-  , Language(..)
   , SessionEnv(..)
   , Session
   , SessionRes
@@ -14,25 +12,20 @@ module TreeScript.Plugin.Session
   , runSessionResVirtual
   , runPreSessionRes
   , runSessionResReal
-  , langWithExt
   , forceLangWithExt
   , forceLangForPath
   )
 where
 
-import           TreeScript.Plugin.CmdProgram
+import           TreeScript.Plugin.Language
 import           TreeScript.Misc
 
 import           Control.Monad.Logger    hiding ( LogLevel(..) )
 import qualified Control.Monad.Logger          as L
                                                 ( LogLevel(..) )
 import           Control.Monad.Reader
-import           Data.Char
-import           Data.List
-import qualified Data.Map.Strict               as M
 import qualified Data.Text                     as T
 import           Data.Yaml
-import           System.Directory
 import           System.FilePath
 
 data LogLevel
@@ -47,23 +40,10 @@ data Settings
   { settingsLogLevel :: LogLevel
   } deriving (Eq, Ord, Read, Show)
 
--- | Provides programs to parse and print an external language.
-data LangExt
-  = LangExt
-  { langExtParser :: CmdProgram
-  , langExtPrinter :: CmdProgram
-  } deriving (Read, Show)
-
--- | Describes a language.
-data Language
-  = LanguageStx
-  | LanguageExt LangExt
-
 -- | General global data for every session.
 data SessionEnv
   = SessionEnv
   { sessionEnvSettings :: Settings
-  , sessionEnvLanguages :: M.Map T.Text LangExt
   , sessionEnvBuiltinModsPath :: FilePath
   }
 
@@ -96,7 +76,6 @@ defaultSettings = Settings { settingsLogLevel = LogLevelDebug }
 
 emptySessionEnv :: SessionEnv
 emptySessionEnv = SessionEnv { sessionEnvSettings        = defaultSettings
-                             , sessionEnvLanguages       = M.empty
                              , sessionEnvBuiltinModsPath = ""
                              }
 
@@ -110,41 +89,11 @@ liftLoadIO = liftIOAndCatch StagePluginLoad
 getRealPluginPath :: PreSessionRes FilePath
 getRealPluginPath = liftLoadIO $ getRealAppDataDirectory "treescript"
 
-mkLangExt :: FilePath -> String -> PreSessionRes (T.Text, LangExt)
-mkLangExt pluginPath ext = do
-  let path        = pluginPath </> ext
-      parserPath  = path </> "parser"
-      printerPath = path </> "printer"
-      ext'        = T.pack ext
-  unless (isLower $ T.head ext')
-    $  tellError
-    $  mkPluginLoadError
-    $  "language folder name (extension) be lowercase: "
-    <> ext'
-  pure
-    ( ext'
-    , LangExt
-      { langExtParser  = CmdProgram { cmdProgramStage = StageReadInput
-                                    , cmdProgramPath  = parserPath
-                                    , cmdProgramEnv   = []
-                                    }
-      , langExtPrinter = CmdProgram { cmdProgramStage = StageWriteOutput
-                                    , cmdProgramPath  = printerPath
-                                    , cmdProgramEnv   = []
-                                    }
-      }
-    )
-
-
-listDirPlugins :: FilePath -> PreSessionRes [String]
-listDirPlugins dir = filter (not . isHidden) <$> liftLoadIO (listDirectory dir)
-  where isHidden name = "." `isPrefixOf` name
 
 getEnvAtPath :: FilePath -> PreSessionRes SessionEnv
 getEnvAtPath pluginPath = do
-  let settingsPath  = pluginPath </> "settings.yaml"
-      languagesPath = pluginPath </> "languages"
-      modsPath      = pluginPath </> "modules"
+  let settingsPath = pluginPath </> "settings.yaml"
+      modsPath     = pluginPath </> "modules"
   settingsDecoded <- liftLoadIO $ decodeFileEither settingsPath
   settings        <- case settingsDecoded of
     Left err -> do
@@ -152,12 +101,7 @@ getEnvAtPath pluginPath = do
         (prettyPrintParseException err)
       pure defaultSettings
     Right res -> pure res
-  languages <-
-    fmap M.fromList
-    .   traverseDropFatals (mkLangExt languagesPath)
-    =<< listDirPlugins languagesPath
   pure SessionEnv { sessionEnvSettings        = settings
-                  , sessionEnvLanguages       = languages
                   , sessionEnvBuiltinModsPath = modsPath
                   }
 
@@ -205,25 +149,15 @@ runSessionResReal session = runPreSessionRes $ do
     setupEnv
     session
 
--- | Gets the language for the given extension in the session.
-langWithExt :: T.Text -> SessionRes (Maybe Language)
-langWithExt ext
-  | T.null ext = pure $ Just LanguageStx
-  | otherwise = do
-    langs <- sessionEnvLanguages <$> getSessionEnv
-    pure $ LanguageExt <$> langs M.!? ext
-
 -- | Gets the language for the given extension. Fails if it can't find.
 forceLangWithExt :: T.Text -> SessionRes Language
-forceLangWithExt ext = do
-  lang <- langWithExt ext
-  case lang of
-    Nothing -> mkFail Error
-      { errorStage = StageReadInput
-      , errorRange = r0
-      , errorMsg   = "unknown language with extension: " <> ext
-      }
-    Just lang' -> pure lang'
+forceLangWithExt ext = case langWithExt ext of
+  Nothing -> mkFail Error
+    { errorStage = StageReadInput
+    , errorRange = r0
+    , errorMsg   = "unknown language with extension: " <> ext
+    }
+  Just lang' -> pure lang'
 
 -- | Gets the language for the given path in the session. Fails if it can't find.
 forceLangForPath :: FilePath -> SessionRes Language

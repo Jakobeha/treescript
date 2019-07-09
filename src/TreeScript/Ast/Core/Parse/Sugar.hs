@@ -12,9 +12,9 @@ module TreeScript.Ast.Core.Parse.Sugar
   )
 where
 
-import           TreeScript.Ast.Core.Parse.Ast
 import           TreeScript.Ast.Core.Analyze
 import           TreeScript.Ast.Core.Compile
+import           TreeScript.Ast.Core.Parse.Stx
 import           TreeScript.Ast.Core.Types
 import qualified TreeScript.Ast.Lex            as L
 import qualified TreeScript.Ast.Sugar          as S
@@ -50,36 +50,6 @@ subModule mpath subName | mpath == "" = subName
 parseImportQual :: Maybe (S.Symbol Range) -> T.Text
 parseImportQual Nothing                  = ""
 parseImportQual (Just (S.Symbol _ qual)) = qual
-
-findLibrary :: GlobalSessionRes (Maybe Library)
-findLibrary = do
-  genv <- getGlobalEnv
-  let
-    root   = globalEnvRoot genv
-    mpath  = globalEnvModulePath genv
-    path   = moduleFilePath root mpath
-    jsPath = path <.> "js"
-    liftLibIO =
-      overErrors (prependMsgToErr ("couldn't get library for " <> T.pack path))
-        . liftIOAndCatch StageDesugar
-  cmdBinExists <- liftLibIO $ doesFileExist path
-  jsExists     <- liftLibIO $ doesFileExist jsPath
-  when (cmdBinExists && jsExists) $ tellError $ desugarError_
-    "both a command-line binary and javascript library exist for this program"
-  if cmdBinExists
-    then Just . LibraryCmdBinary <$> liftLibIO (B.readFile path)
-    else if jsExists
-      then Just . LibraryJavaScript <$> liftLibIO (T.readFile jsPath)
-      else pure Nothing
-
-findLibraries :: GlobalSessionRes (M.Map ModulePath Library)
-findLibraries = do
-  lib <- findLibrary
-  case lib of
-    Nothing   -> pure M.empty
-    Just lib' -> do
-      mpath <- globalEnvModulePath <$> getGlobalEnv
-      pure $ M.singleton mpath lib'
 
 getCompModule
   :: Range -> ModulePath -> FilePath -> GlobalSessionRes (Program ())
@@ -311,17 +281,11 @@ parseTypePart (S.TypePartSymbol rng sym)
   | otherwise
   = mType1 . STypeRecord . remAnns <$> parseSymbol SymbolTypeRecord sym
   where loc = T.takeWhileEnd (/= '_') $ S.symbol sym
-parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') props))
+parseTypePart (S.TypePartTransparent _ (S.Record _ (S.Symbol headRng head') props))
   | head' == "t"
   = mkTupleType . map utype <$> traverse parseTypeProp props
-  | head' == "cons"
-  = parseListType mkConsType
-  | head' == "list"
-  = parseListType mkListType
-  | head' == "icons"
-  = parseListType mkIConsType
-  | head' == "ilist"
-  = parseListType mkIListType
+  | head' == "l"
+  = mkListType . map utype <$> traverse parseTypeProp props
   | otherwise
   = do
     tellError
@@ -329,16 +293,6 @@ parseTypePart (S.TypePartTransparent rng (S.Record _ (S.Symbol headRng head') pr
       $  "unknown transparent record type: "
       <> head'
     pure MTypeAny
- where
-  parseListType mkType = case props of
-    [prop] -> mkType . utype <$> parseTypeProp prop
-    _      -> do
-      tellError
-        $  desugarError rng
-        $  head'
-        <> " type must have 1 property, got "
-        <> pprint (length props)
-      pure MTypeAny
 
 parseType :: S.Type Range -> GlobalSessionRes (UType Range)
 parseType (S.Type rng parts) =
@@ -446,12 +400,19 @@ parseSpliceCode (S.SpliceCode rng (S.Symbol langExtRng langExt) spliceText) =
     lang    <-
       overErrors (addRangeToErr langExtRng) $ lift $ lift $ forceLangWithExt
         langExt
-    lift $ lift $ wrapLang . rewrapIList <$> parseAstList rng LanguageStx txt splices
+    lift
+      $   lift
+      $   wrapLang langExtRng lang
+      .   ValuePrimitive
+      .   PrimStx rng
+      .   LStxBlob lang
+      .   substStxSplices splices
+      <$> parseStxText txt
 
-parseSplice :: S.Splice Range -> GVBindSessionRes (Value Range)
-parseSplice (S.SpliceBind targ) = ValueBind <$> parseBind bind
+parseSplice :: S.Splice Range -> GVBindSessionRes Int
+parseSplice (S.SpliceBind targ) = bindIdx <$> parseBind bind
   where bind = S.Bind (getAnn targ) targ
-parseSplice (S.SpliceHole (S.HoleIdx rng idx)) = pure $ hole rng rng idx
+parseSplice (S.SpliceHole (S.HoleIdx _ _)) = error "obsolete"
 
 parseValue :: S.Value Range -> GVBindSessionRes (Value Range)
 parseValue (S.ValuePrimitive  prim  ) = ValuePrimitive <$> parsePrim prim
@@ -669,15 +630,14 @@ parseLocal (S.Program rng topLevels) = do
       topLevelsOutGroups
   mapM_ parseImportDecl idecls
   rdecls0 <- traverse parseRecordDeclSkipProps rdecls
-  putLocals $ mkDeclSet rdecls0 [] [] [] [] []
+  putLocals $ mkDeclSet rdecls0 [] [] [] []
   alis' <- traverseDropFatals parseTypeAlias alis
-  putLocals $ mkDeclSet rdecls0 [] [] [] alis' []
+  putLocals $ mkDeclSet rdecls0 [] [] alis' []
   rdecls' <- traverse parseRecordDecl rdecls
   gdecls' <- traverse parseGroupDecl gdecls
   putLocals $ mkDeclSet rdecls' [] gdecls' alis' []
   reds'  <- traverseDropFatals (parseReducer emptyGVBindEnv) reds
   groups <- parseAllGroupDefs topLevelsInGroups
-  libs   <- findLibraries
   genv   <- getGlobalEnv
   let
     idecls' = globalEnvImportDecls genv
@@ -699,10 +659,10 @@ parseLocal (S.Program rng topLevels) = do
                , programImportDecls  = idecls'
                , programRecordDecls  = rdecls'
                , programExports      = exps
+               , programInits        = mempty -- SOON
                , programTypeAliases  = alis'
                , programCastReducers = castReds'
                , programGroups       = groups
-               , programLibraries    = libs
                }
 
 -- | Extracts a 'Core' AST from a 'Sugar' AST. Badly-formed statements are ignored and errors are added to the result.

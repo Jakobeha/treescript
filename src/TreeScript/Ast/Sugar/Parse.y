@@ -21,6 +21,7 @@ import Data.Semigroup
 %token
   '...' { L.LexemePunc (L.PuncEllipsis $$) }
   '_' { L.LexemePunc (L.PuncUnderscore $$) }
+  '#' { L.LexemePunc (L.PuncHash $$) }
   '&' { L.LexemePunc (L.PuncAnd $$) }
   '\\' { L.LexemePunc (L.PuncBackSlash $$) }
   '@' { L.LexemePunc (L.PuncAt $$) }

@@ -1,4 +1,4 @@
-Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
+Subst[@Stx_node, @Stx_node, @Stx_node].
 
 &Main[].
 \x -> \x &Recurse[&Curry[]] &Main[];
@@ -6,21 +6,21 @@ Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Sch
 \x -> \x;
 
 &Curry[].
-'(lambda (\x \x2 . \xs) \body)' -> '(lambda (\x) (lambda (\x2 . \xs) \body))';
-'(\f \arg . \args)' -> '((\f \arg) . \args)',
+'(lambda (\x \x2 \...xs) \body)' -> '(lambda (\x) (lambda (\x2 . \xs) \body))';
+'(\f \arg \...args)' -> '((\f \arg) . \args)',
   T[] <- \args &NonEmpty[],
   False[] <- T[\f, 'lambda'] &IsEqual[];
 
 &Apply[].
 '((lambda (\x) \body) \arg)' -> Subst[\body, \x, \arg] &Subst[],
-  Scheme_Symbol[\_] <- \x;
+  Stx_Word[\_] <- \x;
 
 &Subst[].
 Subst[\old, \old, \new] -> \new;
 Subst['(lambda (\old) \body)', \old, \_] -> '(lambda (\old) \body)',
-  Scheme_Symbol[\_] <- \old;
+  Stx_Word[\_] <- \old;
 Subst['(lambda (\x) \body)', \old, \new] -> '(lambda (\x) \body2)',
-  Scheme_Symbol[\_] <- \x,
+  Stx_Word[\_] <- \x,
   \body2 <- Subst[\body, \old, \new] &Subst[];
 Subst['(\f \x)', \old, \new] -> '(\f2 \x2)',
   \f2 <- Subst[\f, \old, \new] &Subst[],
@@ -28,7 +28,7 @@ Subst['(\f \x)', \old, \new] -> '(\f2 \x2)',
 Subst[\body, \_, \_] -> \body;
 
 &NonEmpty[].
-Scheme_SCons[\_, \_] -> T[];
+ICons[\_, \_] -> T[];
 
 &IsEqual[].
 T[\x, \x] -> True[];

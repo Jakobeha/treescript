@@ -33,7 +33,7 @@ data Stage
   | StageEval
   | StageStartLib
   | StageReadInput
-  | StageUseLib
+  | StageEvalStx
   | StageWriteOutput
   | StageShutdown
   deriving (Eq, Ord, Read, Show)
@@ -57,7 +57,7 @@ instance Printable Stage where
   pprint StageCompile     = "compiling"
   pprint StageStartLib    = "starting librares"
   pprint StageReadInput   = "reading input"
-  pprint StageUseLib      = "using a library"
+  pprint StageEvalStx     = "evaluating syntax"
   pprint StageWriteOutput = "writing output"
   pprint StageShutdown    = "shutting down"
 

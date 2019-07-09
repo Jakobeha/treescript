@@ -20,6 +20,7 @@ import           GHC.Generics
 data Punc an
   = PuncEllipsis an -- ^ @...@
   | PuncUnderscore an -- ^ @_@
+  | PuncHash an -- ^ @#@
   | PuncAnd an -- ^ @&@
   | PuncBackSlash an -- ^ @\\@
   | PuncAt an -- ^ @\@@
@@ -101,6 +102,7 @@ instance Printable (SpliceFrag an) where
 instance Printable (Punc an) where
   pprint (PuncEllipsis     _) = "..."
   pprint (PuncUnderscore   _) = "_"
+  pprint (PuncHash         _) = "#"
   pprint (PuncAnd          _) = "&"
   pprint (PuncBackSlash    _) = "\\"
   pprint (PuncAt           _) = "@"

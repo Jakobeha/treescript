@@ -1,14 +1,24 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Functions to manipulate @Core@ ASTs.
 module TreeScript.Ast.Core.Analyze.Misc
-  ( traverseAst
-  , traverseAst_
-  , foldAst
-  , mapAst
+  ( traverseStx
+  , traverseStx_
+  , foldStx
+  , mapStx
+  , traverseValue
+  , traverseValue_
+  , foldValue
+  , mapValue
+  , traverseProgram
+  , traverseProgram_
+  , foldProgram
+  , mapProgram
   , moveProgPath
   , allProgramReducers
+  , substStxSplices
   , substBinds
   , substSplices
   , maxNumBindsInReducer
@@ -16,6 +26,7 @@ module TreeScript.Ast.Core.Analyze.Misc
   , bindsInValue
   , allGroupDefReducers
   , allGroupRefReducers
+  , valAtPath
   )
 where
 
@@ -29,97 +40,193 @@ import           Data.List               hiding ( group )
 import qualified Data.Set                      as S
 import qualified Data.Map.Strict               as M
 
-traverseAstSelf
-  :: (Monad w) => Term o -> Term i -> (i an -> w (i an)) -> o an -> w (o an)
-traverseAstSelf TType     TType     f = f
-traverseAstSelf TPrim     TPrim     f = f
-traverseAstSelf TSymbol   TSymbol   f = f
-traverseAstSelf TRecord   TRecord   f = f
-traverseAstSelf TBind     TBind     f = f
-traverseAstSelf TValue    TValue    f = f
-traverseAstSelf TGroupLoc TGroupLoc f = f
-traverseAstSelf TGroupRef TGroupRef f = f
-traverseAstSelf TCast     TCast     f = f
-traverseAstSelf TNext     TNext     f = f
-traverseAstSelf TGuard    TGuard    f = f
-traverseAstSelf TReducer  TReducer  f = f
-traverseAstSelf TGroupDef TGroupDef f = f
-traverseAstSelf TProgram  TProgram  f = f
-traverseAstSelf _         _         _ = pure
+traverseStxSelf :: (Monad w) => StxTerm o -> StxTerm i -> (i -> w i) -> o -> w o
+traverseStxSelf TStxWord   TStxWord   f = f
+traverseStxSelf TStxPunc   TStxPunc   f = f
+traverseStxSelf TStxString TStxString f = f
+traverseStxSelf TStxInt    TStxInt    f = f
+traverseStxSelf TStxSplice TStxSplice f = f
+traverseStxSelf TStxBlock  TStxBlock  f = f
+traverseStxSelf TStx    TStx    f = f
+traverseStxSelf TStxIdd   TStxIdd   f = f
+traverseStxSelf TStxBlob   TStxBlob   f = f
+traverseStxSelf _          _          _ = pure
 
-traverseAstSub
-  :: (Monad w) => Term o -> Term i -> (i an -> w (i an)) -> o an -> w (o an)
-traverseAstSub TType   _ _ x = pure x
-traverseAstSub TPrim   _ _ x = pure x
-traverseAstSub TSymbol _ _ x = pure x
-traverseAstSub TRecord ti f (Record ann head' props) =
+traverseStxSub :: (Monad w) => StxTerm o -> StxTerm i -> (i -> w i) -> o -> w o
+traverseStxSub TStxWord   _ _ x = pure x
+traverseStxSub TStxPunc   _ _ x = pure x
+traverseStxSub TStxString _ _ x = pure x
+traverseStxSub TStxInt    _ _ x = pure x
+traverseStxSub TStxSplice _ _ x = pure x
+traverseStxSub TStxBlock ti f (c, StxBlob xs) =
+  (c, ) . StxBlob <$> traverse (traverseStx TStxIdd ti f) xs
+traverseStxSub TStx ti f (StxWord word) =
+  StxWord <$> traverseStxSub TStxWord ti f word
+traverseStxSub TStx ti f (StxPunc word) =
+  StxPunc <$> traverseStxSub TStxPunc ti f word
+traverseStxSub TStx ti f (StxString delim txt) =
+  uncurry StxString <$> traverseStxSub TStxString ti f (delim, txt)
+traverseStxSub TStx ti f (StxInt base n) =
+  uncurry StxInt <$> traverseStxSub TStxInt ti f (base, n)
+traverseStxSub TStx ti f (StxSplice elp idx) =
+  uncurry StxSplice <$> traverseStxSub TStxSplice ti f (elp, idx)
+traverseStxSub TStx ti f (StxBlock delim blob) =
+  uncurry StxBlock <$> traverseStxSub TStxBlock ti f (delim, blob)
+traverseStxSub TStxIdd ti f (Idd uid stx) =
+  Idd uid <$> traverseStxSub TStx ti f stx
+traverseStxSub TStxBlob ti f (StxBlob xs) =
+  StxBlob <$> traverse (traverseStxSub TStxIdd ti f) xs
+
+traverseValueSelf
+  :: (Monad w) => ValueTerm o -> ValueTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseValueSelf TType TType f = f
+traverseValueSelf (TValueStx stx1) (TValueStx stx2) f =
+  fmap TStxWrapper
+    . traverseStxSelf stx1 stx2 (fmap unTStxWrapper . f . TStxWrapper)
+    . unTStxWrapper
+traverseValueSelf TPrim     TPrim     f = f
+traverseValueSelf TSymbol   TSymbol   f = f
+traverseValueSelf TRecord   TRecord   f = f
+traverseValueSelf TBind     TBind     f = f
+traverseValueSelf TValue    TValue    f = f
+traverseValueSelf _         _         _ = pure
+
+traverseValueSub
+  :: (Monad w) => ValueTerm o -> ValueTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseValueSub TType _ _ x = pure x
+traverseValueSub (TValueStx stx1) (TValueStx stx2) f (TStxWrapper x) =
+  TStxWrapper
+    <$> traverseStxSub stx1 stx2 (fmap unTStxWrapper . f . TStxWrapper) x
+traverseValueSub TPrim ti f (PrimStx an (LStxBlob lang blob)) =
+  PrimStx an . LStxBlob lang . unTStxWrapper <$> traverseValueSub
+    (TValueStx TStxBlob)
+    ti
+    f
+    (TStxWrapper blob)
+traverseValueSub (TValueStx _) _ _ x = pure x
+traverseValueSub TPrim    _ _ x = pure x
+traverseValueSub TSymbol  _ _ x = pure x
+traverseValueSub TRecord ti f (Record ann head' props) =
   Record ann
-    <$> traverseAst TSymbol ti f head'
-    <*> traverse (traverseAst TValue ti f) props
-traverseAstSub TBind _ _ x = pure x
-traverseAstSub TValue ti f (ValuePrimitive prim) =
-  ValuePrimitive <$> traverseAst TPrim ti f prim
-traverseAstSub TValue ti f (ValueRecord record) =
-  ValueRecord <$> traverseAst TRecord ti f record
-traverseAstSub TValue ti f (ValueBind bind) =
-  ValueBind <$> traverseAst TBind ti f bind
-traverseAstSub TGroupLoc ti f (GroupLocGlobal ann sym) =
-  GroupLocGlobal ann <$> traverseAst TSymbol ti f sym
-traverseAstSub TGroupLoc _ _ (GroupLocLocal ann idx) =
+    <$> traverseValue TSymbol ti f head'
+    <*> traverse (traverseValue TValue ti f) props
+traverseValueSub TBind _ _ x = pure x
+traverseValueSub TValue ti f (ValuePrimitive prim) =
+  ValuePrimitive <$> traverseValue TPrim ti f prim
+traverseValueSub TValue ti f (ValueRecord record) =
+  ValueRecord <$> traverseValue TRecord ti f record
+traverseValueSub TValue ti f (ValueBind bind) =
+  ValueBind <$> traverseValue TBind ti f bind
+
+traverseProgramSelf
+  :: (Monad w) => ProgramTerm o -> ProgramTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseProgramSelf (TProgramValue val1) (TProgramValue val2) f =
+  traverseValueSelf val1 val2 f
+traverseProgramSelf TGroupLoc TGroupLoc f = f
+traverseProgramSelf TGroupRef TGroupRef f = f
+traverseProgramSelf TCast     TCast     f = f
+traverseProgramSelf TNext     TNext     f = f
+traverseProgramSelf TGuard    TGuard    f = f
+traverseProgramSelf TReducer  TReducer  f = f
+traverseProgramSelf TGroupDef TGroupDef f = f
+traverseProgramSelf TProgram  TProgram  f = f
+traverseProgramSelf _         _         _ = pure
+
+traverseProgramSub
+  :: (Monad w) => ProgramTerm o -> ProgramTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseProgramSub (TProgramValue val1) (TProgramValue val2) f x =
+  traverseValueSub val1 val2 f x
+traverseProgramSub (TProgramValue _) _ _ x = pure x
+traverseProgramSub TGroupLoc ti f (GroupLocGlobal ann sym) =
+  GroupLocGlobal ann <$> traverseProgram (TProgramValue TSymbol) ti f sym
+traverseProgramSub TGroupLoc _ _ (GroupLocLocal ann idx) =
   pure $ GroupLocLocal ann idx
-traverseAstSub TGroupLoc ti f (GroupLocFunction ann sym) =
-  GroupLocFunction ann <$> traverseAst TSymbol ti f sym
-traverseAstSub TGroupRef ti f (GroupRef ann loc vprops gprops) =
+traverseProgramSub TGroupRef ti f (GroupRef ann loc vprops gprops) =
   GroupRef ann
-    <$> traverseAst TGroupLoc ti f loc
-    <*> traverse (traverseAst TValue ti f)    vprops
-    <*> traverse (traverseAst TGroupRef ti f) gprops
-traverseAstSub TCast _ _ x = pure x
-traverseAstSub TNext ti f (NextCast cast) =
-  NextCast <$> traverseAst TCast ti f cast
-traverseAstSub TNext ti f (NextGroup grp) =
-  NextGroup <$> traverseAst TGroupRef ti f grp
-traverseAstSub TGuard ti f (Guard ann inp out nxts) =
+    <$> traverseProgram TGroupLoc ti f loc
+    <*> traverse (traverseProgram (TProgramValue TValue) ti f)    vprops
+    <*> traverse (traverseProgram TGroupRef ti f) gprops
+traverseProgramSub TCast _ _ x              = pure x
+traverseProgramSub TNext _ _ x@(NextEval _) = pure x
+traverseProgramSub TNext ti f (NextCast cast) =
+  NextCast <$> traverseProgram TCast ti f cast
+traverseProgramSub TNext ti f (NextGroup grp) =
+  NextGroup <$> traverseProgram TGroupRef ti f grp
+traverseProgramSub TGuard ti f (Guard ann inp out nxts) =
   Guard ann
-    <$> traverseAst TValue ti f inp
-    <*> traverseAst TValue ti f out
-    <*> traverse (traverseAst TNext ti f) nxts
-traverseAstSub TReducer ti f (Reducer ann main guards) =
+    <$> traverseProgram (TProgramValue TValue) ti f inp
+    <*> traverseProgram (TProgramValue TValue) ti f out
+    <*> traverse (traverseProgram TNext ti f) nxts
+traverseProgramSub TReducer ti f (Reducer ann main guards) =
   Reducer ann
-    <$> traverseAst TGuard ti f main
-    <*> traverse (traverseAst TGuard ti f) guards
-traverseAstSub TGroupDef ti f (GroupDef ann vprops gprops reds) =
+    <$> traverseProgram TGuard ti f main
+    <*> traverse (traverseProgram TGuard ti f) guards
+traverseProgramSub TGroupDef ti f (GroupDef ann vprops gprops reds) =
   GroupDef ann
     <$> pure vprops
     <*> pure gprops
-    <*> traverse (traverseAst TReducer ti f) reds
-traverseAstSub TProgram ti f (Program ann pth idcls rdcls fdcls alis exps castReds grps libs)
-  = Program ann pth idcls rdcls fdcls alis exps
-    <$> traverse (traverseAst TReducer ti f)  castReds
-    <*> traverse (traverseAst TGroupDef ti f) grps
-    <*> pure libs
+    <*> traverse (traverseProgram TReducer ti f) reds
+traverseProgramSub TProgram ti f (Program ann pth idcls rdcls alis exps inits' castReds grps)
+  = Program ann pth idcls rdcls alis exps inits'
+    <$> traverse (traverseProgram TReducer ti f)  castReds
+    <*> traverse (traverseProgram TGroupDef ti f) grps
 
 -- | Traverses each child node (includes recursive), inner to outer.
-traverseAst
-  :: (Monad w) => Term o -> Term i -> (i an -> w (i an)) -> o an -> w (o an)
-traverseAst to ti f = traverseAstSelf to ti f <=< traverseAstSub to ti f
+traverseStx :: (Monad w) => StxTerm o -> StxTerm i -> (i -> w i) -> o -> w o
+traverseStx to ti f = traverseStxSelf to ti f <=< traverseStxSub to ti f
 
 -- | Traverses each child node (includes recursive), inner to outer, just for effects.
-traverseAst_ :: (Monad w) => Term o -> Term i -> (i an -> w ()) -> o an -> w ()
-traverseAst_ to ti f = (() <$) . traverseAst to ti (\x -> x <$ f x)
+traverseStx_ :: (Monad w) => StxTerm o -> StxTerm i -> (i -> w ()) -> o -> w ()
+traverseStx_ to ti f = (() <$) . traverseStx to ti (\x -> x <$ f x)
 
 -- | Folds each child node (includes recursive), inner to outer.
-foldAst :: (Monoid r) => Term o -> Term i -> (i an -> r) -> o an -> r
-foldAst to ti f =
-  execWriter . traverseAst to ti (\x -> WriterT $ Identity (x, f x))
+foldStx :: (Monoid r) => StxTerm o -> StxTerm i -> (i -> r) -> o -> r
+foldStx to ti f =
+  execWriter . traverseStx to ti (\x -> WriterT $ Identity (x, f x))
 
 -- | Maps each child node (includes recursive), inner to outer.
-mapAst :: Term o -> Term i -> (i an -> i an) -> o an -> o an
-mapAst to ti f = runIdentity . traverseAst to ti (Identity . f)
+mapStx :: StxTerm o -> StxTerm i -> (i -> i) -> o -> o
+mapStx to ti f = runIdentity . traverseStx to ti (Identity . f)
+
+-- | Traverses each child node (includes recursive), inner to outer.
+traverseValue
+  :: (Monad w) => ValueTerm o -> ValueTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseValue to ti f = traverseValueSelf to ti f <=< traverseValueSub to ti f
+
+-- | Traverses each child node (includes recursive), inner to outer, just for effects.
+traverseValue_ :: (Monad w) => ValueTerm o -> ValueTerm i -> (i an -> w ()) -> o an -> w ()
+traverseValue_ to ti f = (() <$) . traverseValue to ti (\x -> x <$ f x)
+
+-- | Folds each child node (includes recursive), inner to outer.
+foldValue :: (Monoid r) => ValueTerm o -> ValueTerm i -> (i an -> r) -> o an -> r
+foldValue to ti f =
+  execWriter . traverseValue to ti (\x -> WriterT $ Identity (x, f x))
+
+-- | Maps each child node (includes recursive), inner to outer.
+mapValue :: ValueTerm o -> ValueTerm i -> (i an -> i an) -> o an -> o an
+mapValue to ti f = runIdentity . traverseValue to ti (Identity . f)
+
+-- | Traverses each child node (includes recursive), inner to outer.
+traverseProgram
+  :: (Monad w) => ProgramTerm o -> ProgramTerm i -> (i an -> w (i an)) -> o an -> w (o an)
+traverseProgram to ti f = traverseProgramSelf to ti f <=< traverseProgramSub to ti f
+
+-- | Traverses each child node (includes recursive), inner to outer, just for effects.
+traverseProgram_ :: (Monad w) => ProgramTerm o -> ProgramTerm i -> (i an -> w ()) -> o an -> w ()
+traverseProgram_ to ti f = (() <$) . traverseProgram to ti (\x -> x <$ f x)
+
+-- | Folds each child node (includes recursive), inner to outer.
+foldProgram :: (Monoid r) => ProgramTerm o -> ProgramTerm i -> (i an -> r) -> o an -> r
+foldProgram to ti f =
+  execWriter . traverseProgram to ti (\x -> WriterT $ Identity (x, f x))
+
+-- | Maps each child node (includes recursive), inner to outer.
+mapProgram :: ProgramTerm o -> ProgramTerm i -> (i an -> i an) -> o an -> o an
+mapProgram to ti f = runIdentity . traverseProgram to ti (Identity . f)
 
 -- | Replaces all occurrences of the program's module path with @new@.
 moveProgPath :: ModulePath -> Program an -> Program an
-moveProgPath = mapAst TProgram TSymbol . moveSymPath
+moveProgPath = mapProgram TProgram (TProgramValue TSymbol) . moveSymPath
  where
   moveSymPath new (Symbol rng pth loc) | pth == new = Symbol rng new loc
                                        | otherwise  = Symbol rng pth loc
@@ -127,6 +234,13 @@ moveProgPath = mapAst TProgram TSymbol . moveSymPath
 -- | Reducers in all groups.
 allProgramReducers :: Program an -> [Reducer an]
 allProgramReducers = concatMap groupDefReducers . programGroups
+
+substStxSplice :: [Int] -> (Bool, Int) -> (Bool, Int)
+substStxSplice substs (elp, idx) | idx < length substs = (elp, substs !! idx)
+                                 | otherwise           = (elp, idx)
+
+substStxSplices :: [Int] -> StxBlob -> StxBlob
+substStxSplices = mapStx TStxBlob TStxSplice . substStxSplice
 
 substBinds1 :: [(Int, Value an)] -> Value an -> Value an
 substBinds1 substs x@(ValueBind (Bind rng idx)) =
@@ -136,7 +250,7 @@ substBinds1 substs x@(ValueBind (Bind rng idx)) =
 substBinds1 _ x = x
 
 substBinds :: [(Int, Value an)] -> Value an -> Value an
-substBinds = mapAst TValue TValue . substBinds1
+substBinds = mapValue TValue TValue . substBinds1
 
 substSplices :: [Value an] -> Value an -> Value an
 substSplices = substBinds . zip [1 ..]
@@ -159,7 +273,7 @@ numBindsInValue1 (ValueRecord    _           ) = 0
 numBindsInValue1 (ValueBind      (Bind _ idx)) = idx
 
 maxNumBindsInValue :: Value an -> Int
-maxNumBindsInValue = getMax0 . foldAst TValue TValue (Max0 . numBindsInValue1)
+maxNumBindsInValue = getMax0 . foldValue TValue TValue (Max0 . numBindsInValue1)
 
 maxNumBindsInGuard :: Guard an -> Int
 maxNumBindsInGuard (Guard _ input output _) =
@@ -182,12 +296,12 @@ bindsInValue1 (ValueRecord    _   ) = S.empty
 bindsInValue1 (ValueBind      bind) = S.singleton $ bindIdx bind
 
 bindsInValue :: Value an -> S.Set Int
-bindsInValue = foldAst TValue TValue bindsInValue1
+bindsInValue = foldValue TValue TValue bindsInValue1
 
 -- | The reducers in the group and super-groups, substituting exported binds, and their mode.
 allGroupDefReducers :: [GroupRef an] -> GroupDef an -> [Reducer an]
 allGroupDefReducers gprops (GroupDef _ _ gpropIdxs reds) = map
-  (mapAst TReducer TGroupRef (substGroupProp1 gpropSubsts))
+  (mapProgram TReducer TGroupRef (substGroupProp1 gpropSubsts))
   reds
   where gpropSubsts = zip (map groupDefPropIdx gpropIdxs) gprops
 
@@ -198,3 +312,10 @@ allGroupRefReducers groups (GroupRef _ (GroupLocGlobal _ name) _ gprops) =
   allGroupDefReducers gprops $ groups M.! (() <$ name)
 allGroupRefReducers _ (GroupRef _ _ _ _) =
   error "can't get all group ref statements from unsubstituted group prop"
+
+valAtPath :: [Int] -> Value an -> Maybe (Value an)
+valAtPath [] val = Just val
+valAtPath (x : xs) (ValueRecord (Record _ _ props))
+  | x < length props = valAtPath xs $ props !! x
+  | otherwise        = Nothing
+valAtPath _ _ = Nothing

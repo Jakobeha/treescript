@@ -1,0 +1,14 @@
+&Main[].
+'struct \name:name {
+  \...fields:field
+}' -> 'public class \name {
+  \...fields
+
+  public \name(\...cargs) {
+    \...assigns
+  }
+}',
+  \cargs <- \fields &CArg[];
+
+&CArg[].
+'\val;' -> '\val,'

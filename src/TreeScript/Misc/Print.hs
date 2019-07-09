@@ -20,6 +20,7 @@ import qualified TreeScript.Misc.Ext.Text      as T
 import           Control.Monad.Catch
 import           Data.String
 import qualified Data.Text                     as T
+import qualified Data.UUID                     as U
 
 newtype ReducePrintText = ReducePrintText{ reducePrintText :: T.Text } deriving (Semigroup, Monoid)
 
@@ -77,11 +78,18 @@ instance Printable Int where
 instance Printable Float where
   pprint = T.pack . show
 
+instance Printable U.UUID where
+  pprint = T.take 8 . U.toText
+
 instance Printable T.Text where
   pprint txt = "\"" <> T.escapeString txt <> "\""
 
 instance Printable SomeException where
   pprint = T.pack . displayException
+
+instance (Printable l, Printable r) => Printable (Either l r) where
+  pprint (Left  x) = pprint x
+  pprint (Right x) = pprint x
 
 instance (Printable a) => Printable [a] where
   pprint xs = "[" <> T.intercalate ", " (map pprint xs) <> "]"

@@ -18,18 +18,12 @@ primType :: Primitive an -> SType
 primType (PrimInteger _ _) = STypePrim PrimTypeInteger
 primType (PrimFloat   _ _) = STypePrim PrimTypeFloat
 primType (PrimString  _ _) = STypePrim PrimTypeString
+primType (PrimStx     _ _) = STypePrim PrimTypeStx
 
 recType :: Record an -> Maybe SType
 recType (Record _ head' props) = case recordKind head' of
-  RecordKindTuple -> STypeTuple <$> traverse valueType props
-  RecordKindCons  -> case props of
-    -- Malformed
-    []      -> Just $ STypeRecord $ remAnns head'
-    (x : _) -> STypeCons <$> valueType x
-  RecordKindICons -> case props of
-    -- Malformed
-    []      -> Just $ STypeRecord $ remAnns head'
-    (x : _) -> STypeICons <$> valueType x
+  RecordKindTuple  -> STypeTuple <$> traverse valueType props
+  RecordKindList   -> Nothing
   RecordKindOpaque -> Just $ STypeRecord $ remAnns head'
 
 valueType :: Value an -> Maybe SType
@@ -48,7 +42,7 @@ addSurfaceCasts (Record _ head' props) = do
   case ptyps of
     -- Lookup failure (raised error in validation)
     Nothing              -> pure ()
-    -- Children are all @any@, no casts.
+    -- Children are all @any@, no casts. TODO fix for lists
     Just PropsTypeVarLen -> pure ()
     Just (PropsTypeFixed ptyps') ->
       -- Don't try to cast missing properties in malformed records
@@ -76,4 +70,4 @@ addGuardCasts (Guard rng inp out nexts) = do
   pure $ Guard rng inp out nexts'
 
 addCasts :: Program an -> GlobalSessionRes (Program an)
-addCasts = traverseAst TProgram TGuard addGuardCasts
+addCasts = traverseProgram TProgram TGuard addGuardCasts

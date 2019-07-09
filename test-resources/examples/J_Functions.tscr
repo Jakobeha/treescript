@@ -1,4 +1,4 @@
-Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom].
+Subst[@Stx_node, @Stx_node, @Stx_node].
 
 &Main[].
 \x -> \x &Recurse[&All[]] &Main[];
@@ -12,13 +12,13 @@ Subst[@Scheme_SCons|@Scheme_SNil|@Scheme_Symbol|@Scheme_Atom, @Scheme_SCons|@Sch
 
 &Add[].
 '((+ \xAt) \yAt)' -> Scheme_Atom[\xpy],
-  \xpy <- T[\x, \y] #Num_Add[],
+  \xpy <- js'\x + \y'!,
   Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 
 &LT[].
 '((< \xAt) \yAt)' -> Scheme_Atom[\xpy],
-  \xpy <- T[\x, \y] #Num_LessThan[],
+  \xpy <- js'\x < \y',
   Scheme_Atom[\x] <- \xAt,
   Scheme_Atom[\y] <- \yAt;
 

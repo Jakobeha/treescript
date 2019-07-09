@@ -63,7 +63,7 @@ vDisjointProps (Record rng head' props) = do
         <> pprint nprops
       -- Validate prop types
       forM_ (zip ptyps' props) $ \(eptyp, prop) ->
-        case MType . specialCasts <$> valueType prop of
+        case mType1 <$> valueType prop of
           -- Prop is a bind, so never guarenteed disjoint
           Nothing    -> pure ()
           Just aptyp -> do
@@ -99,6 +99,7 @@ unboundErrsGroupRef env@(LocalEnv binds groups) (GroupRef _ loc vprops gprops)
     ++ foldMap (unboundErrsGroupRef env) gprops
 
 unboundErrsGuard :: LocalEnv -> Next Range -> [Error]
+unboundErrsGuard _   (NextEval  _  ) = []
 unboundErrsGuard _   (NextCast  _  ) = []
 unboundErrsGuard env (NextGroup grp) = unboundErrsGroupRef env grp
 
@@ -138,16 +139,14 @@ vHiddenModulePath mdl
   = pure ()
   where isHiddenChar x = not (isAlphaNum x) && x /= '_'
 
--- TODO: Undeclared function errors
-
 -- TODO: Validate imports
 
 -- | Reports syntax errors which didn't affect parsing but would cause problems during compilation.
 validate_ :: Program Range -> GlobalSessionRes ()
-validate_ prog@(Program _ mpath _ rdecls _ _ _ castReds groups _) = do
+validate_ prog@(Program _ mpath _ rdecls _ _ _ castReds groups) = do
   vHiddenModulePath mpath
   vDuplicateDecls rdecls
-  traverseAst_ TProgram TRecord vDisjointProps prog
+  traverseProgram_ TProgram (TProgramValue TRecord) vDisjointProps prog
   mapM_ (vUnboundReducer emptyLocalEnv) castReds
   mapM_ vUnbound                        groups
 

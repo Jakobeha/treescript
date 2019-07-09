@@ -1,29 +1,29 @@
 &Main[].
-stxlisp'\...xs' -> js'{\...ys}',
-  \ys <- \xs &Stx_Split[stxlisp'$##'] &Map[&Section[]];
+'\...xs' -> '{\...ys}',
+  \ys <- \xs &Section[];
 
 &Section[].
-stxlisp'
+'
 ## \head
-\...xs' -> js'\lhead: [ \...ys ]',
-  \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Stx_Split[stxlisp'$###'] &Map[&Item[]];
+\!(##)...xs' -> '\lhead: [ \...ys ]',
+  \lhead <- js'String.toLower(\head)'!,
+  \ys <- \xs &Item[];
 
 &Item[].
-stxlisp'
+'
 ### \head
-\...xs' -> js'{ "name": \lhead, \...ys }',
-  \lhead <- T[\head] #String_ToLower[],
-  \ys <- \xs &Stx_Split[stxlisp'$-'] &Map[&Detail[]];
+\...xs' -> '{ "name": \lhead, \...ys }',
+  \lhead <- js'String.toLower(\head)'!,
+  \ys <- \xs &Stx_Split['\$-'] &Map[&Detail[]];
 
 &Detail[].
-stxlisp'- \head: \content' -> js'\lhead: \content',
-  \lhead <- T[\head] #String_ToLower[];
-stxlisp'
+'- \head: \content' -> '\lhead: \content',
+  \lhead <- js'String.toLower(\head)'!;
+'
 - \head
-  \...blt1s' -> js'\lhead: [ \...blt2s ]',
-  \lhead <- T[\head] #String_ToLower[],
-  \blt2s <- \blt1s &Stx_Split[stxlisp'$  -'] &Map[&Bullet[]];
+  \...blt1s' -> '\lhead: [ \...blt2s ]',
+  \lhead <- js'String.toLower(\head)'!,
+  \blt2s <- \blt1s &Stx_Split['\$  -'] &Map[&Bullet[]];
 
 &Bullet[].
-stxlisp'- \x' -> \x;
+'- \x' -> \x;

@@ -14,7 +14,8 @@ module TreeScript.Ast.Core.Types.Local
   )
 where
 
-import           TreeScript.Ast.Core.Types.Gen
+import           TreeScript.Ast.Core.Types.Program
+import           TreeScript.Ast.Core.Types.Value
 import           TreeScript.Misc
 import           TreeScript.Plugin
 

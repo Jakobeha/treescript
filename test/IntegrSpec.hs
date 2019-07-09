@@ -164,13 +164,13 @@ spec = do
                 assertProperFailure testInfo $ coreRes
         describe "The interpreter" $ it "Evaluates" $ \_ ->
           forExampleCore file $ \prg ->
-            forM_ execTests $ \(ExecTest name inPath inTxt outPath outTxt) ->
+            forM_ execTests $ \(ExecTest name inPath _ _ outTxt) ->
               unless (name `elem` testInfoSkipRun testInfo)
                 $ denoteFailIn ("executable test " <> name)
                 $ do
-                    progOutRes <- runSessionResVirtual exampleEnv $ do
-                      let olang = LanguageStx
-                      evalFileOutText inPath olang (r0 <$ prg)
+                    progOutRes <-
+                      runSessionResVirtual exampleEnv
+                        $ evalFileOutText inPath (r0 <$ prg)
                     if name `elem` testInfoCantRun testInfo
                       then assertProperFailure testInfo progOutRes
                       else case progOutRes of

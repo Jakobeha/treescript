@@ -30,6 +30,7 @@ import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Misc.Print
 
 import           Control.Monad.Catch
+import           Control.Monad.Cont
 import qualified Control.Monad.Fail            as F
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
@@ -155,6 +156,18 @@ instance (Monoid w, Monad u, MonadResult u) => MonadResult (RWST r w s u) where
      where
       fillWrite Nothing              = (Nothing, s, mempty)
       fillWrite (Just (res, s', w')) = (Just res, s', w')
+
+instance (Monad u, MonadResult u) => MonadResult (ContT r u) where
+  mkFail     = lift . mkFail
+  tellErrors = lift . tellErrors
+  overErrors = mapContT . overErrors
+  downgradeFatal x = ContT run
+   where
+    run k = do
+      ores <- downgradeFatal $ runContT x $ k . Just
+      case ores of
+        Nothing  -> k Nothing
+        Just res -> pure res
 
 instance (MonadReader r u) => MonadReader r (ResultT u) where
   ask = ResultT $ asks pure

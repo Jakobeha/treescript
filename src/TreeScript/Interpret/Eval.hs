@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,8 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module TreeScript.Interpret.Eval
-  ( EvalRead(..)
-  , eval
+  ( eval
   , evalFile
   , evalFileOutText
   )
@@ -16,35 +16,24 @@ where
 import           TreeScript.Ast
 import           TreeScript.Interpret.Gen
 import           TreeScript.Misc
+import qualified TreeScript.Misc.Ext.Streams   as St
 import           TreeScript.Plugin
 
 import           Control.Monad.Cont
 import           Control.Monad.Logger
-import           Control.Monad.Loops
 import           Control.Monad.RWS.Strict
-import qualified Data.ByteString.Builder as B
-import           Data.Foldable
 import qualified Data.Map.Strict               as M
 import           Data.Maybe
-import qualified Data.Sequence                 as Seq
 import qualified Data.Set                      as Set
 import qualified Data.Text                     as T
 import qualified Data.Text.Encoding            as T
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Mutable           as MV
 import           Data.Void
-import           Language.JavaScript.Inline hiding (eval)
+import           Language.JavaScript.Inline
+                                         hiding ( eval )
 import           System.FilePath
 import qualified System.IO.Streams             as St
-
-type LenList a = [a]
-
--- | TODO Follow naming conventions
-data EvalRead
-  = EvalRead
-  { evalReadInput :: St.InputStream (Value Range)
-  , evalReadOutput :: St.OutputStream (Value Range)
-  }
 
 data GFrame
   = GFrame [Value Range] [GroupRef Range]
@@ -62,7 +51,7 @@ data Frame
 data EvalCont
   = EvalContEof (() -> Eval Void)
   | EvalContFail (() -> Eval Void)
-  | EvalContSuccess (LenList (Value Range) -> Eval Void)
+  | EvalContSuccess (() -> Eval Void)
 data EvalState
   = EvalState
   { evalStatePath :: ModulePath
@@ -71,21 +60,16 @@ data EvalState
   , evalStateGroups :: M.Map (Symbol ()) (GroupDef Range)
   , evalStatePanicMsg :: Maybe T.Text
   , evalStateCStack :: [EvalCont]
-  , evalStateImmInput :: Seq.Seq (Value Range)
-  , evalStateImmInputFix :: [Int]
-  , evalStateCachedAllInput :: Bool
   , evalStateFrames :: [Frame]
   }
 
-newtype Eval a = Eval{ unEval :: RWST EvalRead () EvalState (ContT () SessionRes) a }
-  deriving (Functor, Applicative, Monad, MonadIO)
+newtype Eval a = Eval{ unEval :: RWST GlobalPipe () EvalState (ContT () SessionRes) a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadResult)
 
 instance MonadInterpret Eval where
-  type IType Eval = SType
-  type IValue Eval = LenList (Value Range)
-  type ICast Eval = Reducer Range
-  type IGroup Eval = GroupDef Range
+  data IData Eval a = EData{ unEData :: a } deriving (Functor)
 
+  mprint (EData x) = pure $ pprint x
   mlog typ msg
     | typ `Set.member` Set.fromList
       [ "Interpret"
@@ -105,45 +89,36 @@ instance MonadInterpret Eval where
   mloadGroups x = Eval $ modify $ \s -> s { evalStateGroups = x }
   mloadStart = Eval $ do
     pth     <- evalStatePath <$> get
-    session <- unEval $ mliftIO StageStartLib
-      $ newJSSession defJSSessionOpts { nodeWorkDir = Just $ takeDirectory $ T.unpack pth }
+    session <- unEval $ mliftIO StageStartLib $ newJSSession defJSSessionOpts
+      { nodeWorkDir = Just $ takeDirectory $ T.unpack pth
+      }
     modify $ \s -> s { evalStateSession = session }
-    unEval $ mrunJs [block|
-      import * as jsFfi from "js-ffi"
-    |]
+  mloadInits _ = pure () -- SOON
   mloadEnd = Eval $ do
-    out <- evalReadOutput <$> ask
+    out <- globalPipeOutput <$> ask
     unEval $ mliftIO StageWriteOutput $ St.write Nothing out
     session <- evalStateSession <$> get
     unEval $ mliftIO StageShutdown $ closeJSSession session
-  mstartLib _ _ = mipanic "Libraries not supported, "
-  mstartLib name (LibraryJavaScript js) = mrunJs [block|
-    module $name {
-      $code
-    }
-  |]
-    where code = JSCode $ B.byteString $ T.encodeUtf8 js
-  mstopLib _ _ = Eval $ pure () -- All libs stop on shutdown
-  mcatchEOF expr = Eval $ callCC $ \k -> do
+  mcatchEOF expr' = Eval $ callCC $ \k -> do
     modify $ \s ->
       s { evalStateCStack = EvalContEof (Eval . k) : evalStateCStack s }
-    res <- unEval expr
+    res <- unEval expr'
     unEval $ popCsUntilInclusive $ \case
       (EvalContEof _) -> Just ()
       _               -> Nothing
     pure res
-  mcatchFail expr = Eval $ callCC $ \k -> do
+  mcatchFail expr' = Eval $ callCC $ \k -> do
     modify $ \s ->
       s { evalStateCStack = EvalContFail (Eval . k) : evalStateCStack s }
-    res <- unEval expr
+    res <- unEval expr'
     unEval $ popCsUntilInclusive $ \case
       (EvalContFail _) -> Just ()
       _                -> Nothing
     pure res
-  mcatchSuccess expr = Eval $ callCC $ \k -> do
+  mcatchSuccess expr' = Eval $ callCC $ \k -> do
     modify $ \s ->
       s { evalStateCStack = EvalContSuccess (Eval . k) : evalStateCStack s }
-    res <- unEval expr
+    res <- unEval expr'
     unEval $ popCsUntilInclusive $ \case
       (EvalContSuccess _) -> Just ()
       _                   -> Nothing
@@ -162,38 +137,45 @@ instance MonadInterpret Eval where
       (EvalContFail x) -> Just x
       _                -> Nothing
     unEval $ absurd <$> k ()
-  mjmpSucceed res = Eval $ do
+  mjmpSucceed = Eval $ do
     k <- unEval $ popCsUntilInclusive $ \case
       (EvalContSuccess x) -> Just x
       _                   -> Nothing
-    unEval $ absurd <$> k res
+    unEval $ absurd <$> k ()
   mjmpPanic msg = Eval $ do
     modify $ \s -> s { evalStatePanicMsg = Just msg }
     unEval mjmpEof
-  mreadInput = Eval $ do
-    inp <- evalReadInput <$> ask
-    let keepReading st =
-          length (evalStateImmInput st) < 8 && not (evalStateCachedAllInput st)
-    whileM_ (keepReading <$> get) $ do
-      next <- lift $ lift
-        (liftIOAndCatch StageReadInput $ St.read inp :: SessionRes
-            (Maybe (Value Range))
-        )
-      case next of
-        Nothing    -> modify $ \s -> s { evalStateCachedAllInput = True }
-        Just next' -> modify
-          $ \s -> s { evalStateImmInput = evalStateImmInput s Seq.|> next' }
-    immInp <- evalStateImmInput <$> get
-    unEval $ mlog "IO" $ "Immediate input: " <> pprint (toList immInp)
-    when (null immInp) $ unEval mieof
-  mwriteOutput xl = Eval $ do
-    out <- evalReadOutput <$> ask
-    forM_ xl $ \x -> liftIO $ St.write (Just x) out
+  mgetGlobalPipe = Eval $ EData <$> ask
+  mmkLocalPipe (EData inVal) = do
+    inp <- case value2Stx inVal of
+      Nothing             -> pure $ Right inVal
+      Just (StxBlob stxs) -> mliftIO StageReadInput $ Left <$> St.fromList stxs
+    (out, getOutRaw) <- mliftIO StageWriteOutput St.listOutputStream
+    pure $ EData LocalPipe { localPipeInput        = inp
+                           , localPipeOutput       = out
+                           , localPipeGetOutputRaw = getOutRaw
+                           }
+  mgetLocalPipeOut (EData pipe) = do
+    outRaw <- mliftIO StageWriteOutput $ localPipeGetOutputRaw pipe
+    case outRaw of
+      [Right val] -> pure $ EData val
+      _ ->
+        case
+            traverse
+              (\case
+                Left  stx -> Just stx
+                Right _   -> Nothing
+              )
+              outRaw
+          of
+            Nothing   -> mipanic $ "Bad output format: " <> pprint outRaw
+            Just stxs -> pure $ EData $ stx2Value r0 $ StxBlob stxs
   mpushGFrame vprops gprops =
     logFrames ("Push " <> pprint (GFrame vprops gprops)) $ Eval $ do
--- Lazy reuse of code which "happens" to be equivalent
       noFrames <- null . evalStateFrames <$> get
-      vprops'  <- if noFrames then pure vprops else unEval $ mfillBinds vprops
+      vprops'  <- if noFrames
+        then pure vprops
+        else unEval $ mapM (fmap unEData . mfillBinds . EData) vprops
       modify
         $ \s -> s
             { evalStateFrames = FrameG (GFrame vprops' gprops)
@@ -209,90 +191,86 @@ instance MonadInterpret Eval where
     modify $ \s -> s { evalStateFrames = FrameR f' : FrameR f : fs }
   mpopRFrame = logFrames "Pop" $ Eval $ modify $ \s ->
     s { evalStateFrames = tail $ evalStateFrames s }
-  mtransformI = mtransform
--- | Stores length of input in register
-  mpushFixedInput inp = Eval $ modify $ \s -> s
-    { evalStateImmInputFix = length inp : evalStateImmInputFix s
-    , evalStateImmInput    = Seq.fromList inp <> evalStateImmInput s
-    }
-  mdropFixedInput = Eval $ do
-    st <- get
-    let immInputFix' = evalStateImmInputFix st
-        immInput     = evalStateImmInput st
-    unEval
-      $  mlog "IO"
-      $  "Dropping fixed input if "
-      <> pprint (length immInputFix')
-      <> " > 0 from "
-      <> pprint (toList immInput)
-    modify $ \s -> case evalStateImmInputFix s of
-      []                -> s
-      immInputFix : fxs -> s
-        { evalStateImmInputFix = fxs
-        , evalStateImmInput    = Seq.drop immInputFix $ evalStateImmInput s
-        }
+  mtransformI pipe = mtransform pipe . unEData
 -- | Fails if not enough input left, or if fixed input was pushed and len is different
-  mpeekInput len = Eval $ do
-    st <- get
-    when
-        (  any (/= len) (evalStateImmInputFix st)
-        || length (evalStateImmInput st)
-        <  len
-        )
-      $ unEval mifail
-    pure $ toList $ Seq.take len $ evalStateImmInput st
-  mdropInput len = Eval $ do
-    st <- get
-    let immInputFix = evalStateImmInputFix st
-        immInput    = evalStateImmInput st
-    when
-        (  (not (null immInputFix) && head immInputFix /= len)
-        || length immInput
-        <  len
-        )
-      $ unEval mifail
-    unEval $ mlog "IO" $ "Dropping " <> pprint len <> " from " <> pprint
-      (toList immInput)
-    put $ st { evalStateImmInputFix = drop 1 immInputFix
-             , evalStateImmInput    = Seq.drop len immInput
-             }
-  mval2Ival x = pure $ unwrapIList x
-  mmapMPath x ps f = unwrapIList
-    <$> mmapMPath' (rewrapIList x) ps (fmap rewrapIList . f . unwrapIList)
-  mgetType vall = case valueType val of
+  mpeekInput (EData (PipeGlobal gpipe)) len =
+    EData <$> mpeekStxInput (globalPipeInput gpipe) len
+  mpeekInput (EData (PipeLocal lpipe)) len = case localPipeInput lpipe of
+    Left stxIn -> EData <$> mpeekStxInput stxIn len
+    Right val | len == 1  -> pure $ EData val
+              | otherwise -> mifail
+  mdropInput (EData (PipeGlobal gpipe)) len =
+    mdropStxInput (globalPipeInput gpipe) len
+  mdropInput (EData (PipeLocal lpipe)) len = case localPipeInput lpipe of
+    Left stxIn -> mdropStxInput stxIn len
+    Right _ | len == 1  -> pure ()
+            | otherwise -> fail $ "unexpected drop input " ++ show len
+  mpushOutput (EData (PipeGlobal gpipe)) (EData out) = case value2Stx out of
+    Nothing ->
+      mipanic $ "can't write output because it isn't syntax: " <> pprint out
+    Just (StxBlob stxs) ->
+      mliftIO StageWriteOutput $ St.writeList stxs $ globalPipeOutput gpipe
+  mpushOutput (EData (PipeLocal lpipe)) (EData out) = case value2Stx out of
+    Nothing ->
+      mliftIO StageWriteOutput $ St.write (Just $ Right out) $ localPipeOutput
+        lpipe
+    Just (StxBlob stxs) ->
+      mliftIO StageWriteOutput $ St.writeList (map Left stxs) $ localPipeOutput
+        lpipe
+  mval2Ival = pure . EData
+  munwrapLang (EData val) = case unwrapLang val of
+    Nothing           -> mipanic $ "not a semantic language: " <> pprint val
+    Just (lang, val') -> pure (EData lang, EData val')
+  mval2Stx (EData val) = case value2Stx val of
+    Nothing  -> mipanic $ "not syntax: " <> pprint val
+    Just stx -> pure $ EData $ pprint stx
+  meval (EData LanguageStx) _ =
+    mipanic "can't evaluate raw syntax (need semantics)"
+  meval (EData LanguageJavaScript) (EData inTxt) = do
+    outTxt <- mrunJs [expr| $inTxt |]
+    Eval $ lift $ lift $ EData . stx2Value r0 <$> parseStxText outTxt
+  mmapMPath x           []       f = f x
+  mmapMPath (EData val) (p : ps) f = case val of
+    ValueRecord (Record ann head' props) | p < length props ->
+      EData . ValueRecord . Record ann head' <$> zipWithM mapMProp [0 ..] props
+    _ ->
+      mipanic
+        $  "Path expects record with at least "
+        <> pprint (p + 1)
+        <> " props, got: "
+        <> pprint val
+   where
+    mapMProp idx prop | idx == p  = unEData <$> mmapMPath (EData prop) ps f
+                      | otherwise = pure prop
+  mgetType (EData val) = case valueType val of
     Nothing  -> mipanic $ "Value doesn't have type: " <> pprint val
-    Just typ -> pure typ
-    where val = rewrapIList vall
-  misSubtype typ = pure . Set.member typ
-  mlookupCast ityp otyp = Eval $ do
+    Just typ -> pure $ EData typ
+  misSubtype (EData typ) = pure . Set.member typ
+  mlookupCast (EData ityp) otyp = Eval $ do
     creds <- evalStateCreds <$> get
-    pure $ creds M.!? CastSurface ityp otyp
-  mreduceCast = mreduceLocal
-  mresolveGlobal sym = Eval $ (M.! remAnns sym) . evalStateGroups <$> get
+    pure $ EData <$> creds M.!? CastSurface ityp otyp
+  mreduceCast = mreduceLocal . unEData
+  mresolveGlobal sym =
+    Eval $ EData . (M.! remAnns sym) . evalStateGroups <$> get
   madvanceLocalGroup new rng _ idx lvps lgps = do
     frame <- topRFrame
     let GroupRef _ loc rvps rgps = rframeLocalGroups frame V.! (idx - 1)
     madvanceGroup new $ GroupRef rng loc (rvps ++ lvps) (rgps ++ lgps)
-  -- TODO Use group props?
-  mcallFunction val (Symbol _ lib fun) _ _ = mrunJs [expr|
-    jsFfi.callFfi($lib, $val...)
-  |] -- Interop will convert everything
-  mcheckLengthEq val len = when (length val /= len) mifail
-  mconsumePrim []       _   = mifail
-  mconsumePrim (x : xs) inp = do
+  mcheckLengthEq (EData val) len = when (length val /= len) mifail
+  mvalList1 = pure . EData . pure . unEData
+  mconsumePrim (EData []      ) _   = mipanic "unexpected end of consume list"
+  mconsumePrim (EData (x : xs)) inp = do
     when (remAnns x /= ValuePrimitive (remAnns inp)) mifail
-    pure xs
--- SOON Consume multiple when encounter an IList
-  mconsumeRecordHead (ValueRecord (Record _ head' props) : xs) ihead ilen = do
-    when (remAnns head' /= remAnns ihead || length props /= ilen) mifail
-    pure $ props ++ xs
+    pure $ EData xs
+  mconsumeRecordHead (EData (ValueRecord (Record _ head' props) : xs)) ihead ilen
+    = do
+      when (remAnns head' /= remAnns ihead || length props /= ilen) mifail
+      pure $ EData $ props ++ xs
   mconsumeRecordHead _ _ _ = mifail
--- | Binds are never ILists
-  mconsumeTrue []       = mifail
-  mconsumeTrue (_ : xs) = pure xs
--- | Binds are never ILists
-  mconsumeBind []       _   = mifail
-  mconsumeBind (x : xs) idx = do
+  mconsumeTrue (EData []      ) = mipanic "unexpected end of consume list"
+  mconsumeTrue (EData (_ : xs)) = pure $ EData xs
+  mconsumeBind (EData []      ) _   = mipanic "unexpected end of consume list"
+  mconsumeBind (EData (x : xs)) idx = do
     binds <- rframeBinds <$> topRFrame
     prev  <- liftIO $ MV.read binds (idx - 1)
     case prev of
@@ -302,16 +280,16 @@ instance MonadInterpret Eval where
       Nothing -> liftIO $ MV.write binds (idx - 1) $ Just x
       Just prev' | remAnns prev' == remAnns x -> pure ()
                  | otherwise                  -> mifail
-    pure xs
-  mfillBinds old = do
+    pure $ EData xs
+  mfillBinds (EData old) = do
     binds      <- rframeBinds <$> topRFrame
     idxSplices <-
       liftIO
       $   V.toList
       .   V.imapMaybe (\idx x -> (idx + 1, ) <$> x)
       <$> V.freeze binds
-    let new = map (substBinds idxSplices) old
-    pure new
+    let new = substBinds idxSplices old
+    pure $ EData new
 
 instance Printable GFrame where
   pprint (GFrame vals grefs) =
@@ -359,6 +337,18 @@ logFrames desc action = do
 mliftIO :: Stage -> IO a -> Eval a
 mliftIO stage = Eval . lift . lift . liftIOAndCatch stage
 
+mpeekStxInput :: St.InputStream (Idd Stx) -> Int -> Eval (Value Range)
+mpeekStxInput inp len = do
+  oinLst <- mliftIO StageReadInput $ St.peekn len inp
+  case oinLst of
+    Nothing    -> mifail
+    Just inLst -> pure $ stx2Value r0 $ StxBlob inLst
+
+mdropStxInput :: St.InputStream (Idd Stx) -> Int -> Eval ()
+mdropStxInput inp len = do
+  suc <- mliftIO StageReadInput $ St.dropn len inp
+  unless suc $ fail "can't drop items"
+
 dupRFrame :: RFrame -> Eval RFrame
 dupRFrame (RFrame bnds grps) = RFrame <$> liftIO (MV.clone bnds) <*> pure grps
 
@@ -395,60 +385,38 @@ popCsUntilInclusive f = Eval $ do
   modify $ \s -> s { evalStateCStack = cs' }
   pure c'
 
-mmapMPath'
-  :: Value Range
-  -> [Int]
-  -> (Value Range -> Eval (Value Range))
-  -> Eval (Value Range)
-mmapMPath' x   []       f = f x
-mmapMPath' val (p : ps) f = case val of
-  ValueRecord (Record ann head' props) | p < length props ->
-    ValueRecord . Record ann head' <$> zipWithM mapMProp [0 ..] props
-  _ ->
-    mipanic
-      $  "Path expects record with at least "
-      <> pprint (p + 1)
-      <> " props, got: "
-      <> pprint val
- where
-  mapMProp idx prop | idx == p  = mmapMPath' prop ps f
-                    | otherwise = pure prop
-
 mrunJs :: (JSSession -> IO a) -> Eval a
 mrunJs fjs = Eval $ do
   session <- evalStateSession <$> get
-  unEval $ mliftIO StageUseLib $ fjs session
+  unEval $ mliftIO StageEvalStx $ fjs session
 
 initialState :: EvalState
-initialState = EvalState { evalStatePath           = error "not set"
-                         , evalStateCreds          = error "not set"
-                         , evalStateGroups         = error "not set"
-                         , evalStatePanicMsg       = Nothing
-                         , evalStateCStack         = []
-                         , evalStateImmInput       = Seq.empty
-                         , evalStateImmInputFix    = []
-                         , evalStateCachedAllInput = False
-                         , evalStateFrames         = []
+initialState = EvalState { evalStatePath     = error "not set"
+                         , evalStateSession  = error "not set"
+                         , evalStateCreds    = error "not set"
+                         , evalStateGroups   = error "not set"
+                         , evalStatePanicMsg = Nothing
+                         , evalStateCStack   = []
+                         , evalStateFrames   = []
                          }
 
-runEval :: EvalRead -> Eval () -> SessionRes ()
+runEval :: GlobalPipe -> Eval () -> SessionRes ()
 runEval env (Eval x) = (`runContT` pure) $ () <$ runRWST x env initialState
 
-eval :: EvalRead -> Program Range -> SessionRes ()
+eval :: GlobalPipe -> Program Range -> SessionRes ()
 eval env = runEval env . minterpret
 
 evalFile :: FilePath -> FilePath -> Program Range -> SessionRes ()
 evalFile inp out prg = do
-  olang <- forceLangForPath out
-  sinp  <- liftIOAndCatch StageReadInput . St.map (r0 <$) =<< parseStxFile inp
+  sinp <- parseStxFile inp
   withFileAsOutput out $ \out' -> do
-    sout <- printAstStream olang out'
-    eval EvalRead { evalReadInput = sinp, evalReadOutput = sout } prg
+    sout <- printStxStream out'
+    eval GlobalPipe { globalPipeInput = sinp, globalPipeOutput = sout } prg
 
-evalFileOutText :: FilePath -> Language -> Program Range -> SessionRes T.Text
-evalFileOutText inp olang prg = do
-  sinp <- liftIOAndCatch StageReadInput . St.map (r0 <$) =<< parseStxFile inp
+evalFileOutText :: FilePath -> Program Range -> SessionRes T.Text
+evalFileOutText inp prg = do
+  sinp           <- parseStxFile inp
   (out', getRes) <- liftIOAndCatch StageReadInput St.listOutputStream
-  sout <- printAstStream olang out'
-  eval EvalRead { evalReadInput = sinp, evalReadOutput = sout } prg
+  sout           <- printStxStream out'
+  eval GlobalPipe { globalPipeInput = sinp, globalPipeOutput = sout } prg
   T.concat . map T.decodeUtf8 <$> liftIOAndCatch StageWriteOutput getRes
