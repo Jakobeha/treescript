@@ -1,0 +1,3 @@
+[submodule "extra-deps/inline-js"]
+	path = extra-deps/inline-js
+	url = https://github.com/tweag/inline-js.git
