@@ -1,4 +1,4 @@
-Subst[@Stx_node, @Stx_node, @Stx_node].
+Subst[@stx, @stx, @stx].
 
 &Main[].
 \x -> \x &Apply[];

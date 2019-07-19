@@ -12,6 +12,7 @@ module TreeScript.Ast.Core.Types.Stx
   )
 where
 
+import           TreeScript.Ast.Core.Types.BindEq
 import           TreeScript.Misc
 import           TreeScript.Plugin
 
@@ -45,16 +46,32 @@ data Stx
 data Idd a =
   Idd
   { iddId :: U.UUID
+  , iddPre :: T.Text
+  , iddPost :: T.Text
   , idd :: a
   } deriving (Eq, Ord, Read, Show, Generic, Binary, Functor, Foldable, Traversable)
 
-newtype StxBlob = StxBlob [Idd Stx] deriving (Eq, Ord, Read, Show, Generic, Binary)
+newtype StxBlob = StxBlob{ unStxBlob :: [Idd Stx] } deriving (Eq, Ord, Read, Show, Generic, Binary)
 
 data LStxBlob
   = LStxBlob
   { lStxBlobLang :: Language
   , lStxBlob :: StxBlob
   } deriving (Eq, Ord, Read, Show, Generic, Binary)
+
+instance BindEq Stx where
+  StxBlock xd xblob =$= StxBlock yd yblob = xd == yd && xblob =$= yblob
+  x                 =$= y                 = x == y
+
+instance (BindEq a) => BindEq (Idd a) where
+  Idd _ _ _ x =$= Idd _ _ _ y = x =$= y
+
+instance BindEq StxBlob where
+  StxBlob xs =$= StxBlob ys =
+    length xs == length ys && and (zipWith (=$=) xs ys)
+
+instance BindEq LStxBlob where
+  LStxBlob xlang xb =$= LStxBlob ylang yb = xlang == ylang && xb =$= yb
 
 instance Printable Stx where
   pprint (StxWord word       ) = word
@@ -72,10 +89,10 @@ instance Printable Stx where
     T.singleton delim <> pprint contents <> T.singleton (oppositeDelim delim)
 
 instance (Printable a) => Printable (Idd a) where
-  pprint (Idd _ x) = pprint x
+  pprint (Idd _ pre post x) = pre <> pprint x <> post
 
 instance Printable StxBlob where
-  pprint (StxBlob nodes) = T.intercalate " " $ map pprint nodes
+  pprint (StxBlob nodes) = T.concat $ map pprint nodes
 
 instance Printable LStxBlob where
   pprint (LStxBlob lang stx) = languageExt lang <> "'" <> pprint stx <> "'"
@@ -85,3 +102,8 @@ oppositeDelim '(' = ')'
 oppositeDelim '[' = ']'
 oppositeDelim '{' = '}'
 oppositeDelim x   = error $ "Invalid delimiter: " ++ [x]
+
+concatTraverseStxBlob
+  :: (Applicative w) => (Idd Stx -> w StxBlob) -> StxBlob -> w StxBlob
+concatTraverseStxBlob f (StxBlob stxs) =
+  StxBlob . concatMap unStxBlob <$> traverse f stxs

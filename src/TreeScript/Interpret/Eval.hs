@@ -17,9 +17,12 @@ import           TreeScript.Ast
 import           TreeScript.Interpret.Gen
 import           TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Streams   as St
+import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Plugin
 
+import           Control.Concurrent.MVar
 import           Control.Monad.Cont
+import qualified Control.Monad.Fail            as F
 import           Control.Monad.Logger
 import           Control.Monad.RWS.Strict
 import qualified Data.Map.Strict               as M
@@ -49,7 +52,7 @@ data Frame
   | FrameR RFrame
 
 data EvalCont
-  = EvalContEof (() -> Eval Void)
+  = EvalContPanic (() -> Eval Void)
   | EvalContFail (() -> Eval Void)
   | EvalContSuccess (() -> Eval Void)
 data EvalState
@@ -58,13 +61,15 @@ data EvalState
   , evalStateSession :: JSSession
   , evalStateCreds :: M.Map CastSurface (Reducer Range)
   , evalStateGroups :: M.Map (Symbol ()) (GroupDef Range)
-  , evalStatePanicMsg :: Maybe T.Text
   , evalStateCStack :: [EvalCont]
   , evalStateFrames :: [Frame]
   }
 
 newtype Eval a = Eval{ unEval :: RWST GlobalPipe () EvalState (ContT () SessionRes) a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadResult)
+
+instance F.MonadFail Eval where
+  fail = mipanic . T.pack
 
 instance MonadInterpret Eval where
   data IData Eval a = EData{ unEData :: a } deriving (Functor)
@@ -80,8 +85,12 @@ instance MonadInterpret Eval where
       , "Cast"
       , "Consume"
       , "Control"
+      , "Subst"
       ]
-    = Eval $ logDebugN msg
+    = Eval $ do
+      len <- length . evalStateCStack <$> get
+      -- Indent and align multiline logs
+      logDebugN $ T.indentN len $ T.replace "\n" "\n       " msg
     | otherwise
     = pure ()
   mloadPath x = Eval $ modify $ \s -> s { evalStatePath = x }
@@ -99,13 +108,13 @@ instance MonadInterpret Eval where
     unEval $ mliftIO StageWriteOutput $ St.write Nothing out
     session <- evalStateSession <$> get
     unEval $ mliftIO StageShutdown $ closeJSSession session
-  mcatchEOF expr' = Eval $ callCC $ \k -> do
+  mcatchPanic expr' = Eval $ callCC $ \k -> do
     modify $ \s ->
-      s { evalStateCStack = EvalContEof (Eval . k) : evalStateCStack s }
+      s { evalStateCStack = EvalContPanic (Eval . k) : evalStateCStack s }
     res <- unEval expr'
     unEval $ popCsUntilInclusive $ \case
-      (EvalContEof _) -> Just ()
-      _               -> Nothing
+      (EvalContPanic _) -> Just ()
+      _                 -> Nothing
     pure res
   mcatchFail expr' = Eval $ callCC $ \k -> do
     modify $ \s ->
@@ -123,15 +132,6 @@ instance MonadInterpret Eval where
       (EvalContSuccess _) -> Just ()
       _                   -> Nothing
     pure res
-  mjmpEof = Eval $ do
-    panicMsg <- evalStatePanicMsg <$> get
-    case panicMsg of
-      Nothing        -> pure ()
-      Just panicMsg' -> logWarnN $ "Panic: " <> panicMsg'
-    k <- unEval $ popCsUntilInclusive $ \case
-      (EvalContEof x) -> Just x
-      _               -> Nothing
-    unEval $ absurd <$> k ()
   mjmpFail = Eval $ do
     k <- unEval $ popCsUntilInclusive $ \case
       (EvalContFail x) -> Just x
@@ -143,12 +143,15 @@ instance MonadInterpret Eval where
       _                   -> Nothing
     unEval $ absurd <$> k ()
   mjmpPanic msg = Eval $ do
-    modify $ \s -> s { evalStatePanicMsg = Just msg }
-    unEval mjmpEof
+    logWarnN $ "Panic: " <> msg
+    k <- unEval $ popCsUntilInclusive $ \case
+      (EvalContPanic x) -> Just x
+      _                 -> Nothing
+    unEval $ absurd <$> k ()
   mgetGlobalPipe = Eval $ EData <$> ask
   mmkLocalPipe (EData inVal) = do
     inp <- case value2Stx inVal of
-      Nothing             -> pure $ Right inVal
+      Nothing -> mliftIO StageReadInput $ Right <$> newMVar (Just inVal)
       Just (StxBlob stxs) -> mliftIO StageReadInput $ Left <$> St.fromList stxs
     (out, getOutRaw) <- mliftIO StageWriteOutput St.listOutputStream
     pure $ EData LocalPipe { localPipeInput        = inp
@@ -172,15 +175,10 @@ instance MonadInterpret Eval where
             Just stxs -> pure $ EData $ stx2Value r0 $ StxBlob stxs
   mpushGFrame vprops gprops =
     logFrames ("Push " <> pprint (GFrame vprops gprops)) $ Eval $ do
-      noFrames <- null . evalStateFrames <$> get
-      vprops'  <- if noFrames
-        then pure vprops
-        else unEval $ mapM (fmap unEData . mfillBinds . EData) vprops
-      modify
-        $ \s -> s
-            { evalStateFrames = FrameG (GFrame vprops' gprops)
-                                  : evalStateFrames s
-            }
+      (vprops', gprops') <- unEval $ mresolveProps vprops gprops
+      modify $ \s -> s
+        { evalStateFrames = FrameG (GFrame vprops' gprops') : evalStateFrames s
+        }
   mgframe2rframe vprops gprops = logFrames "GFrame -> RFrame" $ Eval $ do
     FrameG f : fs <- evalStateFrames <$> get
     f'            <- unEval $ FrameR <$> mgframe2rframe' f vprops gprops
@@ -192,19 +190,31 @@ instance MonadInterpret Eval where
   mpopRFrame = logFrames "Pop" $ Eval $ modify $ \s ->
     s { evalStateFrames = tail $ evalStateFrames s }
   mtransformI pipe = mtransform pipe . unEData
+  mcheckEof (EData (PipeGlobal gpipe)) =
+    mliftIO StageReadInput $ St.atEOF $ globalPipeInput gpipe
+  mcheckEof (EData (PipeLocal lpipe)) = case localPipeInput lpipe of
+    Left  stxIn -> mliftIO StageReadInput $ St.atEOF stxIn
+    Right ovvar -> mliftIO StageReadInput $ isNothing <$> readMVar ovvar
 -- | Fails if not enough input left, or if fixed input was pushed and len is different
   mpeekInput (EData (PipeGlobal gpipe)) len =
     EData <$> mpeekStxInput (globalPipeInput gpipe) len
   mpeekInput (EData (PipeLocal lpipe)) len = case localPipeInput lpipe of
-    Left stxIn -> EData <$> mpeekStxInput stxIn len
-    Right val | len == 1  -> pure $ EData val
-              | otherwise -> mifail
+    Left  stxIn -> EData <$> mpeekStxInput stxIn len
+    Right ovvar -> do
+      when (len /= 1) mifail
+      oval <- mliftIO StageReadInput $ readMVar ovvar
+      case oval of
+        Nothing  -> mifail
+        Just val -> pure $ EData val
   mdropInput (EData (PipeGlobal gpipe)) len =
     mdropStxInput (globalPipeInput gpipe) len
   mdropInput (EData (PipeLocal lpipe)) len = case localPipeInput lpipe of
-    Left stxIn -> mdropStxInput stxIn len
-    Right _ | len == 1  -> pure ()
-            | otherwise -> fail $ "unexpected drop input " ++ show len
+    Left  stxIn -> mdropStxInput stxIn len
+    Right ovvar -> do
+      when (len /= 1) $ fail $ "unexpected drop input " ++ show len
+      oval <- mliftIO StageReadInput $ swapMVar ovvar Nothing
+      when (isNothing oval)
+        $ fail "can't drop value because it was already dropped"
   mpushOutput (EData (PipeGlobal gpipe)) (EData out) = case value2Stx out of
     Nothing ->
       mipanic $ "can't write output because it isn't syntax: " <> pprint out
@@ -253,11 +263,36 @@ instance MonadInterpret Eval where
   mresolveGlobal sym =
     Eval $ EData . (M.! remAnns sym) . evalStateGroups <$> get
   madvanceLocalGroup new rng _ idx lvps lgps = do
-    frame <- topRFrame
-    let GroupRef _ loc rvps rgps = rframeLocalGroups frame V.! (idx - 1)
+    gref@(GroupRef _ loc rvps rgps) <- mresolveLocalGroup idx
+    mlog "Advance" $ "Resolve Advance: &" <> pprint idx <> " -> " <> pprint gref
     madvanceGroup new $ GroupRef rng loc (rvps ++ lvps) (rgps ++ lgps)
   mcheckLengthEq (EData val) len = when (length val /= len) mifail
+  mcheckStxListEmpty (EData []     ) = pure ()
+  mcheckStxListEmpty (EData (_ : _)) = mifail
   mvalList1 = pure . EData . pure . unEData
+  mconsumeStxLang (EData []) _ = mipanic "unexpected end of consume list"
+  mconsumeStxLang (EData (ValuePrimitive (PrimStx _ (LStxBlob xlang (StxBlob xstxs))) : xs)) ilang
+    | ilang == xlang
+    = pure (EData xstxs, EData xs)
+  mconsumeStxLang _ _ = mifail
+  mconsumeStxPrim (EData []) _ = mifail -- Can happen
+  mconsumeStxPrim (EData (x : xs)) inp | idd x == inp = pure $ EData xs
+                                       | otherwise    = mifail
+  mconsumeStxBlockDelim (EData []) _ = mifail -- Can happen
+  mconsumeStxBlockDelim (EData (Idd _ _ _ (StxBlock delim (StxBlob stxs)) : xs)) inpd
+    | delim == inpd
+    = pure $ EData $ stxs ++ xs
+  mconsumeStxBlockDelim (EData (_ : _)) _ = mifail
+  mconsumeStxTrue (EData []      ) False = mifail
+  mconsumeStxTrue (EData (_ : xs)) False = pure $ EData xs
+  mconsumeStxTrue (EData _       ) True  = pure $ EData []
+  mconsumeStxBind (EData []      ) False _   = mifail
+  mconsumeStxBind (EData (x : xs)) False idx = do
+    mconsumeBind' (stx2Value r0 $ StxBlob [x]) idx
+    pure $ EData xs
+  mconsumeStxBind (EData xs) True idx = do
+    mconsumeBind' (stx2Value r0 $ StxBlob xs) idx
+    pure $ EData []
   mconsumePrim (EData []      ) _   = mipanic "unexpected end of consume list"
   mconsumePrim (EData (x : xs)) inp = do
     when (remAnns x /= ValuePrimitive (remAnns inp)) mifail
@@ -271,15 +306,7 @@ instance MonadInterpret Eval where
   mconsumeTrue (EData (_ : xs)) = pure $ EData xs
   mconsumeBind (EData []      ) _   = mipanic "unexpected end of consume list"
   mconsumeBind (EData (x : xs)) idx = do
-    binds <- rframeBinds <$> topRFrame
-    prev  <- liftIO $ MV.read binds (idx - 1)
-    case prev of
-      Nothing    -> pure ()
-      Just prev' -> mlog "Consume" $ "Prev: " <> pprint prev'
-    case prev of
-      Nothing -> liftIO $ MV.write binds (idx - 1) $ Just x
-      Just prev' | remAnns prev' == remAnns x -> pure ()
-                 | otherwise                  -> mifail
+    mconsumeBind' x idx
     pure $ EData xs
   mfillBinds (EData old) = do
     binds      <- rframeBinds <$> topRFrame
@@ -288,7 +315,12 @@ instance MonadInterpret Eval where
       $   V.toList
       .   V.imapMaybe (\idx x -> (idx + 1, ) <$> x)
       <$> V.freeze binds
-    let new = substBinds idxSplices old
+    let idxSplicesPrint = T.concat
+          (map (\(idx, x) -> "\n  " <> pprint idx <> ": " <> pprint x)
+               idxSplices
+          )
+    mlog "Subst" $ "Subst: " <> idxSplicesPrint
+    new <- substBinds idxSplices old
     pure $ EData new
 
 instance Printable GFrame where
@@ -325,9 +357,6 @@ printFrames frms = do
 
 logFrames :: T.Text -> Eval a -> Eval a
 logFrames desc action = do
-  bfrms  <- Eval $ evalStateFrames <$> get
-  pbfrms <- printFrames bfrms
-  mlog "Stack" $ "Before " <> desc <> ": " <> pbfrms
   res    <- action
   afrms  <- Eval $ evalStateFrames <$> get
   pafrms <- printFrames afrms
@@ -348,6 +377,42 @@ mdropStxInput :: St.InputStream (Idd Stx) -> Int -> Eval ()
 mdropStxInput inp len = do
   suc <- mliftIO StageReadInput $ St.dropn len inp
   unless suc $ fail "can't drop items"
+
+mconsumeBind' :: Value Range -> Int -> Eval ()
+mconsumeBind' x idx = do
+  binds <- rframeBinds <$> topRFrame
+  prev  <- mliftIO StageEval $ MV.read binds (idx - 1)
+  case prev of
+    Nothing    -> pure ()
+    Just prev' -> mlog "Consume" $ "Prev: " <> pprint prev'
+  case prev of
+    Nothing -> mliftIO StageEval $ MV.write binds (idx - 1) $ Just x
+    Just prev' | prev' =$= x -> pure ()
+               | otherwise   -> mifail
+
+mresolveGroup :: GroupRef Range -> Eval (GroupRef Range)
+mresolveGroup (GroupRef ann loc@(GroupLocGlobal _ _) vprops gprops) = do
+  (vprops', gprops') <- mresolveProps vprops gprops
+  pure $ GroupRef ann loc vprops' gprops'
+mresolveGroup (GroupRef _ (GroupLocLocal _ idx) vprops gprops) = do
+  GroupRef _ loc vprops2 gprops2 <- mresolveLocalGroup idx
+  (vprops', gprops')             <- mresolveProps vprops gprops
+  pure $ GroupRef r0 loc (vprops2 ++ vprops') (gprops2 ++ gprops')
+
+mresolveLocalGroup :: Int -> Eval (GroupRef Range)
+mresolveLocalGroup idx = (V.! (idx - 1)) . rframeLocalGroups <$> topRFrame
+
+mresolveProps
+  :: [Value Range] -> [GroupRef Range] -> Eval ([Value Range], [GroupRef Range])
+mresolveProps vprops gprops = Eval $ do
+  noFrames <- null . evalStateFrames <$> get
+  if noFrames
+    then pure (vprops, gprops)
+    else
+      unEval
+      $   (,)
+      <$> mapM (fmap unEData . mfillBinds . EData) vprops
+      <*> mapM mresolveGroup                       gprops
 
 dupRFrame :: RFrame -> Eval RFrame
 dupRFrame (RFrame bnds grps) = RFrame <$> liftIO (MV.clone bnds) <*> pure grps
@@ -391,13 +456,12 @@ mrunJs fjs = Eval $ do
   unEval $ mliftIO StageEvalStx $ fjs session
 
 initialState :: EvalState
-initialState = EvalState { evalStatePath     = error "not set"
-                         , evalStateSession  = error "not set"
-                         , evalStateCreds    = error "not set"
-                         , evalStateGroups   = error "not set"
-                         , evalStatePanicMsg = Nothing
-                         , evalStateCStack   = []
-                         , evalStateFrames   = []
+initialState = EvalState { evalStatePath    = error "not set"
+                         , evalStateSession = error "not set"
+                         , evalStateCreds   = error "not set"
+                         , evalStateGroups  = error "not set"
+                         , evalStateCStack  = []
+                         , evalStateFrames  = []
                          }
 
 runEval :: GlobalPipe -> Eval () -> SessionRes ()

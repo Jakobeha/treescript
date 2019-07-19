@@ -52,7 +52,7 @@ exprParser =
   spliceParser = (P.<?> "splice") $ P.try
     (  P.char '\\'
     *> (   StxSplice
-       <$> (P.option False $ True <$ P.string "...")
+       <$> P.option False (True <$ P.string "...")
        <*> ((+ 1) <$> P.decimal)
        )
     )
@@ -63,29 +63,26 @@ exprParser =
       <|> (StxBlock '{' <$> (P.char '{' *> blobParser (P.char '}')))
 
 iddParser :: P.Parser (Idd Stx)
-iddParser = Idd U.nil <$> exprParser
+iddParser = mkIdd <$> many P.space <*> exprParser <*> many P.space
+  where mkIdd pre expr post = Idd U.nil (T.pack pre) (T.pack post) expr
 
 blobParser :: P.Parser a -> P.Parser StxBlob
-blobParser end =
-  (P.<?> "syntax")
-    $  fmap StxBlob
-    $  P.skipSpace
-    *> ((iddParser <* P.skipSpace) `P.manyTill` end)
+blobParser end = (P.<?> "syntax") $ fmap StxBlob $ iddParser `P.manyTill` end
 
 astParser :: P.Parser StxBlob
 astParser = blobParser P.endOfInput
 
 annotateId1 :: Idd Stx -> IO (Idd Stx)
-annotateId1 (Idd uid stx) | U.null uid = (`Idd` stx) <$> U.nextRandom
-                          | otherwise  = pure $ Idd uid stx
+annotateId1 idd'@(Idd uid pre post stx) | U.null uid = mkIdd <$> U.nextRandom
+                                        | otherwise  = pure idd'
+  where mkIdd uid' = Idd uid' pre post stx
 
 parseStxStream :: S.InputStream T.Text -> IO (S.InputStream (Idd Stx))
 parseStxStream = S.mapM (traverseStx TStxIdd TStxIdd annotateId1)
   <=< S.parserToInputStream parser
  where
   parser =
-    (Nothing <$ P.try (P.skipSpace *> P.endOfInput))
-      <|> (Just <$> (P.skipSpace *> iddParser))
+    (Nothing <$ P.try (P.skipSpace *> P.endOfInput)) <|> (Just <$> iddParser)
 
 parseStxText
   :: (Monad m, MonadCatch m, MonadIO m, MonadResult m) => T.Text -> m StxBlob

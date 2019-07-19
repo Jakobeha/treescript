@@ -14,6 +14,7 @@ module TreeScript.Ast.Core.Types.Value
   )
 where
 
+import           TreeScript.Ast.Core.Types.BindEq
 import           TreeScript.Ast.Core.Types.Stx
 import           TreeScript.Misc
 import           TreeScript.Plugin
@@ -126,6 +127,20 @@ instance Semigroup MType where
 instance Monoid MType where
   mempty = xBottom
 
+instance BindEq (Symbol a) where
+  x =$= y = remAnns x == remAnns y
+
+instance BindEq (Primitive a) where
+  x =$= y = remAnns x == remAnns y
+
+instance BindEq (Value a) where
+  ValuePrimitive (PrimStx _ x) =$= ValuePrimitive (PrimStx _ y) = x =$= y
+  ValuePrimitive x =$= ValuePrimitive y = x =$= y
+  ValueRecord (Record _ xhead xprops) =$= ValueRecord (Record _ yhead yprops) =
+    xhead =$= yhead && and (zipWith (=$=) xprops yprops)
+  ValueBind _ =$= _           = error "can't compare binds for bind equality"
+  _           =$= ValueBind _ = error "can't compare binds for bind equality"
+  _           =$= _           = False
 
 instance Printable PrimType where
   pprint PrimTypeInteger = "int"

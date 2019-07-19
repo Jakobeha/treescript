@@ -19,7 +19,6 @@ module TreeScript.Interpret.Gen
   , MonadInterpret(..)
   , mifail
   , misucceed
-  , mieof
   , mipanic
   , madvanceGroup
   , mreduceLocal
@@ -32,6 +31,7 @@ import           TreeScript.Ast
 import           TreeScript.Misc
 import           TreeScript.Plugin
 
+import           Control.Concurrent.MVar
 import           Control.Monad.Reader
 import           Control.Monad.Extra
 import qualified Data.Map.Strict               as M
@@ -47,7 +47,7 @@ data GlobalPipe
 
 data LocalPipe
   = LocalPipe
-  { localPipeInput :: Either (St.InputStream (Idd Stx)) (Value Range)
+  { localPipeInput :: Either (St.InputStream (Idd Stx)) (MVar (Maybe (Value Range)))
   , localPipeOutput :: St.OutputStream (Either (Idd Stx) (Value Range))
   , localPipeGetOutputRaw :: IO [Either (Idd Stx) (Value Range)]
   }
@@ -57,6 +57,7 @@ data Pipe
   | PipeLocal LocalPipe
 
 type IText m = IData m T.Text
+type IStxList m = IData m [Idd Stx]
 type ILanguage m = IData m Language
 type IType m = IData m SType
 type IValue m = IData m (Value Range)
@@ -82,10 +83,9 @@ class (Functor (IData m), Monad m) => MonadInterpret m where
   mloadStart :: m ()
   mloadEnd :: m ()
   mloadInits :: [LStxBlob] -> m ()
-  mcatchEOF :: m () -> m ()
   mcatchFail :: m () -> m ()
   mcatchSuccess :: m () -> m ()
-  mjmpEof :: m a
+  mcatchPanic :: m () -> m ()
   mjmpFail :: m a
   mjmpSucceed :: m a
   mjmpPanic :: T.Text -> m a
@@ -98,6 +98,7 @@ class (Functor (IData m), Monad m) => MonadInterpret m where
   mdupRFrame :: m ()
   mpopRFrame :: m ()
   mtransformI :: IPipe m -> IGroup m -> m ()
+  mcheckEof :: IPipe m -> m Bool
   -- | Fails if not enough input left
   mpeekInput :: IPipe m -> Int -> m (IValue m)
   mdropInput :: IPipe m -> Int -> m ()
@@ -114,7 +115,13 @@ class (Functor (IData m), Monad m) => MonadInterpret m where
   mresolveGlobal :: Symbol Range -> m (IGroup m)
   madvanceLocalGroup :: IValue m -> Range -> Range -> Int -> [Value Range] -> [GroupRef Range] -> m (IValue m)
   mcheckLengthEq :: IValue m -> Int -> m ()
+  mcheckStxListEmpty :: IStxList m -> m ()
   mvalList1 :: IValue m -> m (IValueList m)
+  mconsumeStxLang :: IValueList m -> Language -> m (IStxList m, IValueList m)
+  mconsumeStxPrim :: IStxList m -> Stx -> m (IStxList m)
+  mconsumeStxBlockDelim :: IStxList m -> Char -> m (IStxList m)
+  mconsumeStxTrue :: IStxList m -> Bool -> m (IStxList m)
+  mconsumeStxBind :: IStxList m -> Bool -> Int -> m (IStxList m)
   mconsumePrim :: IValueList m -> Primitive Range -> m (IValueList m)
   mconsumeRecordHead :: IValueList m -> Symbol Range -> Int -> m (IValueList m)
   mconsumeTrue :: IValueList m -> m (IValueList m)
@@ -150,18 +157,45 @@ misucceed = do
   mlog "Control" "* Succeed"
   mjmpSucceed
 
-mieof :: (MonadInterpret m) => m a
-mieof = do
-  mlog "Control" "* Eof"
-  mjmpEof
-
 mipanic :: (MonadInterpret m) => T.Text -> m a
 mipanic msg = do
   mlog "Control" $ "** Panic: " <> msg
   mjmpPanic msg
 
+muntilEof :: (MonadInterpret m) => IPipe m -> m () -> m ()
+muntilEof pipe x = do
+  eof <- mcheckEof pipe
+  unless eof $ do
+    x
+    muntilEof pipe x
+
+mconsumeStx1 :: (MonadInterpret m) => IStxList m -> Idd Stx -> m (IStxList m)
+mconsumeStx1 old (Idd _ _ _ (StxBlock delim (StxBlob stxs))) = do
+  old' <- mconsumeStxBlockDelim old delim
+  foldM mconsumeStx1 old' stxs
+mconsumeStx1 old (Idd _ _ _ (StxSplice elp 0)) = do
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Bind 0 -> " <> oldp
+  mconsumeStxTrue old elp
+mconsumeStx1 old (Idd _ _ _ (StxSplice elp idx)) = do
+  oldp <- mprint old
+  mlog "Consume" $ "  Consume Bind " <> pprint idx <> " -> " <> oldp
+  mconsumeStxBind old elp idx
+mconsumeStx1 old stxp = mconsumeStxPrim old $ idd stxp
+
 mconsume1
   :: (MonadInterpret m) => IValueList m -> Value Range -> m (IValueList m)
+mconsume1 old (ValuePrimitive (PrimStx _ (LStxBlob lang (StxBlob stxs)))) = do
+  oldp <- mprint old
+  mlog "Consume"
+    $  "  Consume Syntax Head: "
+    <> oldp
+    <> " -> "
+    <> languageExt lang
+  (oldl, restVal) <- mconsumeStxLang old lang
+  restStx         <- foldM mconsumeStx1 oldl stxs
+  mcheckStxListEmpty restStx
+  pure restVal
 mconsume1 old (ValuePrimitive inp) = do
   oldp <- mprint old
   mlog "Consume" $ "  Consume Primitive: " <> pprint inp <> " -> " <> oldp
@@ -308,21 +342,25 @@ mtransformD
   -> IValue m
   -> m (IValue m)
 mtransformD grp inVProps inGProps new = do
-  pipe <- mmkLocalPipe new
-  mcatchEOF $ forever $ do
+  lpipe <- mmkLocalPipe new
+  let pipe = PipeLocal <$> lpipe
+  muntilEof pipe $ do
     mpushGFrame inVProps inGProps
     mcatchSuccess $ do
-      mtransformI (PipeLocal <$> pipe) grp -- pops GFrame
+      mtransformI pipe grp -- pops GFrame
       mipanic "didn't succeed or fail"
-  mgetLocalPipeOut pipe
+  mgetLocalPipeOut lpipe
 
 mtransformMain :: (MonadInterpret m) => IGroup m -> m ()
 mtransformMain grp = do
-  pipe <- mgetGlobalPipe
+  gpipe <- mgetGlobalPipe
+  let pipe = PipeGlobal <$> gpipe
   mpushGFrame [] []
-  mcatchSuccess $ do
-    mcatchFail $ mtransformI (PipeGlobal <$> pipe) grp
-    mipanic "can't transform this value"
+  muntilEof pipe $ do
+    mlog "Interpret" "Move Index"
+    mcatchSuccess $ do
+      mcatchFail $ mtransformI pipe grp
+      mipanic "can't transform this value"
 
 minterpret :: (MonadInterpret m) => Program Range -> m ()
 minterpret (Program _ pth _ _ _ _ its creds grps) = do
@@ -336,8 +374,6 @@ minterpret (Program _ pth _ _ _ _ its creds grps) = do
                                , symbolModule = pth
                                , symbol       = "Main"
                                }
-  mcatchEOF $ forever $ do
-    mlog "Interpret" "Move Index"
-    mtransformMain grp
+  mcatchPanic $ mtransformMain grp
   mlog "Interpret" "Finishing"
   mloadEnd

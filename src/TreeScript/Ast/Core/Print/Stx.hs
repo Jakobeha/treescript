@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module TreeScript.Ast.Core.Print.Stx
   ( printStxStream
   )
@@ -15,5 +13,5 @@ import qualified System.IO.Streams             as S
 
 printStxStream
   :: S.OutputStream B.ByteString -> SessionRes (S.OutputStream (Idd Stx))
-printStxStream = liftIOAndCatch StageWriteOutput
-  . S.contramap (T.encodeUtf8 . (<> "\n") . pprint)
+printStxStream =
+  liftIOAndCatch StageWriteOutput . S.contramap (T.encodeUtf8 . pprint)

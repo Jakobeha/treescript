@@ -8,11 +8,13 @@ module TreeScript.Misc.Ext.Text
   , unescapeChar
   , escapeString
   , indent
+  , indentN
   , bullet
   , blockQuote
-  ) where
+  )
+where
 
-import qualified Data.Text as T
+import qualified Data.Text                     as T
 
 -- | Decode an integer from text.
 parseInt :: T.Text -> Int
@@ -28,9 +30,8 @@ unescapeString str = T.pack $ read $ "\"" ++ T.unpack str ++ "\""
 
 -- | Decode a single character from an escape sequence.
 unescapeChar :: T.Text -> Char
-unescapeChar str
-  | T.length unescaped == 1 = T.head unescaped
-  | otherwise = error "unescapeChar: not a single character"
+unescapeChar str | T.length unescaped == 1 = T.head unescaped
+                 | otherwise = error "unescapeChar: not a single character"
   where unescaped = unescapeString str
 
 -- | Convert all escapable characters into their escape sequences.
@@ -41,9 +42,18 @@ escapeString str = T.drop 1 $ T.dropEnd 1 $ T.pack $ show $ T.unpack str
 indentRest :: T.Text -> T.Text
 indentRest = T.replace "\n" "\n  "
 
+
 -- | Also indents the first line.
 indent :: T.Text -> T.Text
 indent txt = "  " <> indentRest txt
+
+-- | Doesn't indent the first line.
+indentRestN :: Int -> T.Text -> T.Text
+indentRestN n = T.replace "\n" $ "\n" <> T.replicate n "  "
+
+-- | Also indents the first line.
+indentN :: Int -> T.Text -> T.Text
+indentN n txt = T.replicate n "  " <> indentRestN n txt
 
 -- | Formats into a Markdown-style bulleted list item.
 bullet :: T.Text -> T.Text
