@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
 
@@ -13,12 +14,11 @@ module TreeScript.Misc.IO.CmdProgram
   )
 where
 
+import           TreeScript.Misc.Print
 import           TreeScript.Misc.Error
+import           TreeScript.Misc.Ext
 
 import           Control.Monad
-import           Control.Monad.Catch
-import           Control.Monad.Fail
-import           Control.Monad.IO.Class
 import qualified Data.ByteString               as B
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
@@ -31,21 +31,15 @@ import           System.Process
 -- | Represents an external command-line program.
 data CmdProgram
   = CmdProgram
-  { cmdProgramStage :: Stage
-  , cmdProgramPath :: FilePath
+  { cmdProgramPath :: FilePath
   , cmdProgramEnv :: [(String, String)]
   } deriving (Read, Show)
 
-convertErr :: Stage -> T.Text -> Error
-convertErr stage err =
-  Error { errorStage = stage, errorRange = r0, errorMsg = err }
-
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
 runCmdProgramArgs
-  :: (MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
-runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
-  let liftCmdIO = liftIOAndCatch stage
-  parentEnv <- liftCmdIO getEnvironment
+  :: (MonadIOEResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
+runCmdProgramArgs (CmdProgram ppath progEnv) args inp = do
+  parentEnv <- liftIOCatch getEnvironment
   let pproc = (proc ppath $ map T.unpack args) { env     = Just
                                                  $  parentEnv
                                                  ++ progEnv
@@ -53,38 +47,33 @@ runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
                                                , std_out = CreatePipe
                                                , std_err = CreatePipe
                                                }
-  (Just pin, Just pout, Just perr, phandle) <- liftCmdIO $ createProcess pproc
+  (Just pin, Just pout, Just perr, phandle) <- liftIOCatch $ createProcess pproc
   -- Not sure why but not setting these encodings sometimes causes an "invalid byte sequence" error
-  liftCmdIO $ hSetEncoding pout latin1
-  liftCmdIO $ hSetEncoding perr latin1
-  liftCmdIO $ T.hPutStr pin inp
-  liftCmdIO $ hClose pin
-  err      <- liftCmdIO $ redirectExceptLast perr
-  exitCode <- liftCmdIO $ waitForProcess phandle
+  liftIOCatch $ hSetEncoding pout latin1
+  liftIOCatch $ hSetEncoding perr latin1
+  liftIOCatch $ T.hPutStr pin inp
+  liftIOCatch $ hClose pin
+  err      <- liftIOCatch $ redirectExceptLast perr
+  exitCode <- liftIOCatch $ waitForProcess phandle
   case exitCode of
     ExitSuccess -> do
-      unless (T.null $ T.strip err) $ liftCmdIO $ T.putStrLn err
-      liftCmdIO $ T.hGetContents pout
+      unless (T.null $ T.strip err) $ liftIOCatch $ T.putStrLn err
+      liftIOCatch $ T.hGetContents pout
     ExitFailure code
       | T.null $ T.strip err
-      -> mkFail
-        $  convertErr stage
-        $  "unknown error (code "
-        <> pprint code
-        <> ")"
+      -> mkFail $ Error Nothing $ "unknown error (code " <> pprint code <> ")"
       | otherwise
-      -> mkFail $ convertErr stage $ T.strip err
+      -> mkFail $ Error Nothing $ T.strip err
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramStreamArgs
-  :: (MonadResult m)
+  :: (MonadIOEResult m)
   => CmdProgram
   -> [T.Text]
   -> S.OutputStream B.ByteString
   -> m (S.OutputStream B.ByteString)
-runCmdProgramStreamArgs (CmdProgram stage ppath progEnv) args out = do
-  let liftCmdIO = liftIOAndCatch stage
-  parentEnv <- liftCmdIO getEnvironment
+runCmdProgramStreamArgs (CmdProgram ppath progEnv) args out = do
+  parentEnv <- liftIOCatch getEnvironment
   let pproc = (proc ppath $ map T.unpack args) { env     = Just
                                                  $  parentEnv
                                                  ++ progEnv
@@ -93,34 +82,33 @@ runCmdProgramStreamArgs (CmdProgram stage ppath progEnv) args out = do
                                                , std_err = Inherit
                                                }
   -- TODO: Use handle for result output stream
-  (Just pin, Just pout, Nothing, _) <- liftCmdIO $ createProcess pproc
+  (Just pin, Just pout, Nothing, _) <- liftIOCatch $ createProcess pproc
   -- Not sure why but not setting these encodings sometimes causes an "invalid byte sequence" error
-  liftCmdIO $ hSetEncoding pin latin1
-  liftCmdIO $ hSetEncoding pout latin1
+  liftIOCatch $ hSetEncoding pin latin1
+  liftIOCatch $ hSetEncoding pout latin1
   sout <-
-    liftCmdIO
+    liftIOCatch
     $   S.lockingInputStream
     =<< S.atEndOfInput (hClose pout)
     =<< S.handleToInputStream pout
   let finish = do
         hClose pin
         S.connect sout out
-  liftCmdIO
+  liftIOCatch
     $   S.lockingOutputStream
     =<< S.atEndOfOutput finish
     =<< S.handleToOutputStream pin
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramFileArgs
-  :: (MonadResult m)
+  :: (MonadIOEResult m)
   => CmdProgram
   -> [T.Text]
   -> FilePath
-  -> m (ResultInputStream T.Text)
-runCmdProgramFileArgs (CmdProgram stage ppath progEnv) args inp = do
-  let liftCmdIO = liftIOAndCatch stage
-  parentEnv <- liftCmdIO getEnvironment
-  pin       <- liftCmdIO $ openFile inp ReadMode
+  -> m (EResultInputStream T.Text)
+runCmdProgramFileArgs (CmdProgram ppath progEnv) args inp = do
+  parentEnv <- liftIOCatch getEnvironment
+  pin       <- liftIOCatch $ openFile inp ReadMode
   let pproc = (proc ppath $ map T.unpack args) { env     = Just
                                                  $  parentEnv
                                                  ++ progEnv
@@ -128,19 +116,19 @@ runCmdProgramFileArgs (CmdProgram stage ppath progEnv) args inp = do
                                                , std_out = CreatePipe
                                                , std_err = Inherit
                                                }
-  (Nothing, Just pout, Nothing, phandle) <- liftCmdIO $ createProcess pproc
+  (Nothing, Just pout, Nothing, phandle) <- liftIOCatch $ createProcess pproc
   -- Not sure why but not setting these encodings sometimes causes an "invalid byte sequence" error
-  liftCmdIO $ hSetEncoding pout latin1
-  out <- liftCmdIO $ S.decodeUtf8 =<< S.handleToInputStream pout
+  liftIOCatch $ hSetEncoding pout latin1
+  out <- liftIOCatch $ S.decodeUtf8 =<< S.handleToInputStream pout
   processInputStream out phandle
 
 -- | Runs the command-line program without arguments.
-runCmdProgram :: (MonadResult m) => CmdProgram -> T.Text -> m T.Text
+runCmdProgram :: (MonadIOEResult m) => CmdProgram -> T.Text -> m T.Text
 runCmdProgram prog = runCmdProgramArgs prog []
 
 -- | Runs the command-line program, passing the output to stdin, and returning a stream from stdout.
 runCmdProgramStream
-  :: (MonadResult m)
+  :: (MonadIOEResult m)
   => CmdProgram
   -> S.OutputStream B.ByteString
   -> m (S.OutputStream B.ByteString)
@@ -148,5 +136,8 @@ runCmdProgramStream prog = runCmdProgramStreamArgs prog []
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramFile
-  :: (MonadResult m) => CmdProgram -> FilePath -> m (ResultInputStream T.Text)
+  :: (MonadIOEResult m)
+  => CmdProgram
+  -> FilePath
+  -> m (EResultInputStream T.Text)
 runCmdProgramFile prog = runCmdProgramFileArgs prog []

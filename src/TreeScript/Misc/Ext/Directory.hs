@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module TreeScript.Misc.File
+module TreeScript.Misc.Ext.Directory
   ( getRealAppDataDirectory
   )
 where

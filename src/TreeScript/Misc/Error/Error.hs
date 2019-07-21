@@ -7,8 +7,8 @@
 -- | Data types for errors.
 module TreeScript.Misc.Error.Error
   ( Stage(..)
+  , SError(..)
   , Error(..)
-  , mkOverlapInOutError
   , exceptionToError
   , prependMsgToErr
   , addRangeToErr
@@ -23,76 +23,58 @@ import qualified Data.Text                     as T
 
 -- | A step in compiling.
 data Stage
-  = StagePluginLoad
+  = StageSetup
   | StageLex
+  | StageBalance
   | StageParse
-  | StageDesugar
-  | StageValidate
-  | StageType
-  | StageCompile
   | StageEval
-  | StageStartLib
-  | StageReadInput
-  | StageUseLib
-  | StageWriteOutput
-  | StageShutdown
   deriving (Eq, Ord, Read, Show)
+
+-- | Error with a stage.
+data SError = SError
+  { serrorStage :: Stage
+  , serror :: Error
+  } deriving (Eq, Ord, Read, Show)
 
 -- | An error which occurs while compiling a program. Fatal and nonfatal errors share this type.
 data Error
   = Error
-  { errorStage :: Stage -- ^ Compile stage the error occurred.
-  , errorRange :: Range -- ^ Where the error occurred. A singleton range if it occurred at a location.
+  { errorRange :: Maybe Range -- ^ Where the error occurred.
   , errorMsg :: T.Text -- ^ Text displayed to the user.
   } deriving (Eq, Ord, Read, Show)
 
 instance Printable Stage where
-  pprint StagePluginLoad  = "loading plugins"
-  pprint StageLex         = "lexing"
-  pprint StageParse       = "parsing"
-  pprint StageDesugar     = "desugaring"
-  pprint StageValidate    = "validating"
-  pprint StageType        = "type checking / casting"
-  pprint StageEval        = "evaluating"
-  pprint StageCompile     = "compiling"
-  pprint StageStartLib    = "starting librares"
-  pprint StageReadInput   = "reading input"
-  pprint StageUseLib      = "using a library"
-  pprint StageWriteOutput = "writing output"
-  pprint StageShutdown    = "shutting down"
+  pprint StageSetup   = "setting up"
+  pprint StageLex     = "parsing"
+  pprint StageBalance = "parsing"
+  pprint StageParse   = "parsing"
+  pprint StageEval    = "evaluating"
 
 instance Printable Error where
-  pprint (Error stage _ msg) = "while " <> pprint stage <> " - " <> msg
+  pprint (Error Nothing    msg) = msg
+  pprint (Error (Just rng) msg) = "at " <> pprint rng <> " - " <> msg
 
--- | Creates an error which occurs when trying to perform an operation which would overwrite its input.
-mkOverlapInOutError :: Stage -> Error
-mkOverlapInOutError stage = Error
-  { errorStage = stage
-  , errorRange = r0
-  , errorMsg   =
-    "input and output are the same, so output would overwrite - will not perform this operation"
-  }
+instance Printable SError where
+  pprint (SError stage err) = "(while " <> pprint stage <> ") " <> pprint err
+
 
 -- | Converts the exception into an error.
-exceptionToError :: Stage -> SomeException -> Error
-exceptionToError stage exc =
-  Error { errorStage = stage, errorRange = r0, errorMsg = pprint exc }
+exceptionToError :: SomeException -> Error
+exceptionToError exc = Error { errorRange = Nothing, errorMsg = pprint exc }
 
 -- | Prepends to the error message.
 prependMsgToErr :: T.Text -> Error -> Error
-prependMsgToErr new (Error stage rng msg) =
-  Error { errorStage = stage, errorRange = rng, errorMsg = new <> " - " <> msg }
+prependMsgToErr new (Error rng msg) =
+  Error { errorRange = rng, errorMsg = new <> " - " <> msg }
 
 -- | Denotes that the error occurred in the given range. Changes its description. Fails if the error has a range.
 addRangeToErr :: Range -> Error -> Error
-addRangeToErr rng err@(Error stage rng' msg)
-  | rng' == r0
-  = Error { errorStage = stage
-          , errorRange = rng
-          , errorMsg   = "at " <> pprint rng <> " - " <> msg
-          }
-  | otherwise
-  = error
+addRangeToErr rng (Error Nothing msg) = Error
+  { errorRange = Just rng
+  , errorMsg   = "at " <> pprint rng <> " - " <> msg
+  }
+addRangeToErr _ err@(Error (Just _) _) =
+  error
     $  "tried to add range to error which already has one ("
     ++ T.unpack (pprint err)
     ++ ")"

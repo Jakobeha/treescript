@@ -6,6 +6,7 @@ where
 
 import           TreeScript.Misc.Ext.Applicative
                                                as M
+import           TreeScript.Misc.Ext.Directory as M
 import           TreeScript.Misc.Ext.Exception as M
 import           TreeScript.Misc.Ext.IO        as M
 import           TreeScript.Misc.Ext.Lifted    as M
