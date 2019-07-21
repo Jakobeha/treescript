@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedLists #-}
 
 -- | Allows the TreeScript compiler to use external command-line programs.
-module TreeScript.Plugin.CmdProgram
+module TreeScript.Misc.IO.CmdProgram
   ( CmdProgram(..)
   , runCmdProgramArgs
   , runCmdProgramStreamArgs
@@ -13,7 +13,7 @@ module TreeScript.Plugin.CmdProgram
   )
 where
 
-import           TreeScript.Misc
+import           TreeScript.Misc.Error
 
 import           Control.Monad
 import           Control.Monad.Catch
@@ -42,11 +42,7 @@ convertErr stage err =
 
 -- | Runs the command-line program, passing the text to stdin, and returning stdout.
 runCmdProgramArgs
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
-  => CmdProgram
-  -> [T.Text]
-  -> T.Text
-  -> m T.Text
+  :: (MonadResult m) => CmdProgram -> [T.Text] -> T.Text -> m T.Text
 runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
   let liftCmdIO = liftIOAndCatch stage
   parentEnv <- liftCmdIO getEnvironment
@@ -81,7 +77,7 @@ runCmdProgramArgs (CmdProgram stage ppath progEnv) args inp = do
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramStreamArgs
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
+  :: (MonadResult m)
   => CmdProgram
   -> [T.Text]
   -> S.OutputStream B.ByteString
@@ -116,7 +112,7 @@ runCmdProgramStreamArgs (CmdProgram stage ppath progEnv) args out = do
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramFileArgs
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
+  :: (MonadResult m)
   => CmdProgram
   -> [T.Text]
   -> FilePath
@@ -139,16 +135,12 @@ runCmdProgramFileArgs (CmdProgram stage ppath progEnv) args inp = do
   processInputStream out phandle
 
 -- | Runs the command-line program without arguments.
-runCmdProgram
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
-  => CmdProgram
-  -> T.Text
-  -> m T.Text
+runCmdProgram :: (MonadResult m) => CmdProgram -> T.Text -> m T.Text
 runCmdProgram prog = runCmdProgramArgs prog []
 
 -- | Runs the command-line program, passing the output to stdin, and returning a stream from stdout.
 runCmdProgramStream
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
+  :: (MonadResult m)
   => CmdProgram
   -> S.OutputStream B.ByteString
   -> m (S.OutputStream B.ByteString)
@@ -156,8 +148,5 @@ runCmdProgramStream prog = runCmdProgramStreamArgs prog []
 
 -- | Runs the command-line program, passing the file to stdin, and returning a stream from stdout.
 runCmdProgramFile
-  :: (MonadIO m, MonadCatch m, MonadFail m, MonadResult m)
-  => CmdProgram
-  -> FilePath
-  -> m (ResultInputStream T.Text)
+  :: (MonadResult m) => CmdProgram -> FilePath -> m (ResultInputStream T.Text)
 runCmdProgramFile prog = runCmdProgramFileArgs prog []

@@ -50,7 +50,7 @@ data Result a
 newtype ResultT u a = ResultT{ runResultT :: u (Result a) } deriving (Functor)
 
 -- | 'Result' monad class.
-class MonadResult m where
+class (Monad m, MonadCatch m, MonadFail m, MonadIO m) => MonadResult m where
   -- | Failed to get a result because of a fatal error.
   mkFail :: Error -> m a
   -- | Raise errors but don't stop computing the result.
@@ -117,13 +117,13 @@ instance (Applicative u) => MonadResult (ResultT u) where
 instance MonadTrans ResultT where
   lift = ResultT . fmap (Result [])
 
-instance (Monad u, MonadResult u) => MonadResult (ReaderT r u) where
+instance (MonadResult u) => MonadResult (ReaderT r u) where
   mkFail     = lift . mkFail
   tellErrors = lift . tellErrors
   overErrors = mapReaderT . overErrors
   downgradeFatal x = ReaderT $ downgradeFatal . runReaderT x
 
-instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
+instance (MonadResult u) => MonadResult (StateT s u) where
   mkFail     = lift . mkFail
   tellErrors = lift . tellErrors
   overErrors = mapStateT . overErrors
@@ -134,7 +134,7 @@ instance (Monad u, MonadResult u) => MonadResult (StateT s u) where
       fillWrite Nothing          = (Nothing, s)
       fillWrite (Just (res, s')) = (Just res, s')
 
-instance (Monoid w, Monad u, MonadResult u) => MonadResult (WriterT w u) where
+instance (Monoid w, MonadResult u) => MonadResult (WriterT w u) where
   mkFail     = lift . mkFail
   tellErrors = lift . tellErrors
   overErrors = mapWriterT . overErrors
@@ -145,7 +145,7 @@ instance (Monoid w, Monad u, MonadResult u) => MonadResult (WriterT w u) where
       fillWrite Nothing          = (Nothing, mempty)
       fillWrite (Just (res, w')) = (Just res, w')
 
-instance (Monoid w, Monad u, MonadResult u) => MonadResult (RWST r w s u) where
+instance (Monoid w, MonadResult u) => MonadResult (RWST r w s u) where
   mkFail     = lift . mkFail
   tellErrors = lift . tellErrors
   overErrors = mapRWST . overErrors
@@ -251,13 +251,12 @@ justSuccess (Result [] x ) = Just x
 justSuccess (Result _  _ ) = Nothing
 
 -- | Fail with the given error if @Nothing@.
-failIfNothing :: (Applicative w, MonadResult w) => Error -> Maybe a -> w a
+failIfNothing :: (MonadResult m) => Error -> Maybe a -> m a
 failIfNothing err Nothing  = mkFail err
 failIfNothing _   (Just x) = pure x
 
 -- | Like 'traverse', but when an element raises a fatal error, instead of completely failing, the element is removed and the error becomes nonfatal.
-traverseDropFatals
-  :: (Applicative w, MonadResult w) => (a -> w b) -> [a] -> w [b]
+traverseDropFatals :: (MonadResult m) => (a -> m b) -> [a] -> m [b]
 traverseDropFatals f = fmap catMaybes . traverse (downgradeFatal . f)
 
 -- | Transforms the underlying monad in a 'ResultT'.
@@ -265,10 +264,9 @@ mapResultT :: (u1 (Result a) -> u2 (Result b)) -> ResultT u1 a -> ResultT u2 b
 mapResultT f (ResultT x) = ResultT $ f x
 
 -- | If an exception is thrown, will catch it and convert it into a fatal error with the given stage.
-catchExceptionToError :: (MonadCatch w, MonadResult w) => Stage -> w a -> w a
+catchExceptionToError :: (MonadResult m) => Stage -> m a -> m a
 catchExceptionToError stage x = x `catch` (mkFail . exceptionToError stage)
 
 -- | Lift the I/O action into a 'ResultT' /and/ catch exceptions.
-liftIOAndCatch
-  :: (MonadIO w, MonadCatch w, MonadResult w) => Stage -> IO a -> w a
+liftIOAndCatch :: (MonadResult m) => Stage -> IO a -> m a
 liftIOAndCatch stage = catchExceptionToError stage . liftIO

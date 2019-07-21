@@ -28,7 +28,7 @@ $large = [A-Z \xc0-\xd6 \xd8-\xde]
 $small = [a-z \xdf-\xf6 \xf8-\xff]
 $alpha = [$small $large]
 $alphaNum = [$alpha $digit \_]
-$asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\(\)\,\;\[\]\`\{\}]
+$asciiSymbol = [\!\#\$\%\&\*\+\.\/\<\=\>\?\@\\\^\|\-\~\:\,\;\`]
 $unicodeSymbol = [] -- TODO
 $symbol = [$asciiSymbol $unicodeSymbol]
 $escapeChar = [abfnrtv\\\"\'\&]
@@ -60,27 +60,20 @@ treescript :-
 <0> \/ \/ .* { skip }
 
 <0> \/ \* { enterBlockComment `andBegin` state_comment }
-<0> \' { enterCodeBlock True `andBegin` state_code_block }
+<0> \' { enterString QuoteSingle `andBegin` state_string }
+<0> \" { enterString QuoteDouble `andBegin` state_string }
+<0> \\ { enterString QuoteSplice `andBegin` state_string }
 
-<0> @ellipsis { mkPunc PuncEllipsis } -- Always results in a parser error, but ok here
-<0> \_ { mkPunc PuncUnderscore }
-<0> \& { mkPunc PuncAnd }
-<0> \\ { mkPunc PuncBackSlash }
-<0> \@ { mkPunc PuncAt }
-<0> \- \> { mkPunc PuncFwdArrow }
-<0> \< \- { mkPunc PuncBwdArrow }
-<0> \= \> { mkPunc PuncFwdEq }
-<0> \| { mkPunc PuncVerticalBar }
-<0> \! { mkPunc PuncExclamation }
-<0> \. { mkPunc PuncPeriod }
-<0> \; { mkPunc PuncSemicolon }
-<0> \, { mkPunc PuncComma }
-<0> \[ { mkPunc PuncOpenBracket }
-<0> \] { mkPunc PuncCloseBracket }
+<0> $symbol { mkPunc } -- Always results in a parser error, but ok here
+<0> \( { mkEnc (Enclosure EncTypeParen EncPlaceOpen) }
+<0> \) { mkEnc (Enclosure EncTypeParen EncPlaceClose) }
+<0> \[ { mkEnc (Enclosure EncTypeBrace EncPlaceOpen) }
+<0> \] { mkEnc (Enclosure EncTypeBrace EncPlaceClose) }
+<0> \{ { mkEnc (Enclosure EncTypeBracket EncPlaceOpen) }
+<0> \} { mkEnc (Enclosure EncTypeBracket EncPlaceClose) }
 
-<0> @integer { mkPrim (PrimInteger . mapAnnd T.parseInt) }
-<0> @float { mkPrim (PrimFloat . mapAnnd T.parseFloat) }
-<0> \" @string* \" { mkPrim (PrimString . mapAnnd (T.pack . read . T.unpack)) }
+<0> @integer { mkPrim (PrimInteger . T.parseInt) }
+<0> @float { mkPrim (PrimFloat . T.parseFloat) }
 
 <0> @lowerSymbol { mkSymbol SymbolCaseLower }
 <0> @upperSymbol { mkSymbol SymbolCaseUpper }
@@ -89,19 +82,18 @@ treescript :-
 <state_comment> \* \/ { unnestBlockComment }
 <state_comment> . ;
 <state_comment> \n { skip }
-<state_code_block> \' { exitCodeBlock True `andBegin` initialState }
-<state_code_block> \\ \' { addCharToCodeBlock '\'' }
-<state_code_block> \\ \\ { addCharToCodeBlock '\\' }
-<state_code_block> \\ { exitCodeBlock False `andBegin` state_code_block_bind }
-<state_code_block> [. \n] { addCurrentToCodeBlock }
-<state_code_block_bind> @ellipsis { mkPunc PuncEllipsis }
-<state_code_block_bind> @lowerSymbol { exitCodeBlockSplice (\str -> LexemeSymbol $ Symbol str SymbolCaseLower) `andBegin` state_code_block }
-<state_code_block_bind> @decimal { exitCodeBlockSplice (LexemePrim . PrimInteger . mapAnnd T.parseInt) `andBegin` state_code_block }
-<state_code_block_bind> \_ { exitCodeBlockSplice (LexemePunc . PuncUnderscore . getAnn) `andBegin` state_code_block }
+<state_string> \' \' { addCharToString '\'' }
+<state_string> \" \" { addCharToString '"' }
+<state_string> \\ \\ { addCharToString '\\' }
+<state_string> \' { exitString QuoteSingle `andBegin` initialState }
+<state_string> \" { exitString QuoteDouble `andBegin` initialState }
+<state_string> \\ { exitString QuoteSplice `andBegin` initialState }
+<state_string> [. \n] { addCurrentToString }
 
 {
 
-type Action = AlexAction (Lexeme Range)
+type Action = AlexAction SLex
+type SimpleAction = T.Text -> Alex Lex
 
 -- = Conversion helpers
 
@@ -116,17 +108,30 @@ convertLoc (AlexPn off line col)
 convertStr :: ByteString.ByteString -> T.Text
 convertStr = T.L.toStrict . T.L.decodeUtf8
 
-convertInput :: AlexInput -> Int64 -> (Loc, T.Text)
-convertInput (pos, _, str, _) len
-  = (convertLoc pos, convertStr $ ByteString.take (fromIntegral len) str)
+inputStartLoc :: AlexInput -> Loc
+inputStartLoc (pos, _, _, _) len = convertLoc pos
+
+inputText :: AlexInput -> Int64 -> T.Text
+inputText (_, _, str, _) len
+  = convertStr $ ByteString.take (fromIntegral len) str
 
 inputEndLoc :: AlexInput -> Int64 -> Loc
-inputEndLoc inp len = advanceLoc loc str
-  where (loc, str) = convertInput inp len
+inputEndLoc inp len = advanceLoc loc txt
+  where loc = inputStartLoc inp
+        txt = inputEndLoc inp len
 
-inputRange :: AlexInput -> Int64 -> Range
-inputRange inp len = mkRange loc str
-  where (loc, str) = convertInput inp len
+inputAnn :: AlexInput -> Int64 -> SrcAnn
+inputAnn inp len
+  = SrcAnn
+  { srcAnnRange = mkRange loc txt
+  , srcAnnText = txt
+  }
+  where loc = inputStartLoc inp
+        txt = inputText inp len
+
+liftAction :: SimpleAction -> Action
+liftAction action inp len = Annd ann <$> action (annText ann)
+  where ann = inputAnn inp len
 
 -- = States
 
@@ -138,20 +143,22 @@ initialState = 0
 data AlexUserState
   = AlexUserState
   { lexerCommentDepth  :: Int
-  , lexerCodeBlockState :: Bool
-  , lexerCodeBlockStartLoc :: Loc
-  , lexerCodeBlockStart :: Bool
-  , lexerCodeBlockValue :: String
+  , lexerStringState :: Bool
+  , lexerStringStartLoc :: Loc
+  , lexerStringStart :: Quote
+  , lexerStringValue :: String
+  , lexerStringRaw :: String
   }
 
 alexInitUserState :: AlexUserState
 alexInitUserState
   = AlexUserState
   { lexerCommentDepth = 0
-  , lexerCodeBlockState = False
-  , lexerCodeBlockStartLoc = undefined
-  , lexerCodeBlockStart = undefined
-  , lexerCodeBlockValue = undefined
+  , lexerStringState = False
+  , lexerStringStartLoc = undefined
+  , lexerStringStart = undefined
+  , lexerStringValue = undefined
+  , lexerStringRaw = undefined
   }
 
 getUserStateProp :: (AlexUserState -> a) -> Alex a
@@ -168,61 +175,59 @@ getLexerCommentDepth = getUserStateProp lexerCommentDepth
 setLexerCommentDepth :: Int -> Alex ()
 setLexerCommentDepth new = setUserStateProp $ \ust -> ust{ lexerCommentDepth = new }
 
-getLexerCodeBlockState :: Alex Bool
-getLexerCodeBlockState = getUserStateProp lexerCodeBlockState
+getLexerStringState :: Alex Bool
+getLexerStringState = getUserStateProp lexerStringState
 
-setLexerCodeBlockState :: Bool -> Alex ()
-setLexerCodeBlockState new = setUserStateProp $ \ust -> ust{ lexerCodeBlockState = new }
+setLexerStringState :: Bool -> Alex ()
+setLexerStringState new = setUserStateProp $ \ust -> ust{ lexerStringState = new }
 
-getLexerCodeBlockStartLoc :: Alex Loc
-getLexerCodeBlockStartLoc = getUserStateProp lexerCodeBlockStartLoc
+getLexerStringStartLoc :: Alex Loc
+getLexerStringStartLoc = getUserStateProp lexerStringStartLoc
 
-setLexerCodeBlockStartLoc :: Loc -> Alex ()
-setLexerCodeBlockStartLoc new = setUserStateProp $ \ust -> ust{ lexerCodeBlockStartLoc = new }
+setLexerStringStartLoc :: Loc -> Alex ()
+setLexerStringStartLoc new = setUserStateProp $ \ust -> ust{ lexerStringStartLoc = new }
 
-getLexerCodeBlockStart :: Alex Bool
-getLexerCodeBlockStart = getUserStateProp lexerCodeBlockStart
+getLexerStringStart :: Alex Quote
+getLexerStringStart = getUserStateProp lexerStringStart
 
-setLexerCodeBlockStart :: Bool -> Alex ()
-setLexerCodeBlockStart new = setUserStateProp $ \ust -> ust{ lexerCodeBlockStart = new }
+setLexerStringStart :: Quote -> Alex ()
+setLexerStringStart new = setUserStateProp $ \ust -> ust{ lexerStringStart = new }
 
-getLexerCodeBlockValue :: Alex String
-getLexerCodeBlockValue = getUserStateProp lexerCodeBlockValue
+getLexerStringValue :: Alex String
+getLexerStringValue = getUserStateProp lexerStringValue
 
-setLexerCodeBlockValue :: String -> Alex ()
-setLexerCodeBlockValue new = setUserStateProp $ \ust -> ust{ lexerCodeBlockValue = new }
+setLexerStringValue :: String -> Alex ()
+setLexerStringValue new = setUserStateProp $ \ust -> ust{ lexerStringValue = new }
 
-addCharToLexerCodeBlockValue :: Char -> Alex ()
-addCharToLexerCodeBlockValue chr = do
-  str <- getLexerCodeBlockValue
-  setLexerCodeBlockValue $ chr : str
+getLexerStringRaw :: Alex String
+getLexerStringRaw = getUserStateProp lexerStringRaw
+
+setLexerStringRaw :: String -> Alex ()
+setLexerStringRaw new = setUserStateProp $ \ust -> ust{ lexerStringRaw = new }
+
+addCharToLexerString :: Char -> String -> Alex ()
+addCharToLexerString vchr rhd = do
+  vstr <- getLexerStringRaw
+  rstr <- getLexerStringRaw
+  setLexerStringValue $ vchr : vstr
+  setLexerStringRaw $ rhd ++ rstr
 
 -- = Lexeme Constructors
 
-alexEOF :: Alex (Lexeme Range)
+alexEOF :: Alex SLex
 alexEOF = do
-  (pos, _, _, _) <- alexGetInput
-  return $ LexemePunc $ PuncEof $ singletonRange $ convertLoc pos
+  inp <- alexGetInput
+  let ann = SrcAnn{ srcAnnRange = singletonRange $ inputStartLoc inp, srcAnnText = "" }
+  pure $ Annd ann LexEof
 
-mkPunc :: (Range -> Punc Range) -> Action
-mkPunc punc inp len
-  = return $ LexemePunc $ punc rng
-  where rng = inputRange inp len
+mkPunc :: Action
+mkPunc = liftAction . pure . LexPunc . T.head
 
-mkPrim :: (Annd T.Text Range -> Primitive Range) -> Action
-mkPrim mk inp len
-  = return $ LexemePrim $ mk $ Annd rng str
-  where (loc, str) = convertInput inp len
-        rng = mkRange loc str
+mkPrim :: (T.Text -> Primitive) -> Action
+mkPrim mk = liftAction . pure . LexemePrim . mk
 
 mkSymbol :: SymbolCase -> Action
-mkSymbol cas inp len
-  = return $ LexemeSymbol Symbol
-      { symbolCase = cas
-      , symbolText = Annd rng str
-      }
-  where (loc, str) = convertInput inp len
-        rng = mkRange loc str
+mkSymbol cas = liftAction . pure . LexemeSymbol . Symbol cas
 
 -- == State-changing Constructors
 
@@ -244,52 +249,49 @@ unnestBlockComment input len = do
   when (depth == 1) $ alexSetStartCode initialState
   skip input len
 
-enterCodeBlockDirect :: Bool -> Loc -> Alex ()
-enterCodeBlockDirect isStart startLoc = do
-  setLexerCodeBlockState True
-  setLexerCodeBlockStartLoc startLoc
-  setLexerCodeBlockStart isStart
-  setLexerCodeBlockValue ""
+enterQuoteDirect :: Quote -> Loc -> Alex ()
+enterQuoteDirect isStart startLoc = do
 
-enterCodeBlock :: Bool -> Action
-enterCodeBlock isStart (pos, _, _, _) _ = do
-  enterCodeBlockDirect isStart $ convertLoc pos
+enterString :: Quote -> Action
+enterString squot inp _ = do
+  setLexerStringState True
+  setLexerStringStartLoc $ inputStartLoc inp
+  setLexerStringStart squot
+  setLexerStringValue ""
+  setLexerStringRaw
   alexMonadScan
 
-addCharToCodeBlockDirect :: Char -> Alex (Lexeme Range)
-addCharToCodeBlockDirect chr = do
-  addCharToLexerCodeBlockValue chr
+addCharToStringDirect :: Char -> String -> Alex (Lexeme Range)
+addCharToStringDirect chr str = do
+  addCharToLexerString chr str
   alexMonadScan
 
-addCharToCodeBlock :: Char -> Action
-addCharToCodeBlock chr _ _ = addCharToCodeBlockDirect chr
+addCharToString :: Char -> Action
+addCharToString chr inp len = addCharToStringDirect chr str
+  where str = T.unpack $ inputText inp len
 
-addCurrentToCodeBlock :: Action
-addCurrentToCodeBlock (_, _, str, _) len = addCharToCodeBlockDirect chr
+addCurrentToString :: Action
+addCurrentToString inp@(_, _, rst, _) len = addCharToStringDirect chr str
   where chr
-          | len == 1 = B.C.head str
-          | otherwise = error "addCurrentToCodeBlock: not a single character"
+          | len == 1 = B.C.head rst
+          | otherwise = error "addCurrentToString: not a single character"
+        str = T.unpack $ inputText inp len
 
-exitCodeBlock :: Bool -> Action
-exitCodeBlock isEnd inp len = do
-  contentStr <- T.pack . reverse <$> getLexerCodeBlockValue
-  setLexerCodeBlockState False
-  startLoc <- getLexerCodeBlockStartLoc
-  isStart <- getLexerCodeBlockStart
-  let rng = Range{ rangeStart = startLoc, rangeEnd = inputEndLoc inp len }
-  return $ LexemePrim $ PrimCode SpliceFrag
+exitString :: Quote -> Action
+exitString equot inp len = do
+  vtxt <- T.pack . reverse <$> getLexerStringValue
+  rtxt <- T.pack . reverse <$> getLexerStringRaw
+  setLexerStringState False
+  startLoc <- getLexerStringStartLoc
+  let endLoc = inputEndLoc inp len
+  squot <- getLexerStringStart
+  let rng = Range{ rangeStart = startLoc, rangeEnd = endLoc }
+      ann = SrcAnn{ srcAnnRange = rng, srcAnnText = rtxt }
+  pure $ Annd ann $ LexemePrim $ PrimCode SpliceFrag
     { spliceFragStart = isStart
     , spliceFragEnd = isEnd
-    , spliceFragContent = Annd rng contentStr
+    , spliceFragContent = vtxt
     }
-
-exitCodeBlockSplice :: (Annd T.Text Range -> Lexeme Range) -> Action
-exitCodeBlockSplice f inp len = do
-  let (loc, str) = convertInput inp len
-      rng = mkRange loc str
-      sb = f $ Annd rng str
-  enterCodeBlockDirect False $ rangeEnd rng
-  return sb
 
 -- = Execution
 
@@ -329,22 +331,22 @@ unexpectedCharsError = do
 scanner :: ByteString.ByteString -> Either String [Lexeme Range]
 scanner str = runAlex str scanRest
   where scanRest = do
-          (tok, errMsgOpt) <- alexComplementError alexMonadScan
+          (next, errMsgOpt) <- alexComplementError alexMonadScan
           case errMsgOpt of
             Nothing -> pure ()
             Just _ -> unexpectedCharsError
           case tok of
-            LexemePunc (PuncEof _) -> do
-              inCodeBlock <- getLexerCodeBlockState
+            Annd _ LexEof -> do
+              inString <- getLexerStringState
               inComment <- (/= 0) <$> getLexerCommentDepth
-              case (inCodeBlock, inComment) of
+              case (inString, inComment) of
                 (True, True) -> error "lexer in multiple states at once"
-                (True, False) -> lexerError "code block not closed at end of file"
+                (True, False) -> lexerError "string or code not closed at end of file"
                 (False, True) -> lexerError "comment not closed at end of file"
-                (False, False) -> return [tok]
+                (False, False) -> pure [tok]
             _ -> do
               toks <- scanRest
-              return $ tok : toks
+              pure $ tok : toks
 
 parse :: T.Text -> Result (Program Range)
 parse str
@@ -357,6 +359,5 @@ parse str
                   , errorMsg = T.pack errMsg
                   }
                 _ -> error $ "bad lexer error format: " ++ locAndErrMsg
-         Right lexemes -> Result S.empty $ Program $ Annd rng lexemes
-           where rng = mkRange loc1 str
+         Right lexemes -> Result S.empty $ Program lexemes
 }

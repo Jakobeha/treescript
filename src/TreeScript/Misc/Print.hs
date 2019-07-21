@@ -1,41 +1,40 @@
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 
--- | Get a user-friendly description.
+-- | Printing classes, from debug-freindly "pretty-printing" to production AST reprints.
 module TreeScript.Misc.Print
   ( Printable(..)
-  , ReducePrintable(..)
+  , AnnPrintable(..)
   , PrintOut(..)
-  , LeafPrintable
+  , LeafPrintable(..)
   , TreePrintable(..)
+  , treePPrint
   )
 where
 
 import           TreeScript.Misc.Ann
+import           TreeScript.Misc.Loc
 import qualified TreeScript.Misc.Ext.Text      as T
 
 import           Control.Monad.Catch
+import           Control.Monad.State.Strict
 import           Data.String
 import qualified Data.Text                     as T
 
-newtype ReducePrintText = ReducePrintText{ reducePrintText :: T.Text } deriving (Semigroup, Monoid)
+-- | Print monad: keeps track of indentation level
+type PrintM = State Int
 
--- | Can get a user-friendly description. Unlike 'Show', doesn't need to contain all information and be readable.
+-- | Get a "user-friendly" description: reasonable to put in a message shown to the user.
+-- Depending on the implementation, this could be for debugging or the actual AST reprint used in production.
 class Printable a where
-  -- | Get a user-friendly description.
   pprint :: a -> T.Text
-  default pprint :: (a ~ a2 an, TreePrintable a2) => a -> T.Text
+  default pprint :: (a ~ a2 an, TreePrintable a2, AnnPrintable an) => a -> T.Text
   pprint = treePPrint
 
--- | Can get a description which is a subsequence of what was read. This is for ASTs.
-class ReducePrintable a where
-  -- | Get a description which is a subsequence of what was read. This is for ASTs.
-  reducePrint :: a -> T.Text
-  default reducePrint :: (a ~ a2 an, TreePrintable a2) => a -> T.Text
-  reducePrint = treeReducePrint
+class AnnPrintable an where
+  printAnnd :: T.Text -> an -> T.Text
 
 -- | Abstract output type which trees can be printed into. Usually just text, but can also be a patch or "smart" type.
 --
@@ -47,20 +46,20 @@ class (IsString a, Monoid a) => PrintOut a where
   -- | Convert raw text into this format.
   fromLiteral :: T.Text -> a
 
--- | A leaf of a printable annotated tree. This class implements many functions for printing the leaf many ways. Then, the entire tree only needs one function to print each of these ways.
-class (Printable a, ReducePrintable a) => LeafPrintable a
+-- | Print atoms in AST elements (e.g. numbers) for AST rewriting
+class LeafPrintable a where
+  leafPrint :: a -> T.Text
+  default leafPrint :: (Printable a) => a -> T.Text
+  leafPrint = pprint
 
--- | A printable annotated tree. All leaves must implement 'LeafPrintable' and be printable in a few formats. Additionally, nodes must support annotations. This class only needs to implement one method, to recursively print in any of these formats, and allow annotations to alter printing.
+-- | Print AST nodes for AST rewriting
 class (Annotatable a) => TreePrintable a where
-  -- | Prints the tree. @(PrintOut o)@ is the type of format of the print - it would require a proxy, but the type can be inferred by the recursive printers.
-  treePrint :: (PrintOut o)
-            => (forall p. (TreePrintable p) => p an -> o) -- ^ Function to recursively print subtrees (not leaves).
-            -> (forall l. (LeafPrintable l) => l -> o) -- ^ Function to recursively print leaves.
-            -> a an
-            -> o
-
-instance IsString ReducePrintText where
-  fromString x = ReducePrintText $ T.strip $ T.pack x
+  treePrint
+    :: (PrintOut o, AnnPrintable an)
+    => (forall p . (TreePrintable p) => p an -> PrintM o) -- ^ Function to recursively print nodes.
+    -> (forall l . (LeafPrintable l) => l -> PrintM o) -- ^ Function to recursively print leaves.
+    -> a an
+    -> PrintM o
 
 instance Printable () where
   pprint () = "()"
@@ -86,26 +85,21 @@ instance Printable SomeException where
 instance (Printable a) => Printable [a] where
   pprint xs = "[" <> T.intercalate ", " (map pprint xs) <> "]"
 
-instance ReducePrintable Char where
-  reducePrint = T.singleton
+instance Printable Loc where
+  pprint loc = pprint (locLine loc) <> ":" <> pprint (locColumn loc)
 
-instance ReducePrintable Int where
-  reducePrint = pprint
+instance Printable Range where
+  pprint (Range start end) = pprint start <> "-" <> pprint end
 
-instance ReducePrintable Float where
-  reducePrint = pprint
+instance AnnPrintable SrcAnn where
+  printAnnd _ = srcAnnText
 
-instance ReducePrintable T.Text where
-  reducePrint = id
-
-instance (ReducePrintable a) => ReducePrintable [a] where
-  reducePrint = T.concat . map reducePrint
+instance (AnnPrintable a) => AnnPrintable (Maybe a) where
+  printAnnd txt Nothing  = txt
+  printAnnd txt (Just x) = printAnnd txt x
 
 instance PrintOut T.Text where
   fromLiteral = id
-
-instance PrintOut ReducePrintText where
-  fromLiteral = ReducePrintText
 
 instance LeafPrintable Char
 
@@ -115,10 +109,9 @@ instance LeafPrintable Float
 
 instance LeafPrintable T.Text
 
-treePPrint :: (TreePrintable a) => a an -> T.Text
-treePPrint = treePrint treePPrint pprint
+treePPrint' :: (TreePrintable a, AnnPrintable an) => a an -> PrintM T.Text
+treePPrint' x =
+  (`printAnnd` getAnn x) <$> treePrint treePPrint' (pure . leafPrint) x
 
-treeReducePrint :: (TreePrintable a) => a an -> T.Text
-treeReducePrint = reducePrintText . treePrint
-  (ReducePrintText . treeReducePrint)
-  (ReducePrintText . reducePrint)
+treePPrint :: (TreePrintable a, AnnPrintable an) => a an -> T.Text
+treePPrint x = evalState (treePPrint' x) 0

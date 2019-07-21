@@ -2,7 +2,7 @@
 {-# LANGUAGE Rank2Types #-}
 
 -- | Integrates plugins into compilation and other actions.
-module TreeScript.Plugin.Session
+module TreeScript.Misc.IO.Session
   ( Settings(..)
   , LangExt(..)
   , Language(..)
@@ -20,8 +20,7 @@ module TreeScript.Plugin.Session
   )
 where
 
-import           TreeScript.Plugin.CmdProgram
-import           TreeScript.Misc
+import           TreeScript.Misc.IO.CmdProgram
 
 import           Control.Monad.Logger    hiding ( LogLevel(..) )
 import qualified Control.Monad.Logger          as L

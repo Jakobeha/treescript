@@ -22,8 +22,8 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 - resources/**
-- src/TreeScript/Ast/Lex/Parse.x
-- src/TreeScript/Ast/Sugar/Parse.y
+# - src/TreeScript/Ast/Lex/Parse.x
+# - src/TreeScript/Ast/Sugar/Parse.y
 - test-resources/**
 
 extra-doc-files:

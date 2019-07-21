@@ -1,9 +1,0 @@
-TreeScript - Unified Declarative Syntax Transformation
-
-Oftentimes, a developer or team wants to transform code in a simple, procedural, language-agnostic way. Perhaps they're writing a compiler, and want to optimize by computing arithmetic on constant expressions. Or, they're refactoring a codebase, and want to change all functions from camel-case to snake-case. Or, they want to slightly extend a language, creating a "mini-DSL" for their specific project.
-
-Each example could pertain to any language. However, each is accomplished differently for different languages, as most languages have their own API for refactoring and transforming their code. Furthermore, most APIs obscure the syntax transformation itself, as they're written in a language (often the transformed language) not designed to represent and manipulate ASTs.
-
-This is a problem, because most developers work with many languages, and must continuously learn new ones. If a developer wants to perform more than a simple refactor, they must either perform it manually, or learn and program it in the language's API. For large projects, both methods take unnecessary effort.
-
-TreeScript is a language designed for transformations like the above. Specifically, it transforms the syntax of a language, possibly into another language. Language users can easily create simple transformations for any language in TreeScript. They can implement the logic for more complex transformations in the language of their choice, and reuse this logic across languages. Furthermore, TreeScript's syntax is designed to make transformations declarative and clear, as it represents each language's AST in its own code, and separates complex logic (like hygiene) from the underlying transformation.

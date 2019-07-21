@@ -8,14 +8,25 @@
 
 -- | Allows trees to be "annotated", with arbitrary data assigned to each node.
 module TreeScript.Misc.Ann
-  ( Annd (..)
-  , Annotatable (..)
+  ( SrcAnn(..)
+  , Annd(..)
+  , Annotatable(..)
   , mapAnnd
   , remAnns
   , (=@=)
-  ) where
+  )
+where
 
-import GHC.Generics
+import           TreeScript.Misc.Loc
+import qualified Data.Text                     as T
+
+import           GHC.Generics
+
+data SrcAnn
+  = SrcAnn
+  { srcAnnRange :: Range
+  , srcAnnText :: T.Text
+  } deriving (Eq, Ord, Read, Show)
 
 -- | A node with an annotation.
 data Annd a an
