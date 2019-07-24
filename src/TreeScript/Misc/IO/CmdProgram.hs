@@ -14,7 +14,6 @@ module TreeScript.Misc.IO.CmdProgram
   )
 where
 
-import           TreeScript.Misc.Print
 import           TreeScript.Misc.Error
 import           TreeScript.Misc.Ext
 
@@ -61,7 +60,7 @@ runCmdProgramArgs (CmdProgram ppath progEnv) args inp = do
       liftIOCatch $ T.hGetContents pout
     ExitFailure code
       | T.null $ T.strip err
-      -> mkFail $ Error Nothing $ "unknown error (code " <> pprint code <> ")"
+      -> mkFail $ Error Nothing $ "unknown error (code " <> T.pack (show code) <> ")"
       | otherwise
       -> mkFail $ Error Nothing $ T.strip err
 

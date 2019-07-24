@@ -38,8 +38,6 @@ where
 
 import           TreeScript.Misc.Error.Error
 import           TreeScript.Misc.Ext
-import qualified TreeScript.Misc.Ext.Text      as T
-import           TreeScript.Misc.Print
 
 import           Control.Monad.Catch
 import qualified Control.Monad.Fail            as F
@@ -49,7 +47,6 @@ import           Control.Monad.Writer.Strict
 import           Control.Monad.RWS.Strict
 import           Data.Maybe
 import qualified Data.Set                      as S
-import qualified Data.Text                     as T
 import           Control.Monad.Logger
 
 
@@ -83,14 +80,6 @@ class (Ord e, Monad m) => MonadResult e m | m -> e where
   overErrors :: (e -> e) -> m a -> m a
   -- | Converts fatal results into nonfatal 'Nothing' results, and the rest into 'Just' results.
   downgradeFatal :: m a -> m (Maybe a)
-
-instance (Ord e, Printable e, Printable a) => Printable (Result e a) where
-  pprint (ResultFail err ) = "fatal error: " <> pprint err
-  pprint (Result []   res) = "success: " <> pprint res
-  pprint (Result errs res) = T.unlines
-    ("result:" : pprint res : "errors:" : map (T.bullet . pprint)
-                                              (S.toList errs)
-    )
 
 instance (Ord e) => Applicative (Result e) where
   pure = Result []
@@ -253,13 +242,12 @@ isSuccess (ResultFail _ ) = False
 isSuccess (Result errs _) = null errs
 
 -- | Raises an error if the result has any errors.
-forceSuccess :: (Ord e, Printable e) => Result e a -> a
-forceSuccess (ResultFail err) =
-  error $ "unexpected fatal error:\n" <> T.unpack (pprint err)
+forceSuccess :: (Ord e, Show e) => Result e a -> a
+forceSuccess (ResultFail err) = error $ "unexpected fatal error:\n" <> show err
 forceSuccess (Result errs x)
   | null errs = x
-  | otherwise = error $ "unexpected nonfatal errors:\n" <> T.unpack
-    (T.unlines $ map pprint $ S.toList errs)
+  | otherwise = error $ "unexpected nonfatal errors:\n" <> unlines
+    (map show $ S.toList errs)
 
 -- | @Nothing@ if there's any failure (even if success).
 justSuccess :: (Ord e) => Result e a -> Maybe a

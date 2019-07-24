@@ -16,7 +16,6 @@ module TreeScript.Misc.Error.Error
 where
 
 import           TreeScript.Misc.Loc
-import           TreeScript.Misc.Print
 
 import           Control.Monad.Catch
 import qualified Data.Text                     as T
@@ -43,24 +42,10 @@ data Error
   , errorMsg :: T.Text -- ^ Text displayed to the user.
   } deriving (Eq, Ord, Read, Show)
 
-instance Printable Stage where
-  pprint StageSetup   = "setting up"
-  pprint StageLex     = "parsing"
-  pprint StageBalance = "parsing"
-  pprint StageParse   = "parsing"
-  pprint StageEval    = "evaluating"
-
-instance Printable Error where
-  pprint (Error Nothing    msg) = msg
-  pprint (Error (Just rng) msg) = "at " <> pprint rng <> " - " <> msg
-
-instance Printable SError where
-  pprint (SError stage err) = "(while " <> pprint stage <> ") " <> pprint err
-
-
 -- | Converts the exception into an error.
 exceptionToError :: SomeException -> Error
-exceptionToError exc = Error { errorRange = Nothing, errorMsg = pprint exc }
+exceptionToError exc =
+  Error { errorRange = Nothing, errorMsg = T.pack $ displayException exc }
 
 -- | Prepends to the error message.
 prependMsgToErr :: T.Text -> Error -> Error
@@ -71,10 +56,10 @@ prependMsgToErr new (Error rng msg) =
 addRangeToErr :: Range -> Error -> Error
 addRangeToErr rng (Error Nothing msg) = Error
   { errorRange = Just rng
-  , errorMsg   = "at " <> pprint rng <> " - " <> msg
+  , errorMsg   = "at " <> printRange rng <> " - " <> msg
   }
 addRangeToErr _ err@(Error (Just _) _) =
   error
     $  "tried to add range to error which already has one ("
-    ++ T.unpack (pprint err)
+    ++ show err
     ++ ")"

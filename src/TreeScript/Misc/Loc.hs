@@ -10,6 +10,8 @@ module TreeScript.Misc.Loc
   , advanceLoc
   , mkRange
   , singletonRange
+  , printLoc
+  , printRange
   )
 where
 
@@ -64,3 +66,10 @@ mkRange loc text = Range { rangeStart = loc, rangeEnd = advanceLoc loc text }
 -- | Create a range starting and ending at the same location
 singletonRange :: Loc -> Range
 singletonRange loc = Range { rangeStart = loc, rangeEnd = loc }
+
+printLoc :: Loc -> T.Text
+printLoc loc =
+  T.pack (show $ locLine loc) <> ":" <> T.pack (show $ locColumn loc)
+
+printRange :: Range -> T.Text
+printRange (Range start end) = printLoc start <> "-" <> printLoc end

@@ -2,11 +2,11 @@
 {
 {-# LANGUAGE OverloadedStrings #-}
 
-module TreeScript.Ast.Lex.Parse
-  ( parse
+module TreeScript.Parse.Lex
+  ( parseLex
   ) where
 
-import TreeScript.Ast.Lex.Types
+import TreeScript.Ast
 import TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Text as T
 
@@ -348,8 +348,8 @@ scanner str = runAlex str scanRest
               toks <- scanRest
               pure $ tok : toks
 
-parse :: T.Text -> Result (Program Range)
-parse str
+parseLex :: T.Text -> Result (Program Range)
+parseLex str
   = case scanner $ T.L.encodeUtf8 $ T.L.fromStrict str of
          Left locAndErrMsg
            -> case reads locAndErrMsg of
