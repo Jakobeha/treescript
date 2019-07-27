@@ -7,19 +7,16 @@ module TreeScript.Print.Lex
 where
 
 import           TreeScript.Ast
-import           TreeScript.Misc
-import qualified TreeScript.Misc.Ext.Text      as T
+import           TreeScript.Print.Class
+import           TreeScript.Print.Misc          ( )
 
+import           Control.Monad.State.Strict
 import qualified Data.Text                     as T
-import           GHC.Generics
 
 instance Printable Enclosure where
-  pprint (Enclosure EncTypeParen   EncPlaceOpen ) = "("
-  pprint (Enclosure EncTypeParen   EncPlaceClose) = ")"
-  pprint (Enclosure EncTypeBrace   EncPlaceOpen ) = "["
-  pprint (Enclosure EncTypeBrace   EncPlaceClose) = "]"
-  pprint (Enclosure EncTypeBracket EncPlaceOpen ) = "{"
-  pprint (Enclosure EncTypeBracket EncPlaceClose) = "}"
+  mprint (Enclosure EncTypeTab EncPlaceOpen) = "" <$ modify succ
+  mprint (Enclosure EncTypeTab EncPlaceClose) = "" <$ modify pred
+  mprint enc = pure $ printEnclosure enc
 
 instance Printable LexQuote where
   pprint LexQuoteSingle = "'"
@@ -29,17 +26,17 @@ instance Printable LexQuote where
 instance Printable LexPrim where
   pprint (LexPrimInteger x       ) = pprint x
   pprint (LexPrimFloat   x       ) = pprint x
-  pprint (LexPrimString  x       ) = pprint x
-  pprint (LexPrimCode start x end) = pprint start <> T.escape x <> pprint end
+  pprint (LexPrimString beg x end) = pprint beg <> pprint x <> pprint end
 
-instance Printable Symbol where
-  pprint = symbolText
+instance Printable Atom where
+  mprint (AtomPunc punc   ) = mprint punc
+  mprint (AtomPrim prim   ) = mprint prim
+  mprint (AtomSymbol sym _) = pure sym
 
 instance Printable Lexeme where
-  pprint (LexemePunc   punc) = pprint punc
-  pprint (LexemeEnc    enc ) = pprint enc
-  pprint (LexemePrim   prim) = pprint prim
-  pprint (LexemeSymbol sym ) = pprint sym
+  mprint LexemeEof        = pure ""
+  mprint (LexemeEnc  enc) = mprint enc
+  mprint (LexemeAtom atm) = mprint atm
 
-instance (PrintableAnn an) => Printable (Program an) where
-  pprint (Program lexs) = T.concat $ map pprint lexs
+instance (AnnPrintable an) => Printable (LexProgram an) where
+  mprint (LexProgram lexs) = T.concat <$> traverse mprint lexs

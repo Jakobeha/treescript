@@ -10,9 +10,11 @@ module TreeScript.Misc.Ext.Text
   , indent
   , bullet
   , blockQuote
-  ) where
+  , indentOnLastLine
+  )
+where
 
-import qualified Data.Text as T
+import qualified Data.Text                     as T
 
 -- | Decode an integer from text.
 parseInt :: T.Text -> Int
@@ -28,9 +30,8 @@ unescapeString str = T.pack $ read $ "\"" ++ T.unpack str ++ "\""
 
 -- | Decode a single character from an escape sequence.
 unescapeChar :: T.Text -> Char
-unescapeChar str
-  | T.length unescaped == 1 = T.head unescaped
-  | otherwise = error "unescapeChar: not a single character"
+unescapeChar str | T.length unescaped == 1 = T.head unescaped
+                 | otherwise = error "unescapeChar: not a single character"
   where unescaped = unescapeString str
 
 -- | Convert all escapable characters into their escape sequences.
@@ -52,3 +53,13 @@ bullet subPr = "- " <> indentRest subPr
 -- | Formats into a Markdown-style block quote.
 blockQuote :: T.Text -> T.Text
 blockQuote contentPr = "> " <> T.replace "\n" "\n> " contentPr
+
+lastLine :: T.Text -> Maybe T.Text
+lastLine txt | T.length lst == T.length txt = Nothing
+             | otherwise                    = Just lst
+  where lst = T.dropWhileEnd (/= '\n') txt
+
+-- | The indentation on the last line of the text.
+indentOnLastLine :: T.Text -> Maybe Int
+indentOnLastLine =
+  fmap ((`quot` 2) . T.length . T.takeWhile (== ' ')) . lastLine

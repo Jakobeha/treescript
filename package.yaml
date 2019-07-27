@@ -71,11 +71,11 @@ library:
   source-dirs: src
   exposed-modules:
   - TreeScript
-  - TreeScript.Ast.Core
-  - TreeScript.Ast.Flat
-  - TreeScript.Ast.Lex
-  - TreeScript.Ast.Sugar
-  - TreeScript.Misc.Ext.Text
+  - TreeScript.Ast
+  - TreeScript.Interpret
+  - TreeScript.Misc
+  - TreeScript.Parse
+  - TreeScript.Print
 
 executables:
   treescript:

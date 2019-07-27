@@ -23,18 +23,15 @@ type PrintM = State Int
 -- | Get a "user-friendly" description: reasonable to put in a message shown to the user.
 -- Depending on the implementation, this could be for debugging or the actual AST reprint used in production.
 class Printable a where
-  pprint :: a -> T.Text
-  default pprint :: (MPrintable a) => a -> T.Text
-  pprint = (`evalState` 0) . mprint
+  {-# MINIMAL pprint | mprint #-}
 
--- | Print in a monad for context sensitivity
-class (Printable a) => MPrintable a where
+  pprint :: a -> T.Text
+  pprint = (`evalState` 0) . mprint
   mprint :: a -> PrintM T.Text
-  default mprint :: (a2 r ~ a, TreePrintable a2, MPrintable r) => a -> PrintM T.Text
-  mprint = treeMPrint
+  mprint = pure . pprint
 
 class AnnPrintable an where
-  printAnnd :: T.Text -> an -> T.Text
+  printAnnd :: PrintM T.Text -> an -> PrintM T.Text
 
 -- | Abstract output type which trees can be printed into. Usually just text, but can also be a patch or "smart" type.
 --
@@ -68,5 +65,8 @@ instance PrintOut T.Text where
   fromLiteral = id
   pindent     = T.indent
 
-treeMPrint :: (TreePrintable a, MPrintable r) => a r -> PrintM T.Text
+treeMPrint :: (TreePrintable a, Printable r) => a r -> PrintM T.Text
 treeMPrint = treePrint . fmap mprint
+
+mindent :: (PrintOut o) => PrintM o -> PrintM o
+mindent = withState (+ 1) . fmap pindent

@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module TreeScript.Ast.Lex
   ( module TreeScript.Ast.Lex
@@ -20,7 +21,6 @@ data EncType
   | EncTypeBracket
   | EncTypeTab
   deriving (Eq, Ord, Read, Show, Generic)
-
 data EncPlace
   = EncPlaceOpen
   | EncPlaceClose
@@ -51,23 +51,30 @@ data SymbolCase
   | SymbolCaseLower
   deriving (Eq, Ord, Read, Show, Generic)
 
--- | Symbol
-data Symbol
-  = Symbol
-  { symbolText :: T.Text
-  , symbolCase :: SymbolCase
-  } deriving (Eq, Ord, Read, Show, Generic)
-
 -- | Lexeme data without source range.
-data Lexeme
-  = LexemeEof
-  | LexemePunc Char
-  | LexemeEnc Enclosure
-  | LexemePrim LexPrim
-  | LexemeSymbol T.Text SymbolCase
+data Atom
+  = AtomPunc Char
+  | AtomPrim LexPrim
+  | AtomSymbol T.Text SymbolCase
   deriving (Eq, Ord, Read, Show, Generic)
 
-type SLexeme = Annd SrcAnn Lexeme
+-- | Unbalanced lexeme.
+data Lexeme
+  = LexemeEof
+  | LexemeEnc Enclosure
+  | LexemeAtom Atom
+  deriving (Eq, Ord, Read, Show, Generic)
+
+type SLexeme = Annd Lexeme SrcAnn
 
 -- | A full TreeScript program.
-newtype Program an = Program [Annd Lexeme an] deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
+newtype LexProgram an = LexProgram{ unLexProgram :: [Annd Lexeme an] } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
+
+printEnclosure :: Enclosure -> T.Text
+printEnclosure (Enclosure EncTypeParen   EncPlaceOpen ) = "("
+printEnclosure (Enclosure EncTypeParen   EncPlaceClose) = ")"
+printEnclosure (Enclosure EncTypeBrace   EncPlaceOpen ) = "["
+printEnclosure (Enclosure EncTypeBrace   EncPlaceClose) = "]"
+printEnclosure (Enclosure EncTypeBracket EncPlaceOpen ) = "{"
+printEnclosure (Enclosure EncTypeBracket EncPlaceClose) = "}"
+printEnclosure (Enclosure EncTypeTab _) = error "can't print tabs"

@@ -42,6 +42,10 @@ class (Functor a, Foldable a, Traversable a) => Annotatable a where
   default getAnn :: (Generic1 a, Annotatable' (Rep1 a)) => a an -> an
   getAnn = getAnn' . from1
 
+instance Semigroup SrcAnn where
+  SrcAnn xrng xtxt <> SrcAnn yrng ytxt =
+    SrcAnn { srcAnnRange = xrng <> yrng, srcAnnText = xtxt <> ytxt }
+
 instance Annotatable (Annd a) where
   getAnn = anndAnn
 

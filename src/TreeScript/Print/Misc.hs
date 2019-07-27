@@ -14,6 +14,7 @@ import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Print.Class
 
 import           Control.Monad.Catch
+import           Control.Monad.State.Strict
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 
@@ -70,8 +71,15 @@ instance (Ord e, Printable e, Printable a) => Printable (Result e a) where
     )
 
 instance AnnPrintable SrcAnn where
-  printAnnd _ = srcAnnText
+  printAnnd _ (SrcAnn _ txt) = do
+    case T.indentOnLastLine txt of
+      Nothing  -> pure ()
+      Just lvl -> put lvl
+    pure txt
 
 instance (AnnPrintable a) => AnnPrintable (Maybe a) where
   printAnnd txt Nothing  = txt
   printAnnd txt (Just x) = printAnnd txt x
+
+instance (Printable a, AnnPrintable an) => Printable (Annd a an) where
+  mprint (Annd ann x) = printAnnd (mprint x) ann

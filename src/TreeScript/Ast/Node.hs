@@ -84,8 +84,8 @@ data Index r
 -- | @(x, ...) =>\n\tstmt...@
 data Closure r
   = Closure
-  { closureArgs :: [Identifier n]
-  , closureBody :: [n]
+  { closureArgs :: [Identifier r]
+  , closureBody :: [r]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
 
 -- | @rhs(rhs, ...)@.
