@@ -12,9 +12,9 @@ where
 import           TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Print.Class
+import           TreeScript.Print.PrintM
 
 import           Control.Monad.Catch
-import           Control.Monad.State.Strict
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 
@@ -74,7 +74,7 @@ instance AnnPrintable SrcAnn where
   printAnnd _ (SrcAnn _ txt) = do
     case T.indentOnLastLine txt of
       Nothing  -> pure ()
-      Just lvl -> put lvl
+      Just lvl -> putIndent lvl
     pure txt
 
 instance (AnnPrintable a) => AnnPrintable (Maybe a) where

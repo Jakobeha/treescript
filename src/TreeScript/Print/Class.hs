@@ -1,5 +1,6 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -11,14 +12,11 @@ module TreeScript.Print.Class
 where
 
 import qualified TreeScript.Misc.Ext.Text      as T
+import           TreeScript.Print.PrintM
 
-import           Control.Monad.State.Strict
 import           Data.String
 import qualified Data.Text                     as T
 import           GHC.Generics
-
--- | Print monad: keeps track of indentation level
-type PrintM = State Int
 
 -- | Get a "user-friendly" description: reasonable to put in a message shown to the user.
 -- Depending on the implementation, this could be for debugging or the actual AST reprint used in production.
@@ -26,7 +24,7 @@ class Printable a where
   {-# MINIMAL pprint | mprint #-}
 
   pprint :: a -> T.Text
-  pprint = (`evalState` 0) . mprint
+  pprint = runPrintM . mprint
   mprint :: a -> PrintM T.Text
   mprint = pure . pprint
 
@@ -35,13 +33,16 @@ class AnnPrintable an where
 
 -- | Abstract output type which trees can be printed into. Usually just text, but can also be a patch or "smart" type.
 --
--- __The 'IsString' / 'fromString' and 'fromLiteral' are different - they have similar types, but the /interpretation/ of the text being converted is different:__
--- - 'fromString' converts punctuation (e.g. separators, delimiters) where the content of the text may not be significant beyond helping the parser.
--- - 'fromLiteral' converts (e.g. symbols, data already printed and then flattened) where the content of the text is significant.
+-- - 'fromString' / `ppunc` converts punctuation (e.g. separators, delimiters) where the content of the text may not be significant beyond helping the parser.
+-- - 'pliteral' converts (e.g. symbols, data already printed and then flattened) where the content of the text is significant.
 -- Basic implementations, like 'Text', handle these both the same, but patches wouldn't.
 class (IsString a, Monoid a) => PrintOut a where
-  -- | Convert raw text into this format.
-  fromLiteral :: T.Text -> a
+  -- | Punctuation (e.g. separators, delimiters)
+  ppunc :: T.Text -> a
+  ppunc = fromString . T.unpack
+  -- | Significant text, e.g. symbols
+  pliteral :: T.Text -> a
+  -- | Indent
   pindent :: a -> a
 
 -- | Print AST nodes for AST rewriting
@@ -54,6 +55,9 @@ class (Functor a) => TreePrintable a where
 class TreePrintable' a where
   treePrint' :: (PrintOut o) => a (PrintM o) -> PrintM o
 
+instance (TreePrintable' a) => TreePrintable' (M1 i t a) where
+  treePrint' (M1 x) = treePrint' x
+
 instance (TreePrintable a) => TreePrintable' (Rec1 a) where
   treePrint' (Rec1 x) = treePrint x
 
@@ -62,11 +66,19 @@ instance (TreePrintable' a, TreePrintable' b) => TreePrintable' (a :+: b) where
   treePrint' (R1 x) = treePrint' x
 
 instance PrintOut T.Text where
-  fromLiteral = id
-  pindent     = T.indent
+  ppunc    = id
+  pliteral = id
+  pindent  = T.indent
 
 treeMPrint :: (TreePrintable a, Printable r) => a r -> PrintM T.Text
 treeMPrint = treePrint . fmap mprint
 
 mindent :: (PrintOut o) => PrintM o -> PrintM o
-mindent = withState (+ 1) . fmap pindent
+mindent = withIndent . fmap pindent
+
+printFirstLine :: Printable a => [a] -> T.Text
+printFirstLine []       = ""
+printFirstLine (x : xs) = case T.firstLine xp of
+  Nothing  -> xp <> printFirstLine xs
+  Just xp' -> xp'
+  where xp = pprint x

@@ -1,10 +1,11 @@
 -- | Helpers for semigroups and monoids.
 module TreeScript.Misc.Ext.Monoid
-  ( Max0 (..)
+  ( Max0(..)
   , mintercalate
-  ) where
+  )
+where
 
-import Data.List
+import           Data.List
 
 -- | 'Max', where 0 is the empty element.
 newtype Max0 = Max0{ getMax0 :: Int }

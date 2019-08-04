@@ -2,7 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module TreeScript.Print.Lex
+module TreeScript.Print.Balance
   ()
 where
 
@@ -31,10 +31,11 @@ instance Printable Atom where
   mprint (AtomPrim prim   ) = mprint prim
   mprint (AtomSymbol _ sym) = pure sym
 
-instance Printable Lexeme where
-  mprint LexemeEof        = pure ""
-  mprint (LexemeEnc  enc) = mprint enc
-  mprint (LexemeAtom atm) = mprint atm
+instance (AnnPrintable an) => Printable (Balance an) where
+  mprint (BalanceAtom atm) = mprint atm
+  mprint (BalanceEnc enc xs) =
+    mprint (Enclosure enc EncPlaceOpen) <> foldMap mprint xs <> mprint
+      (Enclosure enc EncPlaceClose)
 
-instance (AnnPrintable an) => Printable (LexProgram an) where
-  mprint (LexProgram lexs) = T.concat <$> traverse mprint lexs
+instance (AnnPrintable an) => Printable (BalanceProgram an) where
+  mprint (BalanceProgram lexs) = T.concat <$> traverse mprint lexs

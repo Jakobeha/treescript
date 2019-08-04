@@ -55,7 +55,7 @@ data SymbolCase
 data Atom
   = AtomPunc Char
   | AtomPrim LexPrim
-  | AtomSymbol T.Text SymbolCase
+  | AtomSymbol SymbolCase T.Text
   deriving (Eq, Ord, Read, Show, Generic)
 
 -- | Unbalanced lexeme.
@@ -78,3 +78,8 @@ printEnclosure (Enclosure EncTypeBrace   EncPlaceClose) = "]"
 printEnclosure (Enclosure EncTypeBracket EncPlaceOpen ) = "{"
 printEnclosure (Enclosure EncTypeBracket EncPlaceClose) = "}"
 printEnclosure (Enclosure EncTypeTab _) = error "can't print tabs"
+
+printLexQuote :: LexQuote -> T.Text
+printLexQuote LexQuoteSingle = "'"
+printLexQuote LexQuoteDouble = "'"
+printLexQuote LexQuoteSplice = "\\"

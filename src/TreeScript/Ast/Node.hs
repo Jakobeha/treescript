@@ -9,6 +9,8 @@ module TreeScript.Ast.Node
   )
 where
 
+import           TreeScript.Misc
+
 import qualified Data.Text                     as T
 import           GHC.Generics
 
@@ -69,7 +71,7 @@ data Access r
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
 
 -- | @[rhs, ...]@.
-data Array r
+newtype Array r
   = Array
   { arrayElems :: [r]
   } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
@@ -107,3 +109,14 @@ data Node r
   | NodeClosure (Closure r)
   | NodeCall (Call r)
   deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
+
+data ANode an
+  = ANode
+  { anodeAnn :: an
+  , anode :: Node (ANode an)
+  } deriving (Eq, Ord, Read, Show, Functor, Foldable, Traversable, Generic1)
+
+type SNode = ANode SrcAnn
+
+-- | A full TreeScript program.
+newtype ANodeProgram an = ANodeProgram{ unANodeProgram :: [ANode an] } deriving (Eq, Ord, Read, Show, Generic)

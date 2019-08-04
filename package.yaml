@@ -53,6 +53,7 @@ dependencies:
 - inline-js-core
 - io-streams
 - attoparsec
+- megaparsec
 - monad-logger
 - monad-loops
 - mtl

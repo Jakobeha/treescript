@@ -10,6 +10,7 @@ module TreeScript.Misc.Ext.Text
   , indent
   , bullet
   , blockQuote
+  , firstLine
   , indentOnLastLine
   )
 where
@@ -54,10 +55,17 @@ bullet subPr = "- " <> indentRest subPr
 blockQuote :: T.Text -> T.Text
 blockQuote contentPr = "> " <> T.replace "\n" "\n> " contentPr
 
+-- | Returns @Nothing@ unless there are multiple lines
+firstLine :: T.Text -> Maybe T.Text
+firstLine txt | T.length lst == T.length txt = Nothing
+              | otherwise                    = Just lst
+  where lst = T.takeWhile (/= '\n') txt
+
+-- | Returns @Nothing@ unless there are multiple lines
 lastLine :: T.Text -> Maybe T.Text
 lastLine txt | T.length lst == T.length txt = Nothing
              | otherwise                    = Just lst
-  where lst = T.dropWhileEnd (/= '\n') txt
+  where lst = T.takeWhileEnd (/= '\n') txt
 
 -- | The indentation on the last line of the text.
 indentOnLastLine :: T.Text -> Maybe Int
