@@ -88,7 +88,7 @@ instance (Printable n) => Printable (Closure n) where
 instance TreePrintable Closure where
   treePrint (Closure xs exprs) =
     "(" <> mintercalate ", " (map treePrint xs) <> ") =>" <> mindent
-      (mconcat $ map ("\n" <<>>) exprs)
+      (mconcat $ map ("\n" <>) exprs)
 
 instance (Printable n) => Printable (Call n) where
   mprint = treeMPrint

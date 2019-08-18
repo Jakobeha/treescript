@@ -1,10 +1,14 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module TreeScript.Parse.ParsecHelpers
-  ( BalanceStream(..)
+  ( Parser
   , ParseError(..)
   , parsecRes2Result
+  , runParser
   )
 where
 
@@ -12,18 +16,38 @@ import           TreeScript.Ast
 import           TreeScript.Misc
 import           TreeScript.Print
 
+import           Control.Applicative
+import           Control.Monad
 import qualified Data.List.NonEmpty            as N
 import           Data.Proxy
+import qualified Data.Set                      as S
+import           Data.String
 import qualified Data.Text                     as T
 import qualified Text.Megaparsec               as M
 
-newtype BalanceStream = BalanceStream{ unBalanceStream :: [SBalance] }
+newtype Parser a = Parser (M.Parsec ParseError BalanceStream a) deriving (Functor, Applicative, Monad, Alternative, MonadPlus)
+
+newtype BalanceStream = BalanceStream [SBalance]
 
 data ParseError
   = ParseError
   { parseErrorRange :: Range
   , parseErrorMsg :: T.Text
   } deriving (Eq, Ord, Read, Show)
+
+deriving instance M.MonadParsec ParseError BalanceStream Parser
+
+instance (a ~ ()) => IsString (Parser a) where
+  fromString str = Parser $ case toks of
+    [tok] -> M.token testToken $ S.singleton $ M.Label $ N.fromList str
+     where
+      testToken x | tok == remAnns x = Just ()
+                  | otherwise        = Nothing
+    _ -> () <$ M.tokens testTokens toks_
+     where
+      testTokens xs _ = toks == map remAnns xs
+      toks_ = error "no annotation" <$ toks
+    where toks = map (Annd () . BalanceAtom . AtomPunc) str
 
 instance M.Stream BalanceStream where
   type Token BalanceStream = SBalance
@@ -82,3 +106,7 @@ reachRelOffset
 reachRelOffset 0 st@(M.PosState (BalanceStream xs) _ pos _ pre) =
   (pos, printLine $ T.pack pre <> printFirstLine xs, st)
 reachRelOffset off st = reachRelOffset (off - 1) $ advancePosState st
+
+runParser :: Parser a -> FilePath -> BalanceProgram SrcAnn -> EResult a
+runParser (Parser psr) file (BalanceProgram xs) =
+  parsecRes2Result $ M.runParser psr file $ BalanceStream xs

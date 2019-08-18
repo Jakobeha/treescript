@@ -58,6 +58,7 @@ dependencies:
 - monad-loops
 - mtl
 - process
+- regex-applicative
 - semigroupoids
 - shelly
 - system-filepath

@@ -1,7 +1,0 @@
-Word[@string].
-Punc[@string].
-String[@string, @string].
-Int[@int, @int].
-Block[@string, @ilist[@node]].
-
-@node <- @Word|@Punc|@String|@Int|@Block;

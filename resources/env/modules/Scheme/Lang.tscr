@@ -1,6 +1,0 @@
-Symbol[@string].
-Atom[@atom].
-SNil[].
-SCons[@sexpr, @sexpr].
-
-@sexpr <- @Symbol|@Atom|@SNil|@SCons;

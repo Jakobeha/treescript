@@ -80,5 +80,5 @@ remAnns :: (Annotatable f) => f an -> f ()
 remAnns x = () <$ x
 
 -- | Checks for equality ignoring annotations.
-(=@=) :: (Annotatable f, Eq (f ())) => f an -> f an -> Bool
+(=@=) :: (Annotatable f, Eq (f ())) => f an1 -> f an2 -> Bool
 x =@= y = remAnns x == remAnns y

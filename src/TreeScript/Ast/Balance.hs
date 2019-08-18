@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Parsed nodes.
 module TreeScript.Ast.Balance
@@ -9,6 +10,7 @@ where
 import           TreeScript.Ast.Lex
 import           TreeScript.Misc
 
+import           Data.String
 import           GHC.Generics
 
 data Balance an

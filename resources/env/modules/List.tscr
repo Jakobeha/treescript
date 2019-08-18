@@ -1,5 +1,0 @@
-&Map[&x].
-Nil[] -> Nil[];
-Cons[\x; \xs] -> Cons[\y; \ys],
-  \y <- \x &x[],
-  \ys <- \xs &Map[&x[]];

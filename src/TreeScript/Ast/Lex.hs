@@ -19,7 +19,6 @@ data EncType
   = EncTypeParen
   | EncTypeBrace
   | EncTypeBracket
-  | EncTypeTab
   deriving (Eq, Ord, Read, Show, Generic)
 data EncPlace
   = EncPlaceOpen
@@ -77,7 +76,6 @@ printEnclosure (Enclosure EncTypeBrace   EncPlaceOpen ) = "["
 printEnclosure (Enclosure EncTypeBrace   EncPlaceClose) = "]"
 printEnclosure (Enclosure EncTypeBracket EncPlaceOpen ) = "{"
 printEnclosure (Enclosure EncTypeBracket EncPlaceClose) = "}"
-printEnclosure (Enclosure EncTypeTab _) = error "can't print tabs"
 
 printLexQuote :: LexQuote -> T.Text
 printLexQuote LexQuoteSingle = "'"
