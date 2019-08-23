@@ -8,7 +8,7 @@
 
 -- | Allows trees to be "annotated", with arbitrary data assigned to each node.
 module TreeScript.Misc.Ann
-  ( SrcAnn(..)
+  ( SrcInfo(..)
   , Annd(..)
   , Annotatable(..)
   , mapAnnd
@@ -22,10 +22,10 @@ import qualified Data.Text                     as T
 
 import           GHC.Generics
 
-data SrcAnn
-  = SrcAnn
-  { srcAnnRange :: Range
-  , srcAnnText :: T.Text
+data SrcInfo
+  = SrcInfo
+  { srcInfoRange :: Range
+  , srcInfoText :: T.Text
   } deriving (Eq, Ord, Read, Show)
 
 -- | A node with an annotation.
@@ -42,9 +42,9 @@ class (Functor a, Foldable a, Traversable a) => Annotatable a where
   default getAnn :: (Generic1 a, Annotatable' (Rep1 a)) => a an -> an
   getAnn = getAnn' . from1
 
-instance Semigroup SrcAnn where
-  SrcAnn xrng xtxt <> SrcAnn yrng ytxt =
-    SrcAnn { srcAnnRange = xrng <> yrng, srcAnnText = xtxt <> ytxt }
+instance Semigroup SrcInfo where
+  SrcInfo xrng xtxt <> SrcInfo yrng ytxt =
+    SrcInfo { srcInfoRange = xrng <> yrng, srcInfoText = xtxt <> ytxt }
 
 instance Annotatable (Annd a) where
   getAnn = anndAnn

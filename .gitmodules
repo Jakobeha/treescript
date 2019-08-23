@@ -1,3 +1,6 @@
 [submodule "extra-deps/inline-js"]
 	path = extra-deps/inline-js
 	url = https://github.com/tweag/inline-js.git
+[submodule "extra-deps/semantic"]
+	path = extra-deps/semantic
+	url = git@github.com:Jakobeha/semantic.git

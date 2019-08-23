@@ -34,15 +34,37 @@ resolver: lts-13.23
 #  - auto-update
 #  - wai
 packages:
-- .
+  - .
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- megaparsec-7.0.4
-- ./extra-deps/inline-js/inline-js
-- ./extra-deps/inline-js/inline-js-core
-
+  - megaparsec-7.0.4
+  - ./extra-deps/semantic/
+  - ./extra-deps/semantic/vendor/haskell-tree-sitter
+  - ./extra-deps/semantic/vendor/haskell-tree-sitter/languages/nominalscript
+  - ./extra-deps/inline-js/inline-js
+  - ./extra-deps/inline-js/inline-js-core
+  # Semantic Deps
+  - fastsum-0.1.1.0
+  - fused-effects-0.5.0.0
+  - fused-effects-exceptions-0.2.0.0
+  - generic-monoid-0.1.0.0
+  - http-client-0.6.4
+  - semilattices-0.0.0.3
+  - tree-sitter-go-0.1.0.0
+  - tree-sitter-haskell-0.1.0.0
+  - tree-sitter-java-0.1.0.0
+  - tree-sitter-json-0.1.0.0
+  - tree-sitter-php-0.1.0.0
+  - tree-sitter-python-0.1.0.1
+  - tree-sitter-ruby-0.1.0.0
+  - tree-sitter-tsx-0.1.0.0
+  - tree-sitter-typescript-0.1.0.0
+  - git: "https://github.com/joshvera/proto3-suite.git"
+    commit: 83f3352f0c7c94ea091e6087f60692eda9991fae
+  - git: "https://github.com/joshvera/proto3-wire.git"
+    commit: 84664e22f01beb67870368f1f88ada5d0ad01f56
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

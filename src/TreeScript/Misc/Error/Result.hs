@@ -22,6 +22,8 @@ module TreeScript.Misc.Error.Result
   , Result(..)
   , ResultT(..)
   , MonadResult(..)
+  , orRes
+  , orResT
   , isSuccess
   , forceSuccess
   , justSuccess
@@ -31,6 +33,7 @@ module TreeScript.Misc.Error.Result
   , mapErrors
   , mapErrorsT
   , addStage
+  , eitherExcToResult
   , catchExceptionToError
   , liftIOCatch
   )
@@ -45,8 +48,10 @@ import           Control.Monad.Reader
 import           Control.Monad.State.Strict
 import           Control.Monad.Writer.Strict
 import           Control.Monad.RWS.Strict
+import           Data.Foldable
 import           Data.Maybe
 import qualified Data.Set                      as S
+import qualified Data.Text                     as T
 import           Control.Monad.Logger
 
 
@@ -72,10 +77,10 @@ class (Ord e, Monad m) => MonadResult e m | m -> e where
   -- | Failed to get a result because of a fatal error.
   mkFail :: e -> m a
   -- | Raise errors but don't stop computing the result.
-  tellErrors :: [e] -> m ()
+  tellErrors :: (Foldable c) => c e -> m ()
   -- | Raise an error but don't stop computing the result.
   tellError :: e -> m ()
-  tellError err = tellErrors [err]
+  tellError err = tellErrors ([err] :: [e])
   -- | Transforms all errors in the result.
   overErrors :: (e -> e) -> m a -> m a
   -- | Converts fatal results into nonfatal 'Nothing' results, and the rest into 'Just' results.
@@ -109,7 +114,7 @@ instance (Ord e, Monad u) => Monad (ResultT e u) where
 
 instance (Ord e) => MonadResult e (Result e) where
   mkFail = ResultFail
-  tellErrors errs = Result (S.fromList errs) ()
+  tellErrors errs = Result (S.fromList $ toList errs) ()
   overErrors = mapErrors
   downgradeFatal (ResultFail err) = Result [err] Nothing
   downgradeFatal (Result errs x ) = Result errs $ Just x
@@ -236,6 +241,21 @@ instance (Ord e, MonadMask u) => MonadMask (ResultT e u) where
       (Result uerrs used, Result rerrs rlsd) ->
         pure $ Result (uerrs <> rerrs) (used, rlsd)
 
+-- | Only tries second result if the first it fatal - prioritizes nonfatal first over pure success second.
+infixl 3 `orRes`
+orRes :: (Ord e) => Result e a -> Result e a -> Result e a
+Result xErrs x `orRes` _ = Result xErrs x
+_              `orRes` y = y
+
+-- | Lifted 'orRes'. Skips second result if pure success.
+infixl 3 `orResT`
+orResT :: (Monad u, Ord e) => ResultT e u a -> ResultT e u a -> ResultT e u a
+ResultT xAct `orResT` ResultT yAct = ResultT $ do
+  xRes <- xAct
+  case xRes of
+    Result xErrs x -> pure $ Result xErrs x
+    _              -> yAct
+
 -- | Is the result a success?
 isSuccess :: Result e a -> Bool
 isSuccess (ResultFail _ ) = False
@@ -284,6 +304,13 @@ mapErrorsT = mapResultT . fmap . mapErrors
 -- | Adds stage to errors.
 addStage :: (Functor u) => Stage -> EResultT u a -> SResultT u a
 addStage = mapErrorsT . SError
+
+eitherExcToResult :: (MonadResult Error m, Exception e) => Either e a -> m a
+eitherExcToResult (Left exc) = mkFail Error
+  { errorRange = Nothing
+  , errorMsg   = T.pack $ displayException exc
+  }
+eitherExcToResult (Right res) = pure res
 
 -- | If an exception is thrown, will catch it and convert it into a fatal error.
 catchExceptionToError :: (MonadIOEResult m) => m a -> m a

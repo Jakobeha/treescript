@@ -10,7 +10,6 @@ where
 
 import           Action
 import           TreeScript
-import qualified TreeScript.Misc.Ext.Text      as T
 
 import           Control.Monad
 import qualified Data.Text                     as T
@@ -27,19 +26,17 @@ runAction (ActionCompile compile') = runCompile compile'
 runAction (ActionEval    run'    ) = runEval run'
 
 runServe :: IO ()
-runServe = runSessionRes $ fail "TODO implement"
+runServe = fail "TODO implement"
 
 runCompile :: Compile -> IO ()
 runCompile (Compile inp out True) =
   runWatching inp $ runCompile $ Compile inp out False
-runCompile (Compile inp out False) = runSessionRes $ fail "TODO implement"
+runCompile (Compile inp out False) = fail "TODO implement"
 
 runEval :: Eval -> IO ()
 runEval (Eval prg inp out True) =
   runWatching inp $ runEval $ Eval prg inp out False
-runEval (Eval prg inp out False) = runSessionRes $ do
-  prg' <- (r0 <$) <$> parse prg
-  evalFile inp out prg'
+runEval (Eval prg inp out False) = fail "TODO implement"
 
 runWatching :: FilePath -> IO () -> IO ()
 runWatching inp action = withManager $ \mgr -> do
@@ -60,9 +57,9 @@ runWatching inp action = withManager $ \mgr -> do
   rerunForEvt (Removed  _ _ _) = False
   rerunForEvt (Unknown  _ _ _) = False
 
-runSessionRes :: SessionRes () -> IO ()
-runSessionRes session = do
-  res <- runSessionResReal session
+{- runSession :: Session () -> IO ()
+runSession session = do
+  res <- runSessionReal session
   case res of
     ResultFail err -> do
       putChunkLn $ fore red $ chunk "Fatal error:"
@@ -71,4 +68,4 @@ runSessionRes session = do
       | not (null errs) -> do
         putChunkLn $ fore red $ chunk "Errors:"
         forM_ errs $ \err -> T.putStrLn $ T.bullet $ pprint err
-      | otherwise -> putChunkLn $ fore green $ chunk "Success."
+      | otherwise -> putChunkLn $ fore green $ chunk "Success." -}

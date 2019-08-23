@@ -1,123 +1,156 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
 
 module TreeScript.Parse.Node
-  ( parseNode
-  )
+  ()
 where
 
 import           TreeScript.Ast
-import           TreeScript.Misc
-import           TreeScript.Parse.ParsecHelpers
+import           TreeScript.Parse.Class
 
-import qualified Text.Megaparsec               as M
+import           Data.Scientific
+import qualified Data.Text                     as T
+import qualified TreeSitter.NominalScript      as G
 
-instance TreePrintable Identifier where
-  parse (Identifier txt) = pure $ pliteral txt
+instance (a ~ SrcAnn) => UntypedParseable (Program SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Program SrcAnn) where
+  parse = untypedParse G.Program
 
-instance TreePrintable SpliceText where
-  parse (SpliceTextNil txt) = pure $ pliteral txt
-  parse (SpliceTextCons txt spl rst) =
-    pure (pliteral txt) <> "\\" <> spl <> "\\" <> parse rst
+instance (a ~ SrcAnn) => Parseable (Statement SrcAnn)
 
-instance Printable Quote where
-  pprint QuoteSingle = "'"
-  pprint QuoteDouble = "\""
+instance (a ~ SrcAnn) => UntypedParseable (Declare SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Declare SrcAnn) where
+  parse = untypedParse G.Declaration
 
-instance TreePrintable Quoted where
-  parse (Quoted qut txt) =
-    (ppunc <$> mprint qut) <> parse txt <> (ppunc <$> mprint qut)
+instance (a ~ SrcAnn) => UntypedParseable (Assign SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Assign SrcAnn) where
+  parse = untypedParse G.Assignment
 
-instance TreePrintable Prim where
-  parse (PrimInteger x  ) = pliteral <$> mprint x
-  parse (PrimFloat   x  ) = pliteral <$> mprint x
-  parse (PrimQuoted  qtd) = parse qtd
+instance (a ~ SrcAnn) => UntypedParseable (Match SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Match SrcAnn) where
+  parse = untypedParse G.MatchStatement
 
-instance TreePrintable Assign where
-  parse (Assign lhs rhs) = lhs <> " = " <> rhs
+instance (a ~ SrcAnn) => UntypedParseable (MatchBody SrcAnn)
+instance (a ~ SrcAnn) => Parseable (MatchBody SrcAnn) where
+  parse = untypedParse G.MatchBody
 
-instance TreePrintable Let where
-  parse (Let asn) = "let " <> parse asn
+instance (a ~ SrcAnn) => UntypedParseable (Case SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Case SrcAnn) where
+  parse = untypedParse G.MatchCase
 
-instance TreePrintable Struct where
-  parse (Struct xs) = "{ " <> mintercalate ", " (map parse xs) <> " }"
+instance (a ~ SrcAnn) => UntypedParseable (Loop SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Loop SrcAnn) where
+  parse = untypedParse G.LoopStatement
 
-instance TreePrintable Access where
-  parse = Access <$> P.try (parse *> ".") <> parse prop
+instance (a ~ SrcAnn) => UntypedParseable (Break SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Break SrcAnn) where
+  parse = untypedParse G.BreakStatement
 
-instance TreePrintable Array where
-  parse = Array <$> ("[" <* xs `P.sepBy` ", " *> "]")
+instance (a ~ SrcAnn) => Parseable (Expr SrcAnn)
 
-instance TreePrintable Index where
-  parse = Index <$> P.try (parse *> "[") <*> (parse *> "]")
+instance (a ~ SrcAnn) => Parseable (Pattern SrcAnn)
 
-instance TreeParsable Closure where
-  parse =
-    Closure
-      <$> ("(" <* parse `M.sepBy` ", " *> ") =>")
-      <*> (parse `M.sepBy` "\n")
+instance (a ~ SrcAnn) => Parseable (PExpr SrcAnn)
 
-instance TreeParsable Call where
-  parse = Call <$> P.try (parse *> "(") <*> (parse `M.sepBy` ", " *> ")")
+instance (a ~ SrcAnn) => Parseable (RefExpr SrcAnn)
 
-prim = atom $ \case
-  AtomPrim prim' -> Just prim'
-  _              -> Nothing
+instance (a ~ SrcAnn) => UntypedParseable (Object SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Object SrcAnn) where
+  parse = untypedParse G.Object
 
-ident = atom $ \case
-  AtomSymbol SymbolCaseLower sym -> Just sym
-  _                              -> Nothing
+instance (a ~ SrcAnn) => UntypedParseable (ObjectBody SrcAnn)
+instance (a ~ SrcAnn) => Parseable (ObjectBody SrcAnn) where
+  parse = untypedParse G.Access
+--  parse = untypedParse G.ObjectBody
 
-symbol txt = atom $ \case
-  AtomSymbol _ sym | sym == txt -> Just ()
-  _                             -> Nothing
+instance (a ~ SrcAnn) => UntypedParseable (ObjectProp SrcAnn)
+instance (a ~ SrcAnn) => Parseable (ObjectProp SrcAnn) where
+  parse = untypedParse G.ObjectProp
 
-closure :: Parser Closure
-closure =
-  Closure
-    <$> (enclos EncTypeParen "," idents *> "=>")
-    <*> enclos EncTypeBracket "\n" stmts
+instance (a ~ SrcAnn) => UntypedParseable (Array SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Array SrcAnn) where
+  parse = untypedParse G.Array
 
-array :: Parser Array
-array = Array <$> enclos EncTypeBrace "," stmt
+instance (a ~ SrcAnn) => UntypedParseable (Closure SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Closure SrcAnn) where
+  parse = untypedParse G.Closure
 
-struct :: Parser Struct
-struct = Struct <$> enclos EncTypeBracket "," (assign <*> stmt)
+instance (a ~ SrcAnn) => UntypedParseable (FormalList SrcAnn)
+instance (a ~ SrcAnn) => Parseable (FormalList SrcAnn) where
+  parse = untypedParse G.FormalParameters
 
-assign :: Parser (Node -> Assign)
-assign = Assign <$> (ident *> " = ")
+instance (a ~ SrcAnn) => UntypedParseable (Block SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Block SrcAnn) where
+  parse = untypedParse G.BracketedStatements
 
-assign' :: Parser Assign
-assign' = assign <*> expr
+instance (a ~ SrcAnn) => UntypedParseable (Access SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Access SrcAnn) where
+  parse = untypedParse G.Access
 
-let_ :: Parser (Node -> Let)
-let_ = (Let .) <$> symbol "let" <* assign
+instance (a ~ SrcAnn) => UntypedParseable (Subscript SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Subscript SrcAnn) where
+  parse = untypedParse G.Access
+--  parse = untypedParse G.Subscript
 
-exprBase :: Parser Node
-exprBase =
-  (NodeClosure <$> closure)
-    <|> (NodeArray <$> array)
-    <|> (NodeStruct <$> struct)
-    <|> (NodeIdentifier <$> ident)
-    <|> (NodePrim <$> prim)
+instance (a ~ SrcAnn) => UntypedParseable (Call SrcAnn)
+instance (a ~ SrcAnn) => Parseable (Call SrcAnn) where
+  parse = untypedParse G.Call
 
-exprPost :: Parser (Node -> Node)
-exprPost = access <|> index <|> call
+instance (a ~ SrcAnn) => UntypedParseable (ArgList SrcAnn)
+instance (a ~ SrcAnn) => Parseable (ArgList SrcAnn) where
+  parse = untypedParse G.Arguments
 
-expr :: Parser Node
-expr = exprBase <**> exprPost
+instance (a ~ SrcAnn) => UntypedParseable (UnOp SrcAnn)
+instance (a ~ SrcAnn) => Parseable (UnOp SrcAnn) where
+  parse = untypedParse G.UnaryOperation
 
-stmtPre :: Parser (Node -> Node)
-stmtPre = let_ <|> assign <|> pure id
+instance (a ~ SrcAnn) => Parseable (UnOperator a) where
+  parse = parseSpecialSum'
+    UnOperator
+    [(G.AnonBang, UnOpTypeNot), (G.AnonMinus, UnOpTypeNeg)]
 
-stmt :: Parser SNode
-stmt = stmtPre <*> expr
+instance (a ~ SrcAnn) => UntypedParseable (BinOp SrcAnn)
+instance (a ~ SrcAnn) => Parseable (BinOp SrcAnn) where
+  parse = untypedParse G.BinaryOperation
 
-stmts :: Parser [SNode]
-stmts = ((:) <$> stmt <*> many ("\n" <* stmt)) <|> pure []
+instance (a ~ SrcAnn) => Parseable (BinOperator a) where
+  parse = parseSpecialSum'
+    BinOperator
+    [ (G.AnonAmpersandAmpersand, BinOpTypeAnd)
+    , (G.AnonPipePipe          , BinOpTypeOr)
+    , (G.AnonPlus              , BinOpTypePlus)
+    , (G.AnonMinus             , BinOpTypeMinus)
+    , (G.AnonStar              , BinOpTypeTimes)
+    , (G.AnonSlash             , BinOpTypeDiv)
+    , (G.AnonStarStar          , BinOpTypeExp)
+    , (G.AnonLAngle            , BinOpTypeLT)
+    , (G.AnonLAngleEqual       , BinOpTypeLE)
+    , (G.AnonEqualEqual        , BinOpTypeEQ)
+    , (G.AnonBangEqual         , BinOpTypeNE)
+    , (G.AnonRAngleEqual       , BinOpTypeGE)
+    , (G.AnonRAngle            , BinOpTypeGT)
+    ]
 
-programParser :: Parser (ANodeProgram SrcAnn)
-programParser = ANodeProgram <$> stmts
+instance (a ~ SrcAnn) => Parseable (Identifier SrcAnn) where
+  parse = parseIdentifier Identifier G.Identifier
 
-parseNode :: BalanceProgram SrcAnn -> EResult (ANodeProgram SrcAnn)
-parseNode = runParser programParser ""
+instance (a ~ SrcAnn) => Parseable (TagIdentifier SrcAnn) where
+  parse = parseIdentifier TagIdentifier G.TagIdentifier
+
+instance (a ~ SrcAnn) => Parseable (Lit SrcAnn) where
+  parse = parseSpecialSum
+    Lit
+    [ (G.String, LitDataString)
+    , ( G.Number
+      , \src -> case floatingOrInteger $ read $ T.unpack src of
+        Left  flt -> LitDataFloat flt
+        Right int -> LitDataInt int
+      )
+    , (G.True , \_ -> LitDataBool True)
+    , (G.False, \_ -> LitDataBool False)
+    , (G.Null , \_ -> LitDataNull)
+    ]

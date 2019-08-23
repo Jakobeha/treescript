@@ -8,6 +8,7 @@ module TreeScript.Misc.Ext.Text
   , unescapeChar
   , escapeString
   , indent
+  , indentn
   , bullet
   , blockQuote
   , firstLine
@@ -46,6 +47,13 @@ indentRest = T.replace "\n" "\n  "
 -- | Also indents the first line.
 indent :: T.Text -> T.Text
 indent txt = "  " <> indentRest txt
+
+-- | Also indents the first line.
+indentn :: Int -> T.Text -> T.Text
+indentn n txt = idtTxt <> indentRest' txt
+ where
+  idtTxt      = T.replicate n "  "
+  indentRest' = T.replace "\n" $ "\n" <> idtTxt
 
 -- | Formats into a Markdown-style bulleted list item.
 bullet :: T.Text -> T.Text

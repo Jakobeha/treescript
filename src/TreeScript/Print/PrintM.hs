@@ -7,13 +7,17 @@ module TreeScript.Print.PrintM
   , putIndent
   , indentM
   , unindentM
-  , withIndent
+  , pindent
+  , apIndentText
   )
 where
+
+import qualified TreeScript.Misc.Ext.Text      as T
 
 import           Control.Applicative
 import           Control.Monad.State.Strict
 import           Data.String
+import qualified Data.Text                     as T
 
 -- | Print monad: keeps track of indentation level
 newtype PrintM a = PrintM{ unPrintM :: State Int a } deriving (Functor, Applicative, Monad)
@@ -39,5 +43,8 @@ indentM = PrintM $ modify succ
 unindentM :: PrintM ()
 unindentM = PrintM $ modify pred
 
-withIndent :: PrintM a -> PrintM a
-withIndent = PrintM . withState (+ 1) . unPrintM
+pindent :: PrintM a -> PrintM a
+pindent = PrintM . withState (+ 1) . unPrintM
+
+apIndentText :: T.Text -> PrintM T.Text
+apIndentText txt = PrintM $ (`T.indentn` txt) <$> get

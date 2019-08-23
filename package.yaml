@@ -1,117 +1,122 @@
-name:                treescript
-version:             0.1.0.0
-github:              "jakobeha/treescript"
-git:                 "https://github.com/jakobeha/treescript"
-homepage:            "https://github.com/jakobeha/treescript/src/master/README.md"
-bug-reports:         "https://github.com/jakobeha/treescript/issues"
-license:             GPL-3
-author:              "Jakob Hain"
-maintainer:          "jakobeha@gmail.com"
-copyright:           "2018 Jakob Hain"
+name: treescript
+version: 0.1.0.0
+github: "jakobeha/treescript"
+git: "https://github.com/jakobeha/treescript"
+homepage: "https://github.com/jakobeha/treescript/src/master/README.md"
+bug-reports: "https://github.com/jakobeha/treescript/issues"
+license: GPL-3
+author: "Jakob Hain"
+maintainer: "jakobeha@gmail.com"
+copyright: "2018 Jakob Hain"
 
 # Metadata used when publishing your package
-synopsis:            A language to transform source code from/between different languages.
-category:            Language
+synopsis: A language to transform source code from/between different languages.
+category: Language
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/jakobeha/treescript#readme>
+description: Please see the README on GitHub at <https://github.com/jakobeha/treescript#readme>
 
 extra-source-files:
-- README.md
-- ChangeLog.md
-- resources/**
-# - src/TreeScript/Ast/Lex/Parse.x
-# - src/TreeScript/Ast/Sugar/Parse.y
-- test-resources/**
+  - README.md
+  - ChangeLog.md
+  - resources/**
+  # - src/TreeScript/Ast/Lex/Parse.x
+  # - src/TreeScript/Ast/Sugar/Parse.y
+  - test-resources/**
 
 extra-doc-files:
-- doc/**
+  - doc/**
 
 ghc-options: -Wall -optP-Wno-nonportable-include-path
 
 build-tools:
-- alex
-- happy
+  - alex
+  - happy
 
 dependencies:
-- array
-- aeson
-- autoexporter
-- base >= 4.7 && < 5
-- bifunctors
-- binary
-- bytestring
-- containers
-- data-msgpack
-- directory
-- exceptions
-- extra
-- filepath
-- inline-js
-- inline-js-core
-- io-streams
-- attoparsec
-- megaparsec
-- monad-logger
-- monad-loops
-- mtl
-- process
-- regex-applicative
-- semigroupoids
-- shelly
-- system-filepath
-- temporary
-- text
-- transformers
-- unix
-- vector
-- yaml
+  - array
+  - aeson
+  - autoexporter
+  - base >= 4.7 && < 5
+  - bifunctors
+  - binary
+  - bytestring
+  - casing
+  - containers
+  - data-msgpack
+  - directory
+  - exceptions
+  - extra
+  - filepath
+  - generic-deriving
+  - inline-js
+  - inline-js-core
+  - io-streams
+  - attoparsec
+  - megaparsec
+  - monad-logger
+  - monad-loops
+  - mtl
+  - process
+  - regex-applicative
+  - scientific
+  - semigroupoids
+  - shelly
+  - system-filepath
+  - semantic
+  - temporary
+  - text
+  - transformers
+  - tree-sitter-nominalscript
+  - unix
+  - vector
+  - yaml
 
 library:
   source-dirs: src
   exposed-modules:
-  - TreeScript
-  - TreeScript.Ast
-  - TreeScript.Interpret
-  - TreeScript.Misc
-  - TreeScript.Parse
-  - TreeScript.Print
+    - TreeScript
+    - TreeScript.Ast
+    - TreeScript.Interpret
+    - TreeScript.Misc
+    - TreeScript.Parse
+    - TreeScript.Print
 
 executables:
   treescript:
-    main:                Main.hs
-    source-dirs:         app
+    main: Main.hs
+    source-dirs: app
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - treescript
-    - containers
-    - fsnotify
-    - mtl
-    - optparse-applicative
-    - rainbow
-    - text
+      - treescript
+      - containers
+      - fsnotify
+      - mtl
+      - optparse-applicative
+      - rainbow
+      - text
 
 tests:
   treescript-test:
-    main:                Spec.hs
-    source-dirs:         test
+    main: Spec.hs
+    source-dirs: test
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - '"-with-rtsopts=-N -M128m"'
+      - -threaded
+      - -rtsopts
+      - '"-with-rtsopts=-N -M128m"'
     dependencies:
-    - treescript
-    - containers
-    - directory
-    - filepath
-    - hspec
-    - HUnit
-    - process
-    - QuickCheck
-    - temporary
-    - yaml
+      - treescript
+      - containers
+      - directory
+      - filepath
+      - hspec
+      - HUnit
+      - process
+      - QuickCheck
+      - temporary
+      - yaml

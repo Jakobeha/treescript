@@ -12,11 +12,11 @@ where
 import           TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Print.Class
-import           TreeScript.Print.PrintM
 
 import           Control.Monad.Catch
 import qualified Data.Set                      as S
 import qualified Data.Text                     as T
+import qualified Data.Text.Encoding.Error      as T
 
 instance Printable () where
   pprint () = "()"
@@ -37,6 +37,9 @@ instance Printable T.Text where
   pprint txt = "\"" <> T.escapeString txt <> "\""
 
 instance Printable SomeException where
+  pprint = T.pack . displayException
+
+instance Printable T.UnicodeException where
   pprint = T.pack . displayException
 
 instance (Printable a) => Printable [a] where
@@ -69,17 +72,3 @@ instance (Ord e, Printable e, Printable a) => Printable (Result e a) where
     ("result:" : pprint res : "errors:" : map (T.bullet . pprint)
                                               (S.toList errs)
     )
-
-instance AnnPrintable SrcAnn where
-  printAnnd _ (SrcAnn _ txt) = do
-    case T.indentOnLastLine txt of
-      Nothing  -> pure ()
-      Just lvl -> putIndent lvl
-    pure txt
-
-instance (AnnPrintable a) => AnnPrintable (Maybe a) where
-  printAnnd txt Nothing  = txt
-  printAnnd txt (Just x) = printAnnd txt x
-
-instance (Printable a, AnnPrintable an) => Printable (Annd a an) where
-  mprint (Annd ann x) = printAnnd (mprint x) ann

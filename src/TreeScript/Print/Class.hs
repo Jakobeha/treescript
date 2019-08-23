@@ -1,6 +1,7 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -21,15 +22,10 @@ import           GHC.Generics
 -- | Get a "user-friendly" description: reasonable to put in a message shown to the user.
 -- Depending on the implementation, this could be for debugging or the actual AST reprint used in production.
 class Printable a where
-  {-# MINIMAL pprint | mprint #-}
-
   pprint :: a -> T.Text
-  pprint = runPrintM . mprint
-  mprint :: a -> PrintM T.Text
-  mprint = pure . pprint
 
-class AnnPrintable an where
-  printAnnd :: PrintM T.Text -> an -> PrintM T.Text
+class AnnPrintable (an :: k -> *) where
+  printAnnd :: (PrintOut o) => an x -> PrintM o -> PrintM o
 
 -- | Abstract output type which trees can be printed into. Usually just text, but can also be a patch or "smart" type.
 --
@@ -38,43 +34,39 @@ class AnnPrintable an where
 -- Basic implementations, like 'Text', handle these both the same, but patches wouldn't.
 class (IsString a, Monoid a) => PrintOut a where
   -- | Punctuation (e.g. separators, delimiters)
-  ppunc :: T.Text -> a
-  ppunc = fromString . T.unpack
+  ppunc :: T.Text -> PrintM a
   -- | Significant text, e.g. symbols
-  pliteral :: T.Text -> a
-  -- | Indent
-  pindent :: a -> a
+  pliteral :: T.Text -> PrintM a
+  -- | From annotation
+  pann :: T.Text -> PrintM a
+  pann = ppunc
 
 -- | Print AST nodes for AST rewriting
-class (Functor a) => TreePrintable a where
-  treePrint :: (PrintOut o) => a (PrintM o) -> PrintM o
+class AstPrintable a where
+  mprintAst :: (PrintOut o) => a -> PrintM o
   -- | Default implementation for sum types
-  default treePrint :: (Generic1 a, PrintOut o, TreePrintable' (Rep1 a)) => a (PrintM o) -> PrintM o
-  treePrint = treePrint' . from1
+  default mprintAst :: (Generic a, GAstPrintable (Rep a), PrintOut o) => a -> PrintM o
+  mprintAst = gmprintAst . from
 
-class TreePrintable' a where
-  treePrint' :: (PrintOut o) => a (PrintM o) -> PrintM o
+class GAstPrintable a where
+  gmprintAst :: (PrintOut o) => a x -> PrintM o
 
-instance (TreePrintable' a) => TreePrintable' (M1 i t a) where
-  treePrint' (M1 x) = treePrint' x
+instance (GAstPrintable a) => GAstPrintable (M1 i t a) where
+  gmprintAst (M1 x) = gmprintAst x
 
-instance (TreePrintable a) => TreePrintable' (Rec1 a) where
-  treePrint' (Rec1 x) = treePrint x
+instance (AstPrintable a) => GAstPrintable (K1 i a) where
+  gmprintAst (K1 x) = mprintAst x
 
-instance (TreePrintable' a, TreePrintable' b) => TreePrintable' (a :+: b) where
-  treePrint' (L1 x) = treePrint' x
-  treePrint' (R1 x) = treePrint' x
+instance (GAstPrintable a, GAstPrintable b) => GAstPrintable (a :+: b) where
+  gmprintAst (L1 x) = gmprintAst x
+  gmprintAst (R1 x) = gmprintAst x
 
 instance PrintOut T.Text where
-  ppunc    = id
-  pliteral = id
-  pindent  = T.indent
+  ppunc    = apIndentText
+  pliteral = apIndentText
 
-treeMPrint :: (TreePrintable a, Printable r) => a r -> PrintM T.Text
-treeMPrint = treePrint . fmap mprint
-
-mindent :: (PrintOut o) => PrintM o -> PrintM o
-mindent = withIndent . fmap pindent
+pprintAst :: (AstPrintable a) => a -> T.Text
+pprintAst = runPrintM . mprintAst
 
 printFirstLine :: Printable a => [a] -> T.Text
 printFirstLine []       = ""

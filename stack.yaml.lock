@@ -11,6 +11,139 @@ packages:
       sha256: ab1608bf3230f6f3242fd49f4aa60025698c831f2cfb3496ccbdadf7840848e9
   original:
     hackage: megaparsec-7.0.4
+- completed:
+    hackage: fastsum-0.1.1.0@sha256:bbc8c27b6dc100a94cef28ab1bebe38155cd95e00e8d27e025a137c8b74118e2,2280
+    pantry-tree:
+      size: 430
+      sha256: 1f74dac14478572e175bf8e12de4500711c47fdcc56cb630eae3732e0410aa1d
+  original:
+    hackage: fastsum-0.1.1.0
+- completed:
+    hackage: fused-effects-0.5.0.0@sha256:28ee6635ea8f01425d82f1fe019d215505a6a7ad6609ce950b187a0e35b28879,4215
+    pantry-tree:
+      size: 2400
+      sha256: 0070698d839d4da619a9f1e7c07679a1370996b65837c39ce995c60e8f05e7ff
+  original:
+    hackage: fused-effects-0.5.0.0
+- completed:
+    hackage: fused-effects-exceptions-0.2.0.0@sha256:a4925cdf5fd57a7ed5e603e1d8d1de0f227654d0137b9643d0b3807804f2ff08,1123
+    pantry-tree:
+      size: 284
+      sha256: d04e54d69214f0846be7bc9e55a34f0897de12c97557dbb0ed51e6c07198749a
+  original:
+    hackage: fused-effects-exceptions-0.2.0.0
+- completed:
+    hackage: generic-monoid-0.1.0.0@sha256:00d1a7b7ff0890a3e3cba4032be24fe377c26e5e45d73afcacd42c98abb3b7e3,818
+    pantry-tree:
+      size: 393
+      sha256: 1f8ee01867eaaaa25d3f2f74ad3b62baff2a68dd666e594eb246b67c12fea489
+  original:
+    hackage: generic-monoid-0.1.0.0
+- completed:
+    hackage: http-client-0.6.4@sha256:a74b417345857d4250bdb6d4ac7fd4a89fd2ad8efab3164c1a2b843398d5c13a,5320
+    pantry-tree:
+      size: 2457
+      sha256: fe331314b0a8d9e8ce445405831b6e802ab99d57cab1f4d265910cfcd68d3153
+  original:
+    hackage: http-client-0.6.4
+- completed:
+    hackage: semilattices-0.0.0.3@sha256:215d40aa231ed1786211809a5f4b7768a708a8ac1625507b9d5ddb4929323a8e,2108
+    pantry-tree:
+      size: 801
+      sha256: 88d3e9a8a00ed972dfb6f7723a2f099134965b9e234867716670b992ed3a69b9
+  original:
+    hackage: semilattices-0.0.0.3
+- completed:
+    hackage: tree-sitter-go-0.1.0.0@sha256:ed87a3a3bc480359cde868307621eceae98c2dc53874f340b3c4bd0a9557e0ba,1415
+    pantry-tree:
+      size: 406
+      sha256: d116ce3af1ed3cf933d419c46d25dd14ad1b15080ebf89c3ba8fa37b87f7f513
+  original:
+    hackage: tree-sitter-go-0.1.0.0
+- completed:
+    hackage: tree-sitter-haskell-0.1.0.0@sha256:03f63adaedf29e23782a701c7eabe72b698f42de15b075c9825d20fcb1b73089,1900
+    pantry-tree:
+      size: 572
+      sha256: 686d1c0cb39d809d9bda560cf0d9133c2ffc17acf9f6fe2d73664d313623f157
+  original:
+    hackage: tree-sitter-haskell-0.1.0.0
+- completed:
+    hackage: tree-sitter-java-0.1.0.0@sha256:739b6d5f7927c3f06ab319acbaca67346be81cc704cfdeb9747dca12de9e310c,1412
+    pantry-tree:
+      size: 416
+      sha256: b95fccb16010a7b130a7b4353a5c84266c12bec6bf634a8d19cc03ec211f5095
+  original:
+    hackage: tree-sitter-java-0.1.0.0
+- completed:
+    hackage: tree-sitter-json-0.1.0.0@sha256:363de79c0b61e925c1f6492f6937096c7e549489d8c5aeee16bcb3112fc3dcfe,1427
+    pantry-tree:
+      size: 414
+      sha256: bd2f1abb8e1ebe21bbef5ad42cbc168734b7f9fd9d8d1afaadab29a64d66862f
+  original:
+    hackage: tree-sitter-json-0.1.0.0
+- completed:
+    hackage: tree-sitter-php-0.1.0.0@sha256:3c62ee8b2fa1a699833a813287b6c9e1ef669900ac6a99fe1c3f123cbb2e7cb4,1507
+    pantry-tree:
+      size: 444
+      sha256: a8188c50269cf2b7aa2a5d5775ebf727701616090d0b8640f33f53faba6182f5
+  original:
+    hackage: tree-sitter-php-0.1.0.0
+- completed:
+    hackage: tree-sitter-python-0.1.0.1@sha256:9899df293e996f762ae976ba482de7e50ee455a784842ba7f720af9744615954,1805
+    pantry-tree:
+      size: 658
+      sha256: 616c5a79dd1f9a54a67faa12fb76419dc6e4bca37981f28da1e18b08e4df6f56
+  original:
+    hackage: tree-sitter-python-0.1.0.1
+- completed:
+    hackage: tree-sitter-ruby-0.1.0.0@sha256:e7aa06c8fc5e48714e82d30c64ceda20bbefb2120dd0e6d3e8bcda9b1a3fb86b,1520
+    pantry-tree:
+      size: 451
+      sha256: c4ada4e70c535c6252f5056a90c780d0c4b2d86a2c976254c139eb85f49426da
+  original:
+    hackage: tree-sitter-ruby-0.1.0.0
+- completed:
+    hackage: tree-sitter-tsx-0.1.0.0@sha256:a6fe0d1d9382ecad18fc0cfc22da3580966a1b5e0b6e5fd717cccc746916868d,1611
+    pantry-tree:
+      size: 561
+      sha256: 6e86fee339b0f0a0fc6f094dbd6dd771be7dce099d626b3988c934bdea04cbd9
+  original:
+    hackage: tree-sitter-tsx-0.1.0.0
+- completed:
+    hackage: tree-sitter-typescript-0.1.0.0@sha256:cf645b87a065e84bf7acce3df00b3b592e3af9b2dd6171fe1982733d6b1ba9ff,1686
+    pantry-tree:
+      size: 603
+      sha256: a2899ffb38c50d5a30cb2f173813e520ab82b383e66cd4334753548a274ad210
+  original:
+    hackage: tree-sitter-typescript-0.1.0.0
+- completed:
+    cabal-file:
+      size: 4633
+      sha256: 4f762096d067b9b782357e077d200a8f8a3999340b6f9fd5672c9a8c9b0c9194
+    name: proto3-suite
+    version: 0.2.0
+    git: https://github.com/joshvera/proto3-suite.git
+    pantry-tree:
+      size: 4281
+      sha256: f750cf61de9861676cf4e98e0bb8bccae939a0ee5a218651ab8b59e11f5c6913
+    commit: 83f3352f0c7c94ea091e6087f60692eda9991fae
+  original:
+    git: https://github.com/joshvera/proto3-suite.git
+    commit: 83f3352f0c7c94ea091e6087f60692eda9991fae
+- completed:
+    cabal-file:
+      size: 1933
+      sha256: c05a580ea8925ecab0658a81b570e040b8a35d91e4eda11340025e5b26f1eacf
+    name: proto3-wire
+    version: 1.0.0
+    git: https://github.com/joshvera/proto3-wire.git
+    pantry-tree:
+      size: 854
+      sha256: 0ae0d0850eef29b3925b2cedd05b89261f2305b4a6659444dc87697e1a05458f
+    commit: 84664e22f01beb67870368f1f88ada5d0ad01f56
+  original:
+    git: https://github.com/joshvera/proto3-wire.git
+    commit: 84664e22f01beb67870368f1f88ada5d0ad01f56
 snapshots:
 - completed:
     size: 498398
