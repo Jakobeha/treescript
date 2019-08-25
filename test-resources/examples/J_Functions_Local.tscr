@@ -1,4 +1,0 @@
-#IndexPath[@Scheme_Atom|@Scheme_Symbol|@Scheme_SNil|@Scheme_SCons, @Scheme_Atom|@Scheme_Symbol|@Scheme_SNil|@Scheme_SCons].
-
-&Main[].
-'(index-path of \y in \x)' -> T[\x, \y] #IndexPath[];

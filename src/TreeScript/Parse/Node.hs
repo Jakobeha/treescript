@@ -10,6 +10,7 @@ module TreeScript.Parse.Node
 where
 
 import           TreeScript.Ast
+import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Parse.Class
 
 import           Data.Scientific
@@ -18,37 +19,41 @@ import qualified TreeSitter.NominalScript      as G
 
 instance (a ~ SrcAnn) => UntypedParseable (Program SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Program SrcAnn) where
-  parse = untypedParse G.Program
+  parse = untypedParse G.Program True
 
 instance (a ~ SrcAnn) => Parseable (Statement SrcAnn)
 
 instance (a ~ SrcAnn) => UntypedParseable (Declare SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Declare SrcAnn) where
-  parse = untypedParse G.Declaration
+  parse = untypedParse G.Declaration True
 
 instance (a ~ SrcAnn) => UntypedParseable (Assign SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Assign SrcAnn) where
-  parse = untypedParse G.Assignment
+  parse = untypedParse G.Assignment True
 
 instance (a ~ SrcAnn) => UntypedParseable (Match SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Match SrcAnn) where
-  parse = untypedParse G.MatchStatement
+  parse = untypedParse G.MatchStatement True
 
 instance (a ~ SrcAnn) => UntypedParseable (MatchBody SrcAnn)
 instance (a ~ SrcAnn) => Parseable (MatchBody SrcAnn) where
-  parse = untypedParse G.MatchBody
+  parse = untypedParse G.MatchBody True
 
 instance (a ~ SrcAnn) => UntypedParseable (Case SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Case SrcAnn) where
-  parse = untypedParse G.MatchCase
+  parse = untypedParse G.MatchCase True
 
 instance (a ~ SrcAnn) => UntypedParseable (Loop SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Loop SrcAnn) where
-  parse = untypedParse G.LoopStatement
+  parse = untypedParse G.LoopStatement True
 
 instance (a ~ SrcAnn) => UntypedParseable (Break SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Break SrcAnn) where
-  parse = untypedParse G.BreakStatement
+  parse = untypedParse G.BreakStatement True
+
+instance (a ~ SrcAnn) => UntypedParseable (ExprStmt SrcAnn)
+instance (a ~ SrcAnn) => Parseable (ExprStmt SrcAnn) where
+  parse = untypedParse G.ExpressionStatement True
 
 instance (a ~ SrcAnn) => Parseable (Expr SrcAnn)
 
@@ -60,53 +65,51 @@ instance (a ~ SrcAnn) => Parseable (RefExpr SrcAnn)
 
 instance (a ~ SrcAnn) => UntypedParseable (Object SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Object SrcAnn) where
-  parse = untypedParse G.Object
+  parse = untypedParse G.Object True
 
 instance (a ~ SrcAnn) => UntypedParseable (ObjectBody SrcAnn)
 instance (a ~ SrcAnn) => Parseable (ObjectBody SrcAnn) where
-  parse = untypedParse G.Access
---  parse = untypedParse G.ObjectBody
+  parse = untypedParse G.ObjectBody True
 
 instance (a ~ SrcAnn) => UntypedParseable (ObjectProp SrcAnn)
 instance (a ~ SrcAnn) => Parseable (ObjectProp SrcAnn) where
-  parse = untypedParse G.ObjectProp
+  parse = untypedParse G.ObjectProp True
 
 instance (a ~ SrcAnn) => UntypedParseable (Array SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Array SrcAnn) where
-  parse = untypedParse G.Array
+  parse = untypedParse G.Array True
 
 instance (a ~ SrcAnn) => UntypedParseable (Closure SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Closure SrcAnn) where
-  parse = untypedParse G.Closure
+  parse = untypedParse G.Closure True
 
 instance (a ~ SrcAnn) => UntypedParseable (FormalList SrcAnn)
 instance (a ~ SrcAnn) => Parseable (FormalList SrcAnn) where
-  parse = untypedParse G.FormalParameters
+  parse = untypedParse G.FormalParameters True
 
 instance (a ~ SrcAnn) => UntypedParseable (Block SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Block SrcAnn) where
-  parse = untypedParse G.BracketedStatements
+  parse = untypedParse G.BracketedStatements True
 
 instance (a ~ SrcAnn) => UntypedParseable (Access SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Access SrcAnn) where
-  parse = untypedParse G.Access
+  parse = untypedParse G.Access True
 
 instance (a ~ SrcAnn) => UntypedParseable (Subscript SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Subscript SrcAnn) where
-  parse = untypedParse G.Access
---  parse = untypedParse G.Subscript
+  parse = untypedParse G.Subscript True
 
 instance (a ~ SrcAnn) => UntypedParseable (Call SrcAnn)
 instance (a ~ SrcAnn) => Parseable (Call SrcAnn) where
-  parse = untypedParse G.Call
+  parse = untypedParse G.Call True
 
 instance (a ~ SrcAnn) => UntypedParseable (ArgList SrcAnn)
 instance (a ~ SrcAnn) => Parseable (ArgList SrcAnn) where
-  parse = untypedParse G.Arguments
+  parse = untypedParse G.Arguments True
 
 instance (a ~ SrcAnn) => UntypedParseable (UnOp SrcAnn)
 instance (a ~ SrcAnn) => Parseable (UnOp SrcAnn) where
-  parse = untypedParse G.UnaryOperation
+  parse = untypedParse G.UnaryOperation False
 
 instance (a ~ SrcAnn) => Parseable (UnOperator a) where
   parse = parseSpecialSum'
@@ -115,7 +118,7 @@ instance (a ~ SrcAnn) => Parseable (UnOperator a) where
 
 instance (a ~ SrcAnn) => UntypedParseable (BinOp SrcAnn)
 instance (a ~ SrcAnn) => Parseable (BinOp SrcAnn) where
-  parse = untypedParse G.BinaryOperation
+  parse = untypedParse G.BinaryOperation False
 
 instance (a ~ SrcAnn) => Parseable (BinOperator a) where
   parse = parseSpecialSum'
@@ -141,10 +144,13 @@ instance (a ~ SrcAnn) => Parseable (Identifier SrcAnn) where
 instance (a ~ SrcAnn) => Parseable (TagIdentifier SrcAnn) where
   parse = parseIdentifier TagIdentifier G.TagIdentifier
 
+instance (a ~ SrcAnn) => Parseable (Blank SrcAnn) where
+  parse = parseUnit Blank G.Blank
+
 instance (a ~ SrcAnn) => Parseable (Lit SrcAnn) where
   parse = parseSpecialSum
     Lit
-    [ (G.String, LitDataString)
+    [ (G.String, LitDataString . T.pack . read . T.unpack)
     , ( G.Number
       , \src -> case floatingOrInteger $ read $ T.unpack src of
         Left  flt -> LitDataFloat flt

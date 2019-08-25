@@ -9,15 +9,13 @@ module Core.Test.TreeScript.TestFile
   )
 where
 
-import           TreeScript
-
 import           Control.Monad
 import           Data.List
 import qualified Data.Map.Strict               as M
 import           Data.Maybe
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
-import           Data.Yaml
+import           Data.Yaml                     as Y
 import           System.Directory
 import           System.FilePath
 
@@ -32,7 +30,8 @@ data ExecTest
 
 data TestFile
   = TestFile
-  { testFileSrcFile :: File
+  { testFileSrcPath :: FilePath
+  , testFileSrcContents :: T.Text
   , testFileTestInfo :: TestInfo
   , testFileExecTests :: [ExecTest]
   } deriving (Eq, Ord, Read, Show)
@@ -41,15 +40,8 @@ data TestInfo
   = TestInfo
   { testInfoSkip :: Bool
   , testInfoSkipRun :: [T.Text]
-  , testInfoPrintLex :: Bool
-  , testInfoPrintSugar :: Bool
-  , testInfoPrintCore :: Bool
-  , testInfoPrintTranslate :: Bool
-  , testInfoIsLexable :: Bool
+  , testInfoPrintParse :: Bool
   , testInfoIsParseable :: Bool
-  , testInfoIsDesugarable :: Bool
-  , testInfoIsTranslatable :: Bool
-  , testInfoIsCompilable :: Bool
   , testInfoCantRun :: [T.Text]
   , testInfoFatalErrorMsg :: T.Text
   , testInfoErrorMsgs :: [T.Text]
@@ -57,47 +49,29 @@ data TestInfo
   } deriving (Eq, Ord, Read, Show)
 
 instance FromJSON TestInfo where
-  parseJSON (Object x) =
+  parseJSON (Y.Object x) =
     TestInfo
       <$> (x .:? "skip?" .!= False)
       <*> (x .:? "skipRun" .!= [])
-      <*> (x .:? "printLex?" .!= False)
-      <*> (x .:? "printSugar?" .!= False)
-      <*> (x .:? "printCore?" .!= False)
-      <*> (x .:? "printTranslate?" .!= False)
-      <*> (x .:? "lexes?" .!= True)
+      <*> (x .:? "printParse?" .!= False)
       <*> (x .:? "parses?" .!= True)
-      <*> (x .:? "desugars?" .!= True)
-      <*> (x .:? "translates?" .!= True)
-      <*> (x .:? "compiles?" .!= True)
       <*> (x .:? "cantRun" .!= [])
       <*> (x .:? "error" .!= "")
       <*> (x .:? "errors" .!= [])
       <*> (M.toList <$> x .:? "runEnv" .!= M.empty)
-  parseJSON Null = pure TestInfo { testInfoSkip           = False
-                                 , testInfoSkipRun        = []
-                                 , testInfoPrintLex       = False
-                                 , testInfoPrintSugar     = False
-                                 , testInfoPrintCore      = False
-                                 , testInfoPrintTranslate = False
-                                 , testInfoIsLexable      = True
-                                 , testInfoIsParseable    = True
-                                 , testInfoIsDesugarable  = True
-                                 , testInfoIsTranslatable = True
-                                 , testInfoIsCompilable   = True
-                                 , testInfoCantRun        = []
-                                 , testInfoFatalErrorMsg  = ""
-                                 , testInfoErrorMsgs      = []
-                                 , testInfoRunEnv         = []
+  parseJSON Null = pure TestInfo { testInfoSkip          = False
+                                 , testInfoSkipRun       = []
+                                 , testInfoPrintParse    = False
+                                 , testInfoIsParseable   = True
+                                 , testInfoCantRun       = []
+                                 , testInfoFatalErrorMsg = ""
+                                 , testInfoErrorMsgs     = []
+                                 , testInfoRunEnv        = []
                                  }
   parseJSON _ = fail "expected object or null"
 
 stripSuffix :: (Eq a) => [a] -> [a] -> Maybe [a]
 stripSuffix suf = fmap reverse . stripPrefix (reverse suf) . reverse
-
--- | Reads the source file in the given directory with the given name.
-loadSrcFileInDir :: FilePath -> String -> IO File
-loadSrcFileInDir dir name' = loadFile $ dir </> name' <.> "tscr"
 
 -- | Reads the source file in the given directory with the given name.
 loadTestInfoInDir :: FilePath -> String -> IO TestInfo
@@ -128,11 +102,11 @@ mkExecTest dir (inName, inExt) (outName, outExt)
         outputPath = dir </> outName <.> "out" <.> outExt
     input  <- T.readFile inputPath
     output <- T.readFile outputPath
-    pure ExecTest { execTestName      = T.pack inName
-                  , execTestInputPath = inputPath
-                  , execTestInput     = input
-                  , execTestOutputPath  = outputPath
-                  , execTestOutput    = output
+    pure ExecTest { execTestName       = T.pack inName
+                  , execTestInputPath  = inputPath
+                  , execTestInput      = input
+                  , execTestOutputPath = outputPath
+                  , execTestOutput     = output
                   }
 
 -- | Finds executable input/output tests in the given directory with the given name.
@@ -157,9 +131,11 @@ loadExecTestsInDir dir name' = do
 loadTestFileInDir :: FilePath -> String -> IO TestFile
 loadTestFileInDir dir name' =
   TestFile
-    <$> loadSrcFileInDir dir name'
+    <$> pure path
+    <*> T.readFile path
     <*> loadTestInfoInDir dir name'
     <*> loadExecTestsInDir dir name'
+  where path = dir </> name' <.> "nmjs"
 
 -- | Gets the all test files in the directory, assuming the directory doesn't
 -- contain any sub-directories.
@@ -167,5 +143,5 @@ loadFilesInDir :: FilePath -> IO [TestFile]
 loadFilesInDir dir =
   traverse (loadTestFileInDir dir)
     .   sort
-    .   mapMaybe (stripSuffix ".tscr")
+    .   mapMaybe (stripSuffix ".nmjs")
     =<< listDirectory dir

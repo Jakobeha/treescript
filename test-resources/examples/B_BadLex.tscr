@@ -1,6 +1,0 @@
-Foo[bar, baz, «]?
-
-r'{
-\i = \start
-while (\i <= \end) { ...\expr; \i = \i + 1 }
-}': r'for (\i in \start:\end) { ...\expr }';

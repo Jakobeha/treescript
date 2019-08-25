@@ -67,7 +67,10 @@ instance Printable SError where
 
 instance (Ord e, Printable e, Printable a) => Printable (Result e a) where
   pprint (ResultFail err ) = "fatal error: " <> pprint err
-  pprint (Result []   res) = "success: " <> pprint res
+  pprint (Result []   res)
+    | T.any (== '\n') resPrint = "success:\n" <> pprint res
+    | otherwise = "success: " <> pprint res
+    where resPrint = pprint res
   pprint (Result errs res) = T.unlines
     ("result:" : pprint res : "errors:" : map (T.bullet . pprint)
                                               (S.toList errs)

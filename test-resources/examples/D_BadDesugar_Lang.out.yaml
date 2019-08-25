@@ -1,5 +1,0 @@
-desugars?: false
-errors:
-- "while desugaring - at 3:1-3:55 - regular reducer must be in group"
-- "while reading input - at 1:1-1:4 - unknown language with extension: foo"
-- "while reading input - at 2:1-2:23 - couldn't parse code - syntax error - multiple dots in list"

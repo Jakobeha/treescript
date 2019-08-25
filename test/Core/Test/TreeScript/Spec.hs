@@ -12,6 +12,7 @@ import           TreeScript
 
 import           Control.Monad
 import           Data.Foldable
+import           Data.Char
 import           Data.List
 import qualified Data.Text                     as T
 import           Test.Hspec
@@ -30,15 +31,19 @@ assertNoErrors errs
     (toList errs)
 
 -- | Asserts the result should be a fatal error with the given message.
-shouldFailTo :: (HasCallStack, Printable a) => Result a -> T.Text -> Expectation
+shouldFailTo
+  :: (HasCallStack, Printable a) => EResult a -> T.Text -> Expectation
 shouldFailTo (ResultFail aerr) eerr = errorMsg aerr `shouldBe` eerr
 shouldFailTo res@(Result _ _) _ =
   assertFailureText $ "Unexpected non-fatal result: " <> pprint res
 
+reducePrint :: T.Text -> String
+reducePrint = T.unpack . T.filter (not . isSpace)
+
 -- | Specifies that the left string should be a subsequence of the right.
 shouldBeReducePrintOf :: (HasCallStack) => T.Text -> T.Text -> Expectation
 rp `shouldBeReducePrintOf` full =
-  unless (T.unpack rp `isSubsequenceOf` T.unpack full)
+  unless (reducePrint rp `isSubsequenceOf` reducePrint full)
     $ assertFailureText failMsg
  where
   failMsg =

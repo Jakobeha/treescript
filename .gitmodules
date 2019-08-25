@@ -4,3 +4,6 @@
 [submodule "extra-deps/semantic"]
 	path = extra-deps/semantic
 	url = git@github.com:Jakobeha/semantic.git
+[submodule "extra-deps/kind-generics"]
+	path = extra-deps/kind-generics
+	url = https://gitlab.com/trupill/kind-generics.git

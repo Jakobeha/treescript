@@ -1,3 +1,0 @@
-&Main[].
-'function \name() { \body; }' -> 'var \name = function() { \body; }';
-\x -> \x;

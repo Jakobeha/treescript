@@ -29,15 +29,16 @@ import qualified Data.Text.Encoding            as T
 import           GHC.Generics
 import           Parsing.Parser
 import qualified Semantic.Task                 as S
+import           TreeSitter.Language
 import qualified TreeSitter.NominalScript      as G
 
 type ParseM = EResultT (ReaderT (B.ByteString, [AST [] G.Grammar]) IO)
 
 class UntypedParseable a where
-  untypedParse :: G.Grammar -> ParseM a
+  untypedParse :: G.Grammar -> Bool -> ParseM a
   default untypedParse
-    :: (Generic a, GUntypedParseable (Rep a)) => G.Grammar -> ParseM a
-  untypedParse = fmap to . guntypedParse
+    :: (Generic a, GUntypedParseable (Rep a)) => G.Grammar -> Bool -> ParseM a
+  untypedParse gram = fmap to . guntypedParse gram
 
 class Parseable a where
   -- | Example for parsing a let: @parse = untypedParse G.Let@
@@ -46,22 +47,22 @@ class Parseable a where
   parse = to <$> gparse
 
 class GUntypedParseable a where
-  guntypedParse :: G.Grammar -> ParseM (a x)
+  guntypedParse :: G.Grammar -> Bool -> ParseM (a x)
 
 class GParseable a where
   gparse :: ParseM (a x)
 
 instance (GUntypedParseable a) => GUntypedParseable (M1 i c a) where
-  guntypedParse = fmap M1 . guntypedParse
+  guntypedParse gram = fmap M1 . guntypedParse gram
 
 instance (UntypedParseable a) => GUntypedParseable (K1 i a) where
-  guntypedParse = fmap K1 . untypedParse
+  guntypedParse gram = fmap K1 . untypedParse gram
 
 instance (GParseable a, GParseable b) => GParseable (a :+: b) where
   gparse = (L1 <$> gparse) `orResT` (R1 <$> gparse)
 
 instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (SrcAnn h2)), GParseable (Linear (Tail (a :*: b))), GProductList (Tail (a :*: b))) => GUntypedParseable (a :*: b) where
-  guntypedParse egram = do
+  guntypedParse egram ignoreAnon = do
     (fullSrc, [term]) <- ask
     let
       Node agram (S.Location (S.Range spos epos) (S.Span (S.Pos sline scol) (S.Pos eline ecol)))
@@ -71,8 +72,13 @@ instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (SrcAnn h2)), GParse
     src <- case T.decodeUtf8' $ B.take (epos - spos) $ B.drop spos fullSrc of
       Left  exc  -> mkErr $ pprint exc
       Right src' -> pure src'
-    let ann      = SrcAnn $ SrcInfo rng src
-        children = termOut term
+    let ann         = SrcAnn $ SrcInfo rng src
+        allChildren = termOut term
+        children
+          | ignoreAnon = filter
+            ((== Regular) . symbolType . nodeSymbol . termAnnotation)
+            allChildren
+          | otherwise = allChildren
     unless (egram == agram) $ mkFail Error
       { errorRange = Just rng
       , errorMsg   = "expected " <> pprint egram <> " got " <> pprint agram
@@ -138,6 +144,9 @@ parseSpecialSum' mkTerm =
 
 parseIdentifier :: (SrcAnn a -> T.Text -> c) -> G.Grammar -> ParseM c
 parseIdentifier mkTerm egram = parseSpecialSum mkTerm [(egram, id)]
+
+parseUnit :: (SrcAnn a -> b) -> G.Grammar -> ParseM b
+parseUnit mkTerm gram = parseSpecialSum' (\ann () -> mkTerm ann) [(gram, ())]
 
 parseFile :: (Parseable a) => FilePath -> EResultT IO a
 parseFile pth = do

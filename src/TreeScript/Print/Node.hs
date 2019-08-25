@@ -1,22 +1,18 @@
-{-# OPTIONS_GHC -fno-warn-dodgy-exports #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-orphans -fno-warn-unused-imports #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Parsed nodes.
 module TreeScript.Print.Node
-  ( module TreeScript.Print.Misc
-  )
+  ()
 where
 
 import           TreeScript.Ast
 import           TreeScript.Misc
 import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Print.Class
-import           TreeScript.Print.Misc          ( )
-import           TreeScript.Print.PrintM
+import           TreeScript.Print.Misc
 
 import qualified Data.Text                     as T
-import           GHC.Generics
 import           Text.Casing             hiding ( Identifier )
 import qualified TreeSitter.NominalScript      as G
 
@@ -41,182 +37,162 @@ instance Printable G.Grammar where
       ]
 
 instance (AnnPrintable r) => Printable (Program r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Program r) where
-  mprintAst (Program ann stmts) =
-    printAnnd ann $ mintercalate "\n" (map mprintAst stmts)
+  printAst (Program ann stmts) =
+    printAnnd ann $ mintercalate "\n" $ map printAst stmts
 
 instance (AnnPrintable r) => Printable (Statement r) where
-  pprint = pprintAst
-instance (AnnPrintable r) => AstPrintable (Statement r) where
-  mprintAst = fmap (<> ";") . gmprintAst . from
+  pprint = printAst
+instance (AnnPrintable r) => AstPrintable (Statement r)
 
 instance (AnnPrintable r) => Printable (Declare r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Declare r) where
-  mprintAst (Declare ann lhs rhs) =
-    printAnnd ann $ "let " <> mprintAst lhs <> " = " <> mprintAst rhs
+  printAst (Declare ann lhs rhs) =
+    printAnnd ann $ "let " <> printAst lhs <> " = " <> printAst rhs <> ";"
 
 instance (AnnPrintable r) => Printable (Assign r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Assign r) where
-  mprintAst (Assign ann lhs rhs) =
-    printAnnd ann $ mprintAst lhs <> " = " <> mprintAst rhs
+  printAst (Assign ann lhs rhs) =
+    printAnnd ann $ printAst lhs <> " = " <> printAst rhs <> ";"
 
 instance (AnnPrintable r) => Printable (Match r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Match r) where
-  mprintAst (Match ann val body) =
-    printAnnd ann $ "match " <> mprintAst val <> " " <> mprintAst body
+  printAst (Match ann val body) =
+    printAnnd ann $ "match " <> printAst val <> " " <> printAst body <> ";"
 
 instance (AnnPrintable r) => Printable (MatchBody r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (MatchBody r) where
-  mprintAst (MatchBody ann cases) =
-    printAnnd ann
-      $  mintercalate "\n"
-      $  [pure "{"]
-      <> map (pindent . mprintAst) cases
-      <> [pure "}"]
+  printAst (MatchBody ann cases) =
+    printAnnd ann $ pbracket $ map printAst cases
 
 instance (AnnPrintable r) => Printable (Case r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Case r) where
-  mprintAst (Case ann cond body) =
-    printAnnd ann $ mprintAst cond <> " => " <> mprintAst body
+  printAst (Case ann cond body) =
+    printAnnd ann $ printAst cond <> " => " <> printAst body <> ";"
 
 instance (AnnPrintable r) => Printable (Loop r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Loop r) where
-  mprintAst (Loop ann body) = printAnnd ann $ "loop " <> mprintAst body
+  printAst (Loop ann body) = printAnnd ann $ "loop " <> printAst body <> ";"
 
 instance (AnnPrintable r) => Printable (Break r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Break r) where
-  mprintAst (Break ann res) = printAnnd ann $ "break " <> mprintAst res
+  printAst (Break ann res) = printAnnd ann $ "break " <> printAst res <> ";"
+
+instance (AnnPrintable r) => Printable (ExprStmt r) where
+  pprint = printAst
+instance (AnnPrintable r) => AstPrintable (ExprStmt r) where
+  printAst (ExprStmt ann x) = printAnnd ann $ printAst x <> ";"
 
 instance (AnnPrintable r) => Printable (Expr r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Expr r)
 
 instance (AnnPrintable r) => Printable (Pattern r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Pattern r)
 
 instance (AnnPrintable r) => Printable (PExpr r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (PExpr r)
 
 instance (AnnPrintable r) => Printable (RefExpr r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (RefExpr r)
 
 instance (AnnPrintable r) => Printable (Object r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Object r) where
-  mprintAst (Object ann tag body) =
-    printAnnd ann $ mprintAst tag <> mprintAst body
+  printAst (Object ann tag body) =
+    printAnnd ann $ printAst tag <> printAst body
 
 instance (AnnPrintable r) => Printable (ObjectBody r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (ObjectBody r) where
-  mprintAst (ObjectBody ann props) =
-    printAnnd ann
-      $  "{"
-      <> (mintercalate ", " <$> traverse mprintAst props)
-      <> "}"
+  printAst (ObjectBody ann props) =
+    printAnnd ann $ "[" <> (mintercalate ", " $ map printAst props) <> "]"
 
 instance (AnnPrintable r) => Printable (ObjectProp r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (ObjectProp r) where
-  mprintAst (ObjectProp ann lhs rhs) =
-    printAnnd ann $ mprintAst lhs <> " = " <> mprintAst rhs
+  printAst (ObjectProp ann lhs rhs) =
+    printAnnd ann $ printAst lhs <> " = " <> printAst rhs
 
 instance (AnnPrintable r) => Printable (Array r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Array r) where
-  mprintAst (Array ann xs) =
-    printAnnd ann $ "[" <> (mintercalate ", " <$> traverse mprintAst xs) <> "]"
+  printAst (Array ann xs) =
+    printAnnd ann $ "[" <> (mintercalate ", " $ map printAst xs) <> "]"
 
 instance (AnnPrintable r) => Printable (Closure r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Closure r) where
-  mprintAst (Closure ann frmls body) =
-    printAnnd ann $ mprintAst frmls <> " => " <> mprintAst body
+  printAst (Closure ann frmls body) =
+    printAnnd ann $ printAst frmls <> " => " <> printAst body
 
 instance (AnnPrintable r) => Printable (FormalList r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (FormalList r) where
-  mprintAst (FormalList ann args) =
-    printAnnd ann
-      $  "("
-      <> (mintercalate ", " <$> traverse mprintAst args)
-      <> ")"
+  printAst (FormalList ann args) =
+    printAnnd ann $ "(" <> (mintercalate ", " $ map printAst args) <> ")"
 
 instance (AnnPrintable r) => Printable (Block r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Block r) where
-  mprintAst (Block ann stmts) =
-    printAnnd ann
-      $  mintercalate "\n"
-      $  [pure "{"]
-      <> map (pindent . mprintAst) stmts
-      <> [pure "}"]
+  printAst (Block ann stmts) = printAnnd ann $ pbracket $ map printAst stmts
 
 instance (AnnPrintable r) => Printable (Access r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Access r) where
-  mprintAst (Access ann expr prop) =
-    printAnnd ann $ mprintAst expr <> "." <> mprintAst prop
+  printAst (Access ann expr prop) =
+    printAnnd ann $ printAst expr <> "." <> printAst prop
 
 instance (AnnPrintable r) => Printable (Subscript r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Subscript r) where
-  mprintAst (Subscript ann expr loc) =
-    printAnnd ann $ mprintAst expr <> "[" <> mprintAst loc <> "]"
+  printAst (Subscript ann expr loc) =
+    printAnnd ann $ printAst expr <> "[" <> printAst loc <> "]"
 
 instance (AnnPrintable r) => Printable (Call r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Call r) where
-  mprintAst (Call ann fun args) =
-    printAnnd ann $ mprintAst fun <> mprintAst args
+  printAst (Call ann fun args) = printAnnd ann $ printAst fun <> printAst args
 
 instance (AnnPrintable r) => Printable (ArgList r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (ArgList r) where
-  mprintAst (ArgList ann args) =
-    printAnnd ann
-      $  "("
-      <> (mintercalate ", " <$> traverse mprintAst args)
-      <> ")"
+  printAst (ArgList ann args) =
+    printAnnd ann $ "(" <> (mintercalate ", " $ map printAst args) <> ")"
 
 -- | TODO: Parenthesize precedence
 instance (AnnPrintable r) => Printable (UnOp r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (UnOp r) where
-  mprintAst (UnOp ann opr val) =
-    printAnnd ann $ mprintAst opr <> " " <> mprintAst val
+  printAst (UnOp ann opr val) =
+    printAnnd ann $ printAst opr <> " " <> printAst val
 
 instance (AnnPrintable r) => Printable (BinOp r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (BinOp r) where
-  mprintAst (BinOp ann lhs opr rhs) =
-    printAnnd ann
-      $  mprintAst lhs
-      <> " "
-      <> mprintAst opr
-      <> " "
-      <> mprintAst rhs
+  printAst (BinOp ann lhs opr rhs) =
+    printAnnd ann $ printAst lhs <> " " <> printAst opr <> " " <> printAst rhs
 
 instance (AnnPrintable r) => Printable (UnOperator r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (UnOperator r) where
-  mprintAst (UnOperator ann typ) = printAnnd ann $ ppunc $ pprint typ
+  printAst (UnOperator ann typ) = printAnnd ann $ ppunc $ pprint typ
 
 instance (AnnPrintable r) => Printable (BinOperator r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (BinOperator r) where
-  mprintAst (BinOperator ann typ) = printAnnd ann $ ppunc $ pprint typ
+  printAst (BinOperator ann typ) = printAnnd ann $ ppunc $ pprint typ
 
 instance Printable UnOpType where
   pprint UnOpTypeNot = "!"
@@ -238,19 +214,24 @@ instance Printable BinOpType where
   pprint BinOpTypeGT    = ">"
 
 instance (AnnPrintable r) => Printable (Identifier r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Identifier r) where
-  mprintAst (Identifier ann txt) = printAnnd ann $ pliteral txt
+  printAst (Identifier ann txt) = printAnnd ann $ pliteral txt
 
 instance (AnnPrintable r) => Printable (TagIdentifier r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (TagIdentifier r) where
-  mprintAst (TagIdentifier ann txt) = printAnnd ann $ pliteral txt
+  printAst (TagIdentifier ann txt) = printAnnd ann $ pliteral txt
+
+instance (AnnPrintable r) => Printable (Blank r) where
+  pprint = printAst
+instance (AnnPrintable r) => AstPrintable (Blank r) where
+  printAst (Blank ann) = printAnnd ann "_"
 
 instance (AnnPrintable r) => Printable (Lit r) where
-  pprint = pprintAst
+  pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Lit r) where
-  mprintAst (Lit ann x) = printAnnd ann $ pliteral $ pprint x
+  printAst (Lit ann x) = printAnnd ann $ pliteral $ pprint x
 
 instance Printable LitData where
   pprint (LitDataString txt  ) = pprint txt
@@ -261,11 +242,12 @@ instance Printable LitData where
   pprint LitDataNull           = "null"
 
 instance AnnPrintable SrcAnn where
-  printAnnd (SrcAnn (SrcInfo _ txt)) _ = do
-    case T.indentOnLastLine txt of
-      Nothing  -> pure ()
-      Just lvl -> putIndent lvl
-    pann txt
+  printAnnd (SrcAnn (SrcInfo _ txt)) _ = pann txt
 
 instance AnnPrintable NoAnn where
   printAnnd NoAnn x = x
+
+pbracket :: (PrintOut o) => [o] -> o
+pbracket []  = "{}"
+pbracket [x] = "{ " <> x <> " }"
+pbracket xs  = "{\n" <> pindent (mintercalate "\n" xs) <> "\n}"

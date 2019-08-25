@@ -1,0 +1,41 @@
+let fibRecur = (n) => {
+  match n {
+    0 => { 1; };
+    1 => { 1; };
+    _ => { fibRecur(n - 1) + fibRecur(n - 2); };
+  };
+};
+
+let fibIter = (n) => {
+  match n {
+    0 => { 1; };
+    _ => {
+      let a = 1;
+      let b = 1;
+      let i = 1;
+      loop {
+        match i {
+          n => { break b; };
+          _ => {
+            let c = b;
+            b = b + a;
+            a = c;
+            i = i + 1;
+          };
+        };
+      };
+    };
+  };
+};
+
+let i = 0;
+loop {
+  match i {
+    10 => { break null; };
+    _ => {
+      print("fibRecur(" + i + ") = " + fibRecur(i));
+      print("fibIter(" + i + ") = " + fibIter(i));
+      i = i + 1;
+    };
+  };
+};

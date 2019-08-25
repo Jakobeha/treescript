@@ -43,8 +43,11 @@ extra-deps:
   - ./extra-deps/semantic/
   - ./extra-deps/semantic/vendor/haskell-tree-sitter
   - ./extra-deps/semantic/vendor/haskell-tree-sitter/languages/nominalscript
-  - ./extra-deps/inline-js/inline-js
-  - ./extra-deps/inline-js/inline-js-core
+  - ./extra-deps/kind-generics/kind-algebras
+  - ./extra-deps/kind-generics/kind-apply
+  - ./extra-deps/kind-generics/kind-generics
+  - ./extra-deps/kind-generics/kind-generics-deriving
+  - ./extra-deps/kind-generics/kind-generics-th
   # Semantic Deps
   - fastsum-0.1.1.0
   - fused-effects-0.5.0.0
