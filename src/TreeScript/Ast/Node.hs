@@ -139,7 +139,7 @@ data ObjectBody r
   , objectBodyProps :: [ObjectProp r]
   } deriving (Generic)
 
--- | @let lhs = rhs@.
+-- | @lhs = rhs@.
 data ObjectProp r
   = ObjectProp
   { objectPropAnn :: r 'TObjectProp
@@ -147,8 +147,7 @@ data ObjectProp r
   , objectPropRhs :: Expr r
   } deriving (Generic)
 
--- | @lhs = rhs@
--- | @[rh's, ...]@.
+-- | @[elem, ...]@.
 data Array r
   = Array
   { arrayAnn :: r 'TArray
@@ -177,19 +176,19 @@ data Block r
   , blockStmts :: [Statement r]
   } deriving (Generic)
 
--- | @rhs.x@.
+-- | @base.prop@.
 data Access r
   = Access
   { accessAnn :: r 'TAccess
-  , accessExpr :: RefExpr r
+  , accessBase :: RefExpr r
   , accessProp :: Identifier r
   } deriving (Generic)
 
--- | @rhs[rh's]@.
+-- | @base[loc]@.
 data Subscript r
   = Subscript
   { subscriptAnn :: r 'TSubscript
-  , subscriptExpr :: RefExpr r
+  , subscriptBase :: RefExpr r
   , subscriptLoc :: Expr r
   } deriving (Generic)
 
@@ -262,14 +261,14 @@ data BinOpType
 data Identifier r
   = Identifier
   { identifierAnn :: r 'TIdentifier
-  , identififerText :: T.Text
+  , identifierText :: T.Text
   } deriving (Generic)
 
 -- | @Foo@.
 data TagIdentifier r
   = TagIdentifier
   { tagIdentiferAnn :: r 'TTagIdentifier
-  , tagIdentififerText :: T.Text
+  , tagIdentifierText :: T.Text
   } deriving (Generic)
 
 -- | @_@.

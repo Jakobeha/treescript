@@ -10,7 +10,6 @@ module TreeScript.Parse.Node
 where
 
 import           TreeScript.Ast
-import qualified TreeScript.Misc.Ext.Text      as T
 import           TreeScript.Parse.Class
 
 import           Data.Scientific
