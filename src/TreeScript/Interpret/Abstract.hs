@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
 
@@ -13,50 +14,53 @@ where
 
 import           TreeScript.Ast
 import           TreeScript.Misc
+import           TreeScript.Print
 
 import           Control.Monad
 import           Data.Kind
+import qualified Data.Map.Strict               as M
+import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 
 data RefData m
   = RefDataArray [Val m] -- ^ elems
   | RefDataObject T.Text [Val m] -- ^ tag + props, in the same order as the first tag definition
-  | RefDataClosure (ClosVal m) [Val m] -- ^ start position + free variables
+  | RefDataClosure (ClosureVal m)
 
 -- | Abstract interpretation monad.
-class (MonadContStack (Val m) m) => Interpret m where
+class (MonadContStack m, ContRes m ~ Val m) => Interpret m where
   type HasAnns m :: (StxType -> *) -> Constraint
   data Stack m :: *
   data Heap m :: *
   data Val m :: *
-  data Ref m :: *
-  data ClosVal m :: *
+  data Deref m :: *
+  data ClosureVal m :: *
 
   runAnn :: (HasAnns m r) => r a -> m ()
   mkLiteral :: LitData -> m (Val m)
   mkReference :: RefData m -> m (Val m)
-  mkClos :: m (Val m) -> m (ClosVal m)
+  mkClos :: m (Val m) -> [T.Text] -> S.Set T.Text -> m (ClosureVal m)
   defineVar :: (HasAnns m r) => Identifier r -> Val m -> m ()
   setVar :: (HasAnns m r) => Identifier r -> Val m -> m ()
   getVar :: (HasAnns m r) => Identifier r -> m (Val m)
-  deref :: Val m -> m (Ref m)
-  getProp :: (HasAnns m r) => Ref m -> Identifier r -> m (Val m)
-  getSubscript :: Ref m -> Val m -> m (Val m)
-  setProp :: (HasAnns m r) => Ref m -> Identifier r -> Val m -> m ()
-  setSubscript :: Ref m -> Val m -> Val m -> m ()
-  runCall :: Val m -> [Val m] -> m (Val m)
+  deref :: Val m -> m (Deref m)
+  getProp :: (HasAnns m r) => Deref m  -> Identifier r -> m (Val m)
+  getSubscript :: Deref m  -> Val m -> m (Val m)
+  setProp :: (HasAnns m r) => Deref m  -> Identifier r -> Val m -> m ()
+  setSubscript :: Deref m  -> Val m -> Val m -> m ()
+  getClos :: Deref m -> m (ClosureVal m)
+  runCall :: ClosureVal m -> [Val m] -> m (Val m)
   runUnOp :: (HasAnns m r) => UnOperator r -> Val m -> m (Val m)
   runBinOp :: (HasAnns m r) => Val m -> BinOperator r -> Val m -> m (Val m)
-  getObjectOrder :: (HasAnns m r) => TagIdentifier r -> [T.Text] -> m [T.Text]
-  reorderProps :: (HasAnns m r) => [T.Text] -> [ObjectProp r] -> m [Expr r]
+  getObjectOrders :: m (M.Map T.Text [T.Text])
+  addDefaultObjectOrder :: T.Text -> [T.Text] -> m ()
   -- | When compiling we want to add all jumps first, then blocks.
   -- When interpreting it's easier to just work one case at a time and skip unnecessary blocks.
-  tryMatchCases :: (HasAnns m r) => [Case r] -> Val m -> (forall a. Block r -> m a) -> m ()
-  -- | Creates a loop which repeats until exited with a continuation.
-  mkLoop :: m () -> m a
-  -- TODO: Provide default implementation running a subclass (defined in another file but pure)
-  freeVariables :: (HasAnns m r) => FormalList r -> Block r -> m [Identifier r]
-  mkFail' :: T.Text -> m a
+  tryMatchCases :: (HasAnns m r) => [Case r] -> Val m -> (Block r -> m (VirtVoid m)) -> m ()
+  -- | Return an empty set of the analysis doesn't need closures to have free variables.
+  freeVariables :: (HasAnns m r) => FormalList r -> Block r -> m (S.Set T.Text)
+  raiseErr :: T.Text -> m (VirtVoid m)
+  vabsurdVal :: VirtVoid m -> m (Val m)
 
 runProgram :: (Interpret m, HasAnns m r) => Program r -> m ()
 runProgram (Program ann stmts) = do
@@ -81,8 +85,8 @@ runStmt (StatementMatch (Match ann val (MatchBody bann cs))) = do
   mkCont $ \exit -> do
     tryMatchCases cs val' $ \body -> do
       res <- runBlock body
-      exitCont $ exit res
-    mkFail' "no cases matched"
+      exit res
+    exit =<< vabsurdVal =<< raiseErr "no cases matched"
 runStmt (StatementLoop (Loop ann body)) = do
   runAnn ann
   mkCont $ \exit ->
@@ -92,21 +96,23 @@ runStmt (StatementBreak (Break ann res)) = do
   runAnn ann
   res'  <- runExpr res
   oexit <- topCont
-  case oexit of
-    Nothing   -> mkFail' "can't break - not in a loop"
-    Just exit -> exitCont $ exit res'
+  vabsurdVal =<< case oexit of
+    Nothing   -> raiseErr "can't break - not in a loop"
+    Just exit -> exit res'
 runStmt (StatementExpr (ExprStmt ann expr)) = do
   runAnn ann
   runExpr expr
 
 runExpr :: (Interpret m, HasAnns m r) => Expr r -> m (Val m)
-runExpr (ExprP    pexpr                   ) = runPExpr pexpr
-runExpr (ExprClos (Closure ann frmls body)) = do
-  runAnn ann
-  syms  <- freeVariables frmls body
-  syms' <- mapM getVar syms
-  epos  <- mkClos $ runBlock body
-  mkReference $ RefDataClosure epos syms'
+runExpr (ExprP pexpr) = runPExpr pexpr
+runExpr (ExprClos (Closure ann frmls@(FormalList fann frmlids) body@(Block bann _)))
+  = do
+    runAnn ann
+    runAnn fann
+    fvs <- freeVariables frmls body
+    runAnn bann
+    clos <- mkClos (runBlock body) (map identifierText frmlids) fvs
+    mkReference $ RefDataClosure clos
 runExpr (ExprUnOp (UnOp ann opr val)) = do
   runAnn ann
   val' <- runExpr val
@@ -118,23 +124,26 @@ runExpr (ExprBinOp (BinOp ann lhs opr rhs)) = do
   runBinOp lhs' opr rhs'
 runExpr (ExprCall (Call ann fun (ArgList aann args))) = do
   runAnn ann
-  fun' <- runExpr fun
+  funC <- getClos =<< deref =<< runExpr fun
   runAnn aann
   args' <- mapM runExpr args
-  runCall fun' args'
+  runCall funC args'
 
 runPExpr :: (Interpret m, HasAnns m r) => PExpr r -> m (Val m)
 runPExpr (PExprLit (Lit ann x)) = do
   runAnn ann
   mkLiteral x
 runPExpr (PExprRef ref) = runRefExpr ref
-runPExpr (PExprObj (Object ann tag (ObjectBody bann props))) = do
-  runAnn ann
-  runAnn bann
-  order   <- getObjectOrder tag $ map (identifierText . objectPropLhs) props
-  oprops  <- reorderProps order props
-  oprops' <- mapM runExpr oprops
-  mkReference $ RefDataObject (tagIdentifierText tag) oprops'
+runPExpr (PExprObj (Object ann (TagIdentifier tann tag) (ObjectBody bann props)))
+  = do
+    runAnn ann
+    runAnn tann
+    order <- getObjectOrder tag $ Just $ map (identifierText . objectPropLhs)
+                                             props
+    runAnn bann
+    oprops  <- reorderProps order props
+    oprops' <- mapM runExpr oprops
+    mkReference $ RefDataObject tag oprops'
 runPExpr (PExprArr (Array ann elms)) = do
   runAnn ann
   elms' <- mapM runExpr elms
@@ -175,3 +184,42 @@ runBlock (Block _ stmts) = case unconsLast stmts of
 
 runNull :: (Interpret m) => m (Val m)
 runNull = mkLiteral LitDataNull
+
+getObjectOrder :: (Interpret m) => T.Text -> Maybe [T.Text] -> m [T.Text]
+getObjectOrder tag oorderHere = do
+  objOrders <- getObjectOrders
+  case (objOrders M.!? tag, oorderHere) of
+    (Nothing, Nothing) ->
+      ([] <$)
+        $  raiseErr
+        $  "internal error: tried to get order of unknown tag: "
+        <> tag
+    (Nothing, Just orderHere) -> do
+      addDefaultObjectOrder tag orderHere
+      pure orderHere
+    (Just estOrder, _) -> pure estOrder
+
+reorderProps
+  :: (Interpret m, HasAnns m r) => [T.Text] -> [ObjectProp r] -> m [Expr r]
+reorderProps order props
+  | orderLen /= propsLen
+  = ([] <$)
+    $  raiseErr
+    $  "object with same tag previously defined with "
+    <> pprint orderLen
+    <> " props, but this object has "
+    <> pprint propsLen
+  | otherwise
+  = mapM lookupProp order
+ where
+  lookupProp expProp = case lookup expProp propsTup of
+    Nothing ->
+      (snd (head propsTup) <$)
+        $  raiseErr
+        $  "object is missing property: '"
+        <> expProp
+        <> "' (an object with the same tag was previously defined with the property)"
+    Just val -> pure val
+  propsTup = map (\(ObjectProp _ (Identifier _ name) rhs) -> (name, rhs)) props
+  orderLen = length order
+  propsLen = length props

@@ -62,22 +62,27 @@ spec = do
         $ f file
     forExampleIntermediateIn
       :: M.Map TestFile (MVar (PhaseRes a))
-      -> M.Map TestFile (MVar (PhaseRes b))
+      -> Maybe (M.Map TestFile (MVar (PhaseRes b)))
       -> TestFile
       -> (a -> IO ())
       -> IO ()
-    forExampleIntermediateIn curVars nextVars file f = do
+    forExampleIntermediateIn curVars onextVars file f = do
       let curVar = curVars M.! file
       withMVar curVar $ \case
         PhaseResUnset -> pendingWith
           "WARNING: previous phase unset! This is a bug in the test suite"
         PhaseResFailure intentional -> do
-          insertVarMapFailure nextVars file intentional
+          case onextVars of
+            Nothing       -> pure ()
+            Just nextVars -> insertVarMapFailure nextVars file intentional
           unless intentional $ pendingWith "no previous phase"
         PhaseResSuccess val -> f val
-    -- forExampleParse :: TestFile -> (Program SrcAnn -> IO ()) -> IO ()
-    -- forExampleParse =
-    --   forExampleIntermediateIn exampleParseVars exampleSugarVars
+    forExampleParse
+      :: Maybe (M.Map TestFile (MVar (PhaseRes b)))
+      -> TestFile
+      -> (Program (A1 SrcAnn) -> IO ())
+      -> IO ()
+    forExampleParse = forExampleIntermediateIn exampleParseVars
     assertProperFailure :: (Printable a) => TestInfo -> EResult a -> IO ()
     assertProperFailure testInfo (ResultFail err) = do
       unless (T.null $ testInfoFatalErrorMsg testInfo)
@@ -97,10 +102,11 @@ spec = do
   beforeAll (createTempDirectory sysTmpDir "treescript-tests")
     $ afterAll removeDirectoryRecursive
     $ forExampleFile
-    $ \file@(TestFile srcPath srcContents testInfo _) ->
+    $ \file@(TestFile srcPath srcContents testInfo _) -> do
         describe "The parser" $ it "parses" $ \_ -> do
-          parseRes :: EResult (Program SrcAnn) <- runResultT $ parseFile srcPath
-          let rawParseRes = mapAnn (\_ -> NoAnn) <$> parseRes
+          parseRes :: EResult (Program (A1 SrcAnn)) <- runResultT
+            $ parseFile srcPath
+          let rawParseRes = tailAnn <$> parseRes
           when (testInfoPrintParse testInfo) $ do
             T.putStrLn $ T.pack (takeBaseName srcPath) <> ":"
             T.putStrLn $ pprint rawParseRes
@@ -110,7 +116,7 @@ spec = do
                 insertVarMapFailure exampleParseVars file False
                 assertFailureText $ pprint parseErr
               Result parseErrs parseSrc -> do
-                let rawParseSrc = mapAnn (\_ -> NoAnn) parseSrc
+                let rawParseSrc = tailAnn parseSrc
                 insertVarMapSuccess exampleParseVars file parseSrc
                 assertNoErrors parseErrs
                 denoteFail "reused (with original source) - "
@@ -122,3 +128,11 @@ spec = do
             else do
               insertVarMapFailure exampleParseVars file True
               assertProperFailure testInfo parseRes
+        describe "The interpreter" $ it "evaluates" $ \_ ->
+          forExampleParse Nothing file $ \prog -> do
+            evalRes <- runResultT $ evalProgram prog
+            if testInfoIsEvaluatable testInfo
+              then case evalRes of
+                ResultFail evalErr -> assertFailureText $ pprint evalErr
+                Result evalErrs () -> assertNoErrors evalErrs
+              else assertProperFailure testInfo evalRes

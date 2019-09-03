@@ -11,35 +11,36 @@ import           System.FilePath
 
 data Action
   = ActionServe
-  | ActionCompile Compile
-  | ActionEval Eval
+  | ActionCompile CompileAction
+  | ActionEval EvalAction
 
-data Compile
-  = Compile
-  { compileInput :: FilePath
-  , compileOutput :: FilePath
-  , compileWatch :: Bool
+data CompileAction
+  = CompileAction
+  { compileActionInput :: FilePath
+  , compileActionOutput :: FilePath
+  , compileActionWatch :: Bool
   }
 
-data Eval
-  = Eval
-  { evalProgram :: FilePath
-  , evalInput :: FilePath
-  , evalOutput :: FilePath
-  , evalWatch :: Bool
+data EvalAction
+  = EvalAction
+  { evalActionProgram :: FilePath
+  , evalActionInput :: FilePath
+  , evalActionOutput :: FilePath
+  , evalActionWatch :: Bool
   }
 
-mkCompile :: FilePath -> Maybe FilePath -> Bool -> Compile
-mkCompile input output watch = Compile
-  { compileInput  = input
-  , compileOutput = defaultOut `fromMaybe` output
-  , compileWatch  = watch
+mkCompileAction :: FilePath -> Maybe FilePath -> Bool -> CompileAction
+mkCompileAction input output watch = CompileAction
+  { compileActionInput  = input
+  , compileActionOutput = defaultOut `fromMaybe` output
+  , compileActionWatch  = watch
   }
   where defaultOut = input -<.> "tprg"
 
-mkEval :: FilePath -> FilePath -> Maybe FilePath -> Bool -> Eval
-mkEval prg input output watch = Eval { evalProgram = prg
-                                     , evalInput   = input
-                                     , evalOutput  = input `fromMaybe` output
-                                     , evalWatch   = watch
-                                     }
+mkEvalAction :: FilePath -> FilePath -> Maybe FilePath -> Bool -> EvalAction
+mkEvalAction prg input output watch = EvalAction
+  { evalActionProgram = prg
+  , evalActionInput   = input
+  , evalActionOutput  = input `fromMaybe` output
+  , evalActionWatch   = watch
+  }

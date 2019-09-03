@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -16,110 +17,110 @@ import           Data.Scientific
 import qualified Data.Text                     as T
 import qualified TreeSitter.NominalScript      as G
 
-instance (a ~ SrcAnn) => UntypedParseable (Program SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Program SrcAnn) where
+instance UntypedParseable (Program (A1 SrcAnn))
+instance Parseable (Program (A1 SrcAnn)) where
   parse = untypedParse G.Program True
 
-instance (a ~ SrcAnn) => Parseable (Statement SrcAnn)
+instance Parseable (Statement (A1 SrcAnn))
 
-instance (a ~ SrcAnn) => UntypedParseable (Declare SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Declare SrcAnn) where
+instance UntypedParseable (Declare (A1 SrcAnn))
+instance Parseable (Declare (A1 SrcAnn)) where
   parse = untypedParse G.Declaration True
 
-instance (a ~ SrcAnn) => UntypedParseable (Assign SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Assign SrcAnn) where
+instance UntypedParseable (Assign (A1 SrcAnn))
+instance Parseable (Assign (A1 SrcAnn)) where
   parse = untypedParse G.Assignment True
 
-instance (a ~ SrcAnn) => UntypedParseable (Match SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Match SrcAnn) where
+instance UntypedParseable (Match (A1 SrcAnn))
+instance Parseable (Match (A1 SrcAnn)) where
   parse = untypedParse G.MatchStatement True
 
-instance (a ~ SrcAnn) => UntypedParseable (MatchBody SrcAnn)
-instance (a ~ SrcAnn) => Parseable (MatchBody SrcAnn) where
+instance UntypedParseable (MatchBody (A1 SrcAnn))
+instance Parseable (MatchBody (A1 SrcAnn)) where
   parse = untypedParse G.MatchBody True
 
-instance (a ~ SrcAnn) => UntypedParseable (Case SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Case SrcAnn) where
+instance UntypedParseable (Case (A1 SrcAnn))
+instance Parseable (Case (A1 SrcAnn)) where
   parse = untypedParse G.MatchCase True
 
-instance (a ~ SrcAnn) => UntypedParseable (Loop SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Loop SrcAnn) where
+instance UntypedParseable (Loop (A1 SrcAnn))
+instance Parseable (Loop (A1 SrcAnn)) where
   parse = untypedParse G.LoopStatement True
 
-instance (a ~ SrcAnn) => UntypedParseable (Break SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Break SrcAnn) where
+instance UntypedParseable (Break (A1 SrcAnn))
+instance Parseable (Break (A1 SrcAnn)) where
   parse = untypedParse G.BreakStatement True
 
-instance (a ~ SrcAnn) => UntypedParseable (ExprStmt SrcAnn)
-instance (a ~ SrcAnn) => Parseable (ExprStmt SrcAnn) where
+instance UntypedParseable (ExprStmt (A1 SrcAnn))
+instance Parseable (ExprStmt (A1 SrcAnn)) where
   parse = untypedParse G.ExpressionStatement True
 
-instance (a ~ SrcAnn) => Parseable (Expr SrcAnn)
+instance Parseable (Expr (A1 SrcAnn))
 
-instance (a ~ SrcAnn) => Parseable (Pattern SrcAnn)
+instance Parseable (Pattern (A1 SrcAnn))
 
-instance (a ~ SrcAnn) => Parseable (PExpr SrcAnn)
+instance Parseable (PExpr (A1 SrcAnn))
 
-instance (a ~ SrcAnn) => Parseable (RefExpr SrcAnn)
+instance Parseable (RefExpr (A1 SrcAnn))
 
-instance (a ~ SrcAnn) => UntypedParseable (Object SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Object SrcAnn) where
+instance UntypedParseable (Object (A1 SrcAnn))
+instance Parseable (Object (A1 SrcAnn)) where
   parse = untypedParse G.Object True
 
-instance (a ~ SrcAnn) => UntypedParseable (ObjectBody SrcAnn)
-instance (a ~ SrcAnn) => Parseable (ObjectBody SrcAnn) where
+instance UntypedParseable (ObjectBody (A1 SrcAnn))
+instance Parseable (ObjectBody (A1 SrcAnn)) where
   parse = untypedParse G.ObjectBody True
 
-instance (a ~ SrcAnn) => UntypedParseable (ObjectProp SrcAnn)
-instance (a ~ SrcAnn) => Parseable (ObjectProp SrcAnn) where
+instance UntypedParseable (ObjectProp (A1 SrcAnn))
+instance Parseable (ObjectProp (A1 SrcAnn)) where
   parse = untypedParse G.ObjectProp True
 
-instance (a ~ SrcAnn) => UntypedParseable (Array SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Array SrcAnn) where
+instance UntypedParseable (Array (A1 SrcAnn))
+instance Parseable (Array (A1 SrcAnn)) where
   parse = untypedParse G.Array True
 
-instance (a ~ SrcAnn) => UntypedParseable (Closure SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Closure SrcAnn) where
+instance UntypedParseable (Closure (A1 SrcAnn))
+instance Parseable (Closure (A1 SrcAnn)) where
   parse = untypedParse G.Closure True
 
-instance (a ~ SrcAnn) => UntypedParseable (FormalList SrcAnn)
-instance (a ~ SrcAnn) => Parseable (FormalList SrcAnn) where
+instance UntypedParseable (FormalList (A1 SrcAnn))
+instance Parseable (FormalList (A1 SrcAnn)) where
   parse = untypedParse G.FormalParameters True
 
-instance (a ~ SrcAnn) => UntypedParseable (Block SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Block SrcAnn) where
+instance UntypedParseable (Block (A1 SrcAnn))
+instance Parseable (Block (A1 SrcAnn)) where
   parse = untypedParse G.BracketedStatements True
 
-instance (a ~ SrcAnn) => UntypedParseable (Access SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Access SrcAnn) where
+instance UntypedParseable (Access (A1 SrcAnn))
+instance Parseable (Access (A1 SrcAnn)) where
   parse = untypedParse G.Access True
 
-instance (a ~ SrcAnn) => UntypedParseable (Subscript SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Subscript SrcAnn) where
+instance UntypedParseable (Subscript (A1 SrcAnn))
+instance Parseable (Subscript (A1 SrcAnn)) where
   parse = untypedParse G.Subscript True
 
-instance (a ~ SrcAnn) => UntypedParseable (Call SrcAnn)
-instance (a ~ SrcAnn) => Parseable (Call SrcAnn) where
+instance UntypedParseable (Call (A1 SrcAnn))
+instance Parseable (Call (A1 SrcAnn)) where
   parse = untypedParse G.Call True
 
-instance (a ~ SrcAnn) => UntypedParseable (ArgList SrcAnn)
-instance (a ~ SrcAnn) => Parseable (ArgList SrcAnn) where
+instance UntypedParseable (ArgList (A1 SrcAnn))
+instance Parseable (ArgList (A1 SrcAnn)) where
   parse = untypedParse G.Arguments True
 
-instance (a ~ SrcAnn) => UntypedParseable (UnOp SrcAnn)
-instance (a ~ SrcAnn) => Parseable (UnOp SrcAnn) where
+instance UntypedParseable (UnOp (A1 SrcAnn))
+instance Parseable (UnOp (A1 SrcAnn)) where
   parse = untypedParse G.UnaryOperation False
 
-instance (a ~ SrcAnn) => Parseable (UnOperator a) where
+instance Parseable (UnOperator (A1 SrcAnn)) where
   parse = parseSpecialSum'
     UnOperator
     [(G.AnonBang, UnOpTypeNot), (G.AnonMinus, UnOpTypeNeg)]
 
-instance (a ~ SrcAnn) => UntypedParseable (BinOp SrcAnn)
-instance (a ~ SrcAnn) => Parseable (BinOp SrcAnn) where
+instance UntypedParseable (BinOp (A1 SrcAnn))
+instance Parseable (BinOp (A1 SrcAnn)) where
   parse = untypedParse G.BinaryOperation False
 
-instance (a ~ SrcAnn) => Parseable (BinOperator a) where
+instance Parseable (BinOperator (A1 SrcAnn)) where
   parse = parseSpecialSum'
     BinOperator
     [ (G.AnonAmpersandAmpersand, BinOpTypeAnd)
@@ -137,16 +138,16 @@ instance (a ~ SrcAnn) => Parseable (BinOperator a) where
     , (G.AnonRAngle            , BinOpTypeGT)
     ]
 
-instance (a ~ SrcAnn) => Parseable (Identifier SrcAnn) where
+instance Parseable (Identifier (A1 SrcAnn)) where
   parse = parseIdentifier Identifier G.Identifier
 
-instance (a ~ SrcAnn) => Parseable (TagIdentifier SrcAnn) where
+instance Parseable (TagIdentifier (A1 SrcAnn)) where
   parse = parseIdentifier TagIdentifier G.TagIdentifier
 
-instance (a ~ SrcAnn) => Parseable (Blank SrcAnn) where
+instance Parseable (Blank (A1 SrcAnn)) where
   parse = parseUnit Blank G.Blank
 
-instance (a ~ SrcAnn) => Parseable (Lit SrcAnn) where
+instance Parseable (Lit (A1 SrcAnn)) where
   parse = parseSpecialSum
     Lit
     [ (G.String, LitDataString . T.pack . read . T.unpack)

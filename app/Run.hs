@@ -28,15 +28,15 @@ runAction (ActionEval    run'    ) = runEval run'
 runServe :: IO ()
 runServe = fail "TODO implement"
 
-runCompile :: Compile -> IO ()
-runCompile (Compile inp out True) =
-  runWatching inp $ runCompile $ Compile inp out False
-runCompile (Compile inp out False) = fail "TODO implement"
+runCompile :: CompileAction -> IO ()
+runCompile (CompileAction inp out True) =
+  runWatching inp $ runCompile $ CompileAction inp out False
+runCompile (CompileAction inp out False) = fail "TODO implement"
 
-runEval :: Eval -> IO ()
-runEval (Eval prg inp out True) =
-  runWatching inp $ runEval $ Eval prg inp out False
-runEval (Eval prg inp out False) = fail "TODO implement"
+runEval :: EvalAction -> IO ()
+runEval (EvalAction prg inp out True) =
+  runWatching inp $ runEval $ EvalAction prg inp out False
+runEval (EvalAction prg inp out False) = fail "TODO implement"
 
 runWatching :: FilePath -> IO () -> IO ()
 runWatching inp action = withManager $ \mgr -> do

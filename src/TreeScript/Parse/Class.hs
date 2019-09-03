@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -61,7 +62,7 @@ instance (UntypedParseable a) => GUntypedParseable (K1 i a) where
 instance (GParseable a, GParseable b) => GParseable (a :+: b) where
   gparse = (L1 <$> gparse) `orResT` (R1 <$> gparse)
 
-instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (SrcAnn h2)), GParseable (Linear (Tail (a :*: b))), GProductList (Tail (a :*: b))) => GUntypedParseable (a :*: b) where
+instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (As '[SrcAnn] h2)), GParseable (Linear (Tail (a :*: b))), GProductList (Tail (a :*: b))) => GUntypedParseable (a :*: b) where
   guntypedParse egram ignoreAnon = do
     (fullSrc, [term]) <- ask
     let
@@ -92,7 +93,7 @@ instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (SrcAnn h2)), GParse
       ResultFail bodyErr -> fail $ T.unpack $ pprint bodyErr
       Result errs body   -> do
         tellErrors errs
-        pure $ gproductCons (M1 $ K1 ann) body
+        pure $ gproductCons (M1 $ K1 $ mkA1 $ ann) body
 
 instance GParseable U1 where
   gparse = pure U1
@@ -116,7 +117,7 @@ instance (Parseable a) => Parseable [a] where
     traverse (\term -> local (\_ -> (fullSrc, [term])) parse) terms
 
 parseSpecialSum
-  :: (SrcAnn a -> b -> c) -> [(G.Grammar, T.Text -> b)] -> ParseM c
+  :: (A1 SrcAnn t -> b -> c) -> [(G.Grammar, T.Text -> b)] -> ParseM c
 parseSpecialSum mkTerm opts = do
   (fullSrc, [term]) <- ask
   let
@@ -127,7 +128,7 @@ parseSpecialSum mkTerm opts = do
   src <- case T.decodeUtf8' $ B.take (epos - spos) $ B.drop spos fullSrc of
     Left  exc  -> mkErr $ pprint exc
     Right src' -> pure src'
-  let ann = SrcAnn $ SrcInfo rng src
+  let ann = mkA1 $ SrcAnn $ SrcInfo rng src
   case lookup agram opts of
     Nothing -> mkFail Error
       { errorRange = Just rng
@@ -138,14 +139,14 @@ parseSpecialSum mkTerm opts = do
       }
     Just mkContent -> pure $ mkTerm ann $ mkContent src
 
-parseSpecialSum' :: (SrcAnn a -> b -> c) -> [(G.Grammar, b)] -> ParseM c
+parseSpecialSum' :: (A1 SrcAnn t -> b -> c) -> [(G.Grammar, b)] -> ParseM c
 parseSpecialSum' mkTerm =
   parseSpecialSum mkTerm . map (\(gram, val) -> (gram, \_ -> val))
 
-parseIdentifier :: (SrcAnn a -> T.Text -> c) -> G.Grammar -> ParseM c
+parseIdentifier :: (A1 SrcAnn t -> T.Text -> c) -> G.Grammar -> ParseM c
 parseIdentifier mkTerm egram = parseSpecialSum mkTerm [(egram, id)]
 
-parseUnit :: (SrcAnn a -> b) -> G.Grammar -> ParseM b
+parseUnit :: (A1 SrcAnn t -> b) -> G.Grammar -> ParseM b
 parseUnit mkTerm gram = parseSpecialSum' (\ann () -> mkTerm ann) [(gram, ())]
 
 parseFile :: (Parseable a) => FilePath -> EResultT IO a

@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -76,8 +78,12 @@ newtype ResultT e u a = ResultT{ runResultT :: u (Result e a) } deriving (Functo
 class (Ord e, Monad m) => MonadResult e m | m -> e where
   -- | Failed to get a result because of a fatal error.
   mkFail :: e -> m a
+  default mkFail :: (MonadTrans m2, MonadResult e u, m ~ m2 u) => e -> m a
+  mkFail = lift . mkFail
   -- | Raise errors but don't stop computing the result.
   tellErrors :: (Foldable c) => c e -> m ()
+  default tellErrors :: (MonadTrans m2, MonadResult e u, m ~ m2 u, Foldable c) => c e -> m ()
+  tellErrors = lift . tellErrors
   -- | Raise an error but don't stop computing the result.
   tellError :: e -> m ()
   tellError err = tellErrors ([err] :: [e])
@@ -129,14 +135,10 @@ instance (Ord e) => MonadTrans (ResultT e) where
   lift = ResultT . fmap (Result [])
 
 instance (MonadResult e u) => MonadResult e (ReaderT r u) where
-  mkFail     = lift . mkFail
-  tellErrors = lift . tellErrors
   overErrors = mapReaderT . overErrors
   downgradeFatal x = ReaderT $ downgradeFatal . runReaderT x
 
 instance (MonadResult e u) => MonadResult e (StateT s u) where
-  mkFail     = lift . mkFail
-  tellErrors = lift . tellErrors
   overErrors = mapStateT . overErrors
   downgradeFatal x = StateT run
    where
@@ -146,8 +148,6 @@ instance (MonadResult e u) => MonadResult e (StateT s u) where
       fillWrite (Just (res, s')) = (Just res, s')
 
 instance (Monoid w, MonadResult e u) => MonadResult e (WriterT w u) where
-  mkFail     = lift . mkFail
-  tellErrors = lift . tellErrors
   overErrors = mapWriterT . overErrors
   downgradeFatal x = WriterT run
    where
@@ -157,8 +157,6 @@ instance (Monoid w, MonadResult e u) => MonadResult e (WriterT w u) where
       fillWrite (Just (res, w')) = (Just res, w')
 
 instance (Monoid w, MonadResult e u) => MonadResult e (RWST r w s u) where
-  mkFail     = lift . mkFail
-  tellErrors = lift . tellErrors
   overErrors = mapRWST . overErrors
   downgradeFatal x = RWST run
    where
@@ -170,6 +168,11 @@ instance (Monoid w, MonadResult e u) => MonadResult e (RWST r w s u) where
 instance (Ord e, MonadReader r u) => MonadReader r (ResultT e u) where
   ask = ResultT $ asks pure
   local f (ResultT x) = ResultT $ local f x
+
+instance (Ord e, MonadState s u) => MonadState s (ResultT e u) where
+  get   = lift get
+  put   = lift . put
+  state = lift . state
 
 instance (Ord e, MonadLogger u) => MonadLogger (ResultT e u) where
   monadLoggerLog loc src lvl = ResultT . fmap pure . monadLoggerLog loc src lvl

@@ -19,29 +19,21 @@ module TreeScript.Ast.Class
   )
 where
 
+import           TreeScript.Ast.Ann            as A
 import           TreeScript.Ast.Type
 
 import           Data.Proxy
 import           Data.Kind
-import           Generics.Kind
+import           Generics.Kind                 as G
 
 type LoT1' (a :: StxType -> *) = a ':&&: 'LoT0
 
 class Node (a :: (StxType -> *) -> *) where
   mapAnn :: forall (r1 :: StxType -> *) (r2 :: StxType -> *). (forall t. r1 t -> r2 t) -> a r1 -> a r2
   default mapAnn :: forall (r1 :: StxType -> *) (r2 :: StxType -> *). (GenericK a, GNode (RepK a), Reqs (RepK a) r1 r2) => (forall t. r1 t -> r2 t) -> a r1 -> a r2
-  mapAnn = mapAnnDefault
+  mapAnn v = toK . gmapAnn v . fromK
 
 -- Below code derived from Functor1 and KFunctor (https://gitlab.com/trupill/kind-generics/blob/master/kind-generics-deriving/src/Generics/Kind/Derive/FunctorOne.hs and https://gitlab.com/trupill/kind-generics/blob/master/kind-generics-deriving/src/Generics/Kind/Derive/KFunctor.hs)
-
-mapAnnDefault
-  :: forall (f :: (StxType -> *) -> *) (r1 :: StxType -> *) (r2 :: StxType -> *)
-   . (GenericK f, GNode (RepK f), Reqs (RepK f) r1 r2)
-  => (forall t . r1 t -> r2 t)
-  -> f r1
-  -> f r2
-mapAnnDefault v = toK . gmapAnn v . fromK
-
 
 class GNode (f :: LoT ((StxType -> *) -> *) -> *) where
   type Reqs f (r1 :: StxType -> *) (r2 :: StxType -> *) :: Constraint
@@ -100,7 +92,7 @@ instance GNodeArg ('Kon a) where
   gamapAnn Proxy _ x = x
 
 -- Type variable itself (notice: the @t@ is the same as in @forall t. r1 t -> r2 t@ above)
-instance GNodeArg (Var0 ':@: 'Kon (t :: StxType)) where
+instance GNodeArg (Var0 'G.:@: 'Kon (t :: StxType)) where
   gamapAnn Proxy f = f
 
 -- Child node
@@ -110,3 +102,6 @@ instance forall a. (Node a) => GNodeArg (a :$: Var0) where
 -- List of children (can add other specific functors if necessary, we don't need to be more generic)
 instance forall a. (Node a) => GNodeArg ([] :$: (a :$: Var0)) where
   gamapAnn Proxy f = map $ mapAnn f
+
+tailAnn :: (Node a) => a (r A.:@: rs) -> a rs
+tailAnn = mapAnn $ \(_ A.:@: anns) -> anns

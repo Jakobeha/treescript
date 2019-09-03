@@ -42,6 +42,7 @@ data TestInfo
   , testInfoSkipRun :: [T.Text]
   , testInfoPrintParse :: Bool
   , testInfoIsParseable :: Bool
+  , testInfoIsEvaluatable :: Bool
   , testInfoCantRun :: [T.Text]
   , testInfoFatalErrorMsg :: T.Text
   , testInfoErrorMsgs :: [T.Text]
@@ -55,6 +56,7 @@ instance FromJSON TestInfo where
       <*> (x .:? "skipRun" .!= [])
       <*> (x .:? "printParse?" .!= False)
       <*> (x .:? "parses?" .!= True)
+      <*> (x .:? "evaluates?" .!= True)
       <*> (x .:? "cantRun" .!= [])
       <*> (x .:? "error" .!= "")
       <*> (x .:? "errors" .!= [])
@@ -63,6 +65,7 @@ instance FromJSON TestInfo where
                                  , testInfoSkipRun       = []
                                  , testInfoPrintParse    = False
                                  , testInfoIsParseable   = True
+                                 , testInfoIsEvaluatable = True
                                  , testInfoCantRun       = []
                                  , testInfoFatalErrorMsg = ""
                                  , testInfoErrorMsgs     = []

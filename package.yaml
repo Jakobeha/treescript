@@ -44,7 +44,7 @@ dependencies:
   - binary
   - bytestring
   - casing
-  - containers
+  - containers >= 0.6.2.1
   - data-msgpack
   - directory
   - exceptions

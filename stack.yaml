@@ -39,7 +39,8 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-  - megaparsec-7.0.4
+  - binary-0.8.7.0
+  - containers-0.6.2.1
   - ./extra-deps/semantic/
   - ./extra-deps/semantic/vendor/haskell-tree-sitter
   - ./extra-deps/semantic/vendor/haskell-tree-sitter/languages/nominalscript

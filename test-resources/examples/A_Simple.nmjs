@@ -1,2 +1,4 @@
-x = 4;
-y = A[b = c];
+let x = 4;
+let y = A[b = x + 3];
+print(x);
+print(y.b);

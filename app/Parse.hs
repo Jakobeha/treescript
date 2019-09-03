@@ -16,10 +16,10 @@ actionP = info (helper <*> actionP_) actionInfo
 serveP :: ParserInfo ()
 serveP = info (helper <*> serveP_) serveInfo
 
-compileP :: ParserInfo Compile
+compileP :: ParserInfo CompileAction
 compileP = info (helper <*> compileP_) compileInfo
 
-evalP :: ParserInfo Eval
+evalP :: ParserInfo EvalAction
 evalP = info (helper <*> evalP_) evalInfo
 
 serveP_ :: Parser ()
@@ -35,8 +35,8 @@ actionCommands =
   , command "eval" $ ActionEval <$> evalP
   ]
 
-compileP_ :: Parser Compile
-compileP_ = mkCompile <$> srcP <*> outP <*> watchP
+compileP_ :: Parser CompileAction
+compileP_ = mkCompileAction <$> srcP <*> outP <*> watchP
  where
   srcP = strArgument $ metavar "SRC" <> help "path to the source code"
   outP =
@@ -46,8 +46,8 @@ compileP_ = mkCompile <$> srcP <*> outP <*> watchP
     "eval every time the source changes"
 
 
-evalP_ :: Parser Eval
-evalP_ = mkEval <$> prgP <*> inpP <*> outP <*> watchP
+evalP_ :: Parser EvalAction
+evalP_ = mkEvalAction <$> prgP <*> inpP <*> outP <*> watchP
  where
   prgP = strArgument $ metavar "PRG" <> help "path to the TreeScript"
   inpP = strArgument $ metavar "INP" <> help "path to the input code"

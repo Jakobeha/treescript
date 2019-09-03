@@ -1,5 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans -fno-warn-unused-imports #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | Parsed nodes.
 module TreeScript.Print.Node
@@ -241,11 +243,14 @@ instance Printable LitData where
   pprint (LitDataBool   True ) = "true"
   pprint LitDataNull           = "null"
 
-instance AnnPrintable SrcAnn where
-  printAnnd (SrcAnn (SrcInfo _ txt)) _ = pann txt
+instance {-# OVERLAPPING #-} AnnPrintable (SrcAnn :@: rs) where
+  printAnnd (SrcAnn (SrcInfo _ txt) :@: _) _ = pann txt
 
-instance AnnPrintable NoAnn where
-  printAnnd NoAnn x = x
+instance {-# OVERLAPPABLE #-} (AnnPrintable rs) => AnnPrintable (r :@: rs) where
+  printAnnd (_ :@: xs) = printAnnd xs
+
+instance AnnPrintable NilAnn where
+  printAnnd NilAnn x = x
 
 pbracket :: (PrintOut o) => [o] -> o
 pbracket []  = "{}"
