@@ -28,32 +28,34 @@ import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 
 -- | Abstract evaluation monad transformer. Side effects must be implemented in underlying monads.
-newtype FreeVars a = FreeVars{ unFreeVars :: StateT (S.Set T.Text) (Writer (S.Set T.Text)) a } deriving (Functor, Applicative, Monad)
+newtype FreeVars r a = FreeVars{ unFreeVars :: StateT (S.Set T.Text) (Writer (Dual (M.Map T.Text (Identifier r)))) a } deriving (Functor, Applicative, Monad)
 
-instance MonadVCont FreeVars where
-  type ContRes FreeVars = Val FreeVars
-  type VirtVoid FreeVars = ()
+instance MonadVCont (FreeVars r) where
+  type ContRes (FreeVars r) = Val (FreeVars r)
+  type VirtVoid (FreeVars r) = ()
   mkCont f = (Val () <$) $ f $ \_ -> pure ()
   mkLoop action = action
 
-instance MonadContStack FreeVars where
+instance MonadContStack (FreeVars r) where
   bumpCont _ action = action
   topCont = pure $ Just $ \_ -> pure ()
 
-instance Interpret FreeVars where
-  type HasAnns FreeVars = AnyAnn
-  data Stack FreeVars = Stack ()
-  data Heap FreeVars = Heap ()
-  data Val FreeVars = Val ()
-  data Deref FreeVars = Deref ()
-  data ClosureVal FreeVars = ClosureVal ()
+instance Interpret (FreeVars r) where
+  type HasAnns (FreeVars r) = ((~) r)
+  data Stack (FreeVars r) = Stack ()
+  data Heap (FreeVars r) = Heap ()
+  data Val (FreeVars r) = Val ()
+  data Deref (FreeVars r) = Deref ()
+  data ClosureVal (FreeVars r) = ClosureVal ()
 
   runAnn _ = pure ()
   mkLiteral _ = pure $ Val ()
   mkReference _ = pure $ Val ()
-  mkClos body _ _ = do
+  mkClos' body _ _ = do
     Val () <- body
     pure $ ClosureVal ()
+  preDefineFun (Identifier _ _) = pure ()
+  defineFun x (ClosureVal ()) = foundVarDefine x
   defineVar x (Val ()) = foundVarDefine x
   setVar x (Val ()) = foundVarUse x
   getVar = (Val () <$) . foundVarUse
@@ -72,18 +74,19 @@ instance Interpret FreeVars where
   tryMatchCases (Case _ _ body : cs) val' f = do
     f body
     tryMatchCases cs val' f
-  freeVariables _ _ = pure S.empty
+  freeVariables _ _ = pure []
   raiseErr _ = pure ()
   vabsurdVal () = pure $ Val ()
 
-foundVarDefine :: Identifier r -> FreeVars ()
+foundVarDefine :: Identifier r -> FreeVars r ()
 foundVarDefine (Identifier _ name) = FreeVars $ modify $ S.insert name
 
-foundVarUse :: Identifier r -> FreeVars ()
-foundVarUse (Identifier _ name) = FreeVars $ do
+foundVarUse :: Identifier r -> FreeVars r ()
+foundVarUse use@(Identifier _ name) = FreeVars $ do
   shadowing <- get
-  unless (S.member name shadowing) $ tell $ S.singleton name
+  unless (S.member name shadowing) $ tell $ Dual $ M.singleton name use
 
 -- | Find the free variables in a closure.
-runFreeVars :: S.Set T.Text -> Block r -> S.Set T.Text
-runFreeVars args = execWriter . (`evalStateT` args) . unFreeVars . runBlock
+runFreeVars :: S.Set T.Text -> Block r -> [Identifier r]
+runFreeVars args =
+  M.elems . getDual . execWriter . (`evalStateT` args) . unFreeVars . runBlock

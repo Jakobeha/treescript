@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -45,8 +46,12 @@ data BuiltinVal m
 
 newtype Ref = Ref{ unRef :: Int } deriving (Eq, Ord, Read, Show)
 
+data VarMut
+  = VarMutMutable
+  | VarMutImmutable
+
 newtype Frame m = Frame
-  { frameVars :: M.Map T.Text (Val m)
+  { frameVars :: M.Map T.Text (VarMut, Val m)
   }
 
 data EvalState m
@@ -83,11 +88,13 @@ instance (Monad u) => Interpret (AbsEvalT u) where
     { derefGet :: AbsEvalT u (RefData (AbsEvalT u))
     , derefSet :: RefData (AbsEvalT u) -> AbsEvalT u ()
     }
-  data ClosureVal (AbsEvalT u) = ClosureVal
+  data ClosureVal (AbsEvalT u)
+    = ClosureVal
     { closureValBody :: AbsEvalT u (Val (AbsEvalT u))
     , closureValFormals :: [T.Text]
-    , closureValFreeVars :: S.Set T.Text
+    , closureValFreeVars :: M.Map T.Text (Val (AbsEvalT u))
     }
+    | ClosureValDummy
 
   runAnn x = AbsEvalT $ modify $ \s -> s { evalStateLastLoc = maybeFromAnn x }
   mkLiteral = pure . ValPrimitive
@@ -97,16 +104,41 @@ instance (Monad u) => Interpret (AbsEvalT u) where
         ref'   = Ref $ refi + 1
     modify $ \s -> s { evalStateHeap = Heap hdata' ref' }
     pure $ ValRef ref
-  mkClos body' frmls' fvs' = pure ClosureVal { closureValBody     = body'
-                                             , closureValFormals  = frmls'
-                                             , closureValFreeVars = fvs'
-                                             }
-  defineVar lhs@(Identifier _ name) val' = modifyVars $ \bs -> if
-    | M.member name bs -> mkFail' $ "variable already defined: " <> pprint lhs
-    | otherwise        -> pure $ M.insert name val' bs
-  setVar lhs@(Identifier _ name) val' = modifyVars $ \bs -> if
-    | M.member name bs -> pure $ M.insert name val' bs
-    | otherwise        -> mkFail' $ "unbound variable: " <> pprint lhs
+  mkClos' body' frmls' fvs' = pure $ ClosureVal { closureValBody     = body'
+                                                , closureValFormals  = frmls'
+                                                , closureValFreeVars = fvs'
+                                                }
+  preDefineFun lhs@(Identifier _ name) = do
+    dval <- mkReference $ RefDataClosure ClosureValDummy
+    modifyVars $ \bs -> if
+      | M.member name bs -> mkFail' $ "function already defined: " <> pprint lhs
+      | otherwise -> pure $ M.insert name (VarMutImmutable, dval) bs
+  defineFun lhs@(Identifier _ name) clos = AbsEvalT $ do
+    Frame bs N.:| _ <- unStack . evalStateStack <$> get
+    case bs M.!? name of
+      Nothing ->
+        unAbsEvalT
+          $  mkFail'
+          $  "internal error: function not defined: "
+          <> pprint lhs
+      Just (VarMutImmutable, ValRef ref) ->
+        modify $ derefSet' ref $ RefDataClosure clos
+      Just _ ->
+        unAbsEvalT
+          $  mkFail'
+          $  "internal error: redefined function: "
+          <> pprint lhs
+  defineVar lhs@(Identifier _ name) val' = modifyVars $ \bs ->
+    case bs M.!? name of
+      Just (VarMutImmutable, _) ->
+        mkFail' $ "variable is immutable: " <> pprint lhs
+      _ -> pure $ M.insert name (VarMutMutable, val') bs
+  setVar lhs@(Identifier _ name) val' = modifyVars $ \bs ->
+    case bs M.!? name of
+      Nothing -> mkFail' $ "unbound variable: " <> pprint lhs
+      Just (VarMutImmutable, _) ->
+        mkFail' $ "variable is immutable: " <> pprint lhs
+      Just (VarMutMutable, _) -> pure $ M.insert name (VarMutMutable, val') bs
   getVar lhs@(Identifier _ name) = getVar' name $ pprint lhs
   deref (ValPrimitive _  ) = mkFail' "can't deref primitive"
   deref (ValRef       ref) = pure $ deref' ref
@@ -129,7 +161,7 @@ instance (Monad u) => Interpret (AbsEvalT u) where
     case rd of
       RefDataClosure clos -> pure clos
       _                   -> mkFail' "expected a closure"
-  runCall (ClosureVal clos frmls fvids) args = AbsEvalT $ do
+  runCall (ClosureVal clos frmls fvs') args = AbsEvalT $ do
     let expNargs = length frmls
         actNargs = length args
     when (expNargs /= actNargs)
@@ -139,17 +171,18 @@ instance (Monad u) => Interpret (AbsEvalT u) where
       <> pprint expNargs
       <> " got "
       <> pprint actNargs
-    let args' = M.fromList $ zip frmls args
-    unless (M.disjoint args' fvs)
+    let args' = M.fromList $ zip frmls $ args
+    unless (M.disjoint args' fvs')
       $ unAbsEvalT
       $ mkFail'
           "internal error (sanity check): formal shares the same name as a free variable"
-    let f = Frame $ args' <> fvs
+    let f = Frame $ M.map (VarMutMutable, ) $ args' <> fvs'
     Stack fs <- evalStateStack <$> get
     modify $ \s -> s { evalStateStack = Stack $ f N.<| fs }
     res <- unAbsEvalT clos
     modify $ \s -> s { evalStateStack = Stack fs }
     pure res
+  runCall ClosureValDummy _ = mkFail' "can't call function before it's defined"
   runUnOp opr@(UnOperator _ typ) val = case doUnOp typ val of
     Nothing  -> mkFail' $ "argument is invalid type for " <> pprint opr
     Just res -> pure res
@@ -195,13 +228,13 @@ getVar' :: (Monad u) => T.Text -> T.Text -> AbsEvalT u (Val (AbsEvalT u))
 getVar' name prnt = AbsEvalT $ do
   Frame bs N.:| _ <- unStack . evalStateStack <$> get
   case bs M.!? name of
-    Nothing   -> unAbsEvalT $ mkFail' $ "unbound variable: " <> prnt
-    Just val' -> pure val'
+    Nothing        -> unAbsEvalT $ mkFail' $ "unbound variable: " <> prnt
+    Just (_, val') -> pure val'
 
 modifyVars
   :: (Monad u)
-  => (  M.Map T.Text (Val (AbsEvalT u))
-     -> AbsEvalT u (M.Map T.Text (Val (AbsEvalT u)))
+  => (  M.Map T.Text (VarMut, Val (AbsEvalT u))
+     -> AbsEvalT u (M.Map T.Text (VarMut, Val (AbsEvalT u)))
      )
   -> AbsEvalT u ()
 modifyVars f = AbsEvalT $ do
@@ -217,13 +250,18 @@ deref' ref = Deref
                    Nothing ->
                      unAbsEvalT $ mkFail' $ "invalid address: " <> pprint ref
                    Just drf -> pure drf
-  , derefSet = AbsEvalT . modify . derefSet'
+  , derefSet = AbsEvalT . modify . derefSet' ref
   }
- where
-  derefSet' newVal s = s
-    { evalStateHeap = heap { heapData = M.insert ref newVal $ heapData heap }
-    }
-    where heap = evalStateHeap s
+
+derefSet'
+  :: Ref
+  -> RefData (AbsEvalT u)
+  -> EvalState (AbsEvalT u)
+  -> EvalState (AbsEvalT u)
+derefSet' ref newVal s = s
+  { evalStateHeap = heap { heapData = M.insert ref newVal $ heapData heap }
+  }
+  where heap = evalStateHeap s
 
 genAccess
   :: (EvalAnn r, Monad u)
@@ -435,7 +473,7 @@ tryBuiltinToRefData (BuiltinValClosure frmls f) = Just $ RefDataClosure
                                            frmls
                              f args'
     , closureValFormals  = frmls
-    , closureValFreeVars = S.empty
+    , closureValFreeVars = M.empty
     }
 tryBuiltinToRefData _ = Nothing
 
@@ -455,8 +493,11 @@ initState blts = EvalState
   , evalStateObjOrders = M.empty
   }
  where
-  bltVals = M.map ValPrimitive primBlts <> M.fromDistinctAscList
-    (map (\(ref, (name, _)) -> (name, ValRef ref)) refBlts)
+  bltVals =
+    M.map (VarMutImmutable, )
+      $  M.map ValPrimitive primBlts
+      <> M.fromDistinctAscList
+           (map (\(ref, (name, _)) -> (name, ValRef ref)) refBlts)
   primBlts = M.mapMaybe tryBuiltinToPrimData blts
   refBlts =
     zip (map Ref [0 ..]) $ M.toAscList $ M.mapMaybe tryBuiltinToRefData blts

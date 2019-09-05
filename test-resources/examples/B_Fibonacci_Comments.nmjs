@@ -3,7 +3,7 @@
  */
 
 // Recursive
-let fibRecur = (n) => {
+fun fibRecur(n) {
   match n {
     0 => { 1; };
     1 => { 1; };

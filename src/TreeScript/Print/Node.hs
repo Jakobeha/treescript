@@ -48,6 +48,18 @@ instance (AnnPrintable r) => Printable (Statement r) where
   pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Statement r)
 
+instance (AnnPrintable r) => Printable (FunDeclare r) where
+  pprint = printAst
+instance (AnnPrintable r) => AstPrintable (FunDeclare r) where
+  printAst (FunDeclare ann lhs frmls body) =
+    printAnnd ann
+      $  "fun "
+      <> printAst lhs
+      <> printAst frmls
+      <> " "
+      <> printAst body
+      <> ";"
+
 instance (AnnPrintable r) => Printable (Declare r) where
   pprint = printAst
 instance (AnnPrintable r) => AstPrintable (Declare r) where

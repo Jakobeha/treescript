@@ -19,7 +19,6 @@ import           TreeScript.Print
 import           Control.Monad
 import           Data.Kind
 import qualified Data.Map.Strict               as M
-import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 
 data RefData m
@@ -39,7 +38,9 @@ class (MonadContStack m, ContRes m ~ Val m) => Interpret m where
   runAnn :: (HasAnns m r) => r a -> m ()
   mkLiteral :: LitData -> m (Val m)
   mkReference :: RefData m -> m (Val m)
-  mkClos :: m (Val m) -> [T.Text] -> S.Set T.Text -> m (ClosureVal m)
+  mkClos' :: m (Val m) -> [T.Text] -> M.Map T.Text (Val m) -> m (ClosureVal m)
+  preDefineFun :: (HasAnns m r) => Identifier r -> m ()
+  defineFun :: (HasAnns m r) => Identifier r -> ClosureVal m -> m ()
   defineVar :: (HasAnns m r) => Identifier r -> Val m -> m ()
   setVar :: (HasAnns m r) => Identifier r -> Val m -> m ()
   getVar :: (HasAnns m r) => Identifier r -> m (Val m)
@@ -57,17 +58,27 @@ class (MonadContStack m, ContRes m ~ Val m) => Interpret m where
   -- | When compiling we want to add all jumps first, then blocks.
   -- When interpreting it's easier to just work one case at a time and skip unnecessary blocks.
   tryMatchCases :: (HasAnns m r) => [Case r] -> Val m -> (Block r -> m (VirtVoid m)) -> m ()
-  -- | Return an empty set of the analysis doesn't need closures to have free variables.
-  freeVariables :: (HasAnns m r) => FormalList r -> Block r -> m (S.Set T.Text)
+  -- | Return an empty list of the analysis doesn't need closures to have free variables.
+  freeVariables :: (HasAnns m r) => FormalList r -> Block r -> m [Identifier r]
   raiseErr :: T.Text -> m (VirtVoid m)
   vabsurdVal :: VirtVoid m -> m (Val m)
 
 runProgram :: (Interpret m, HasAnns m r) => Program r -> m ()
 runProgram (Program ann stmts) = do
   runAnn ann
+  forM_ stmts $ (() <$) . preRunStmt
   forM_ stmts $ (() <$) . runStmt
 
+preRunStmt :: (Interpret m, HasAnns m r) => Statement r -> m ()
+preRunStmt (StatementFunDeclare (FunDeclare _ lhs _ _)) = preDefineFun lhs
+preRunStmt _ = pure ()
+
 runStmt :: (Interpret m, HasAnns m r) => Statement r -> m (Val m)
+runStmt (StatementFunDeclare (FunDeclare ann lhs frmls body)) = do
+  runAnn ann
+  clos <- mkClos frmls body
+  defineFun lhs clos
+  runNull
 runStmt (StatementDeclare (Declare ann lhs rhs)) = do
   runAnn ann
   rhs' <- runExpr rhs
@@ -104,15 +115,11 @@ runStmt (StatementExpr (ExprStmt ann expr)) = do
   runExpr expr
 
 runExpr :: (Interpret m, HasAnns m r) => Expr r -> m (Val m)
-runExpr (ExprP pexpr) = runPExpr pexpr
-runExpr (ExprClos (Closure ann frmls@(FormalList fann frmlids) body@(Block bann _)))
-  = do
-    runAnn ann
-    runAnn fann
-    fvs <- freeVariables frmls body
-    runAnn bann
-    clos <- mkClos (runBlock body) (map identifierText frmlids) fvs
-    mkReference $ RefDataClosure clos
+runExpr (ExprP    pexpr                   ) = runPExpr pexpr
+runExpr (ExprClos (Closure ann frmls body)) = do
+  runAnn ann
+  clos <- mkClos frmls body
+  mkReference $ RefDataClosure clos
 runExpr (ExprUnOp (UnOp ann opr val)) = do
   runAnn ann
   val' <- runExpr val
@@ -179,11 +186,23 @@ runBlock :: (HasAnns m r, Interpret m) => Block r -> m (Val m)
 runBlock (Block _ stmts) = case unconsLast stmts of
   Nothing              -> fail "empty block"
   Just (istmts, lstmt) -> do
+    forM_ istmts $ preRunStmt
     forM_ istmts $ (() <$) . runStmt
     runStmt lstmt
 
 runNull :: (Interpret m) => m (Val m)
 runNull = mkLiteral LitDataNull
+
+mkClos
+  :: (Interpret m, HasAnns m r) => FormalList r -> Block r -> m (ClosureVal m)
+mkClos frmls@(FormalList fann frmlids) body@(Block bann _) = do
+  runAnn fann
+  fvs' <-
+    fmap M.fromList
+    $   mapM (\fvid -> (identifierText fvid, ) <$> getVar fvid)
+    =<< freeVariables frmls body
+  runAnn bann
+  mkClos' (runBlock body) (map identifierText frmlids) fvs'
 
 getObjectOrder :: (Interpret m) => T.Text -> Maybe [T.Text] -> m [T.Text]
 getObjectOrder tag oorderHere = do

@@ -30,13 +30,23 @@ data Program r
   } deriving (Generic)
 
 data Statement r
-  = StatementDeclare (Declare r)
+  = StatementFunDeclare (FunDeclare r)
+  | StatementDeclare (Declare r)
   | StatementAssign (Assign r)
   | StatementMatch (Match r)
   | StatementLoop (Loop r)
   | StatementBreak (Break r)
   | StatementExpr (ExprStmt r)
   deriving (Generic)
+
+-- | @fun lhs(args...) { body... }@.
+data FunDeclare r
+  = FunDeclare
+  { funDeclareAnn :: r 'TDeclare
+  , funDeclareLhs :: Identifier r
+  , funDeclareFormals :: FormalList r
+  , funDeclareBody :: Block r
+  } deriving (Generic)
 
 -- | @let lhs = rhs@.
 data Declare r
@@ -294,6 +304,7 @@ data LitData
 
 $(deriveGenericK ''Program)
 $(deriveGenericK ''Statement)
+$(deriveGenericK ''FunDeclare)
 $(deriveGenericK ''Declare)
 $(deriveGenericK ''Assign)
 $(deriveGenericK ''Match)
@@ -328,6 +339,7 @@ $(deriveGenericK ''Lit)
 
 instance Node Program
 instance Node Statement
+instance Node FunDeclare
 instance Node Declare
 instance Node Assign
 instance Node Match

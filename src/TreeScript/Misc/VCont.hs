@@ -21,8 +21,5 @@ class (Monad m) => MonadVCont m where
 instance (Monad u) => MonadVCont (ContT e u) where
   type ContRes (ContT e u) = e
   type VirtVoid (ContT e u) = Void
-  mkCont f = ContT $ \k -> do
-    let ContT next = f $ \res -> ContT $ \_ -> pure res
-    res <- next $ pure . absurd
-    k res
+  mkCont f = callCC $ fmap absurd . f
   mkLoop = forever

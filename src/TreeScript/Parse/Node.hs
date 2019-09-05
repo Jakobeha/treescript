@@ -23,6 +23,10 @@ instance Parseable (Program (A1 SrcAnn)) where
 
 instance Parseable (Statement (A1 SrcAnn))
 
+instance UntypedParseable (FunDeclare (A1 SrcAnn))
+instance Parseable (FunDeclare (A1 SrcAnn)) where
+  parse = untypedParse G.FunctionDeclaration True
+
 instance UntypedParseable (Declare (A1 SrcAnn))
 instance Parseable (Declare (A1 SrcAnn)) where
   parse = untypedParse G.Declaration True

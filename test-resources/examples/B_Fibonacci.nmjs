@@ -1,4 +1,4 @@
-let fibRecur = (n) => {
+fun fibRecur(n) {
   match n {
     0 => { 1; };
     1 => { 1; };
@@ -6,11 +6,13 @@ let fibRecur = (n) => {
   };
 };
 
+let a = 1;
+let i = 0;
+
 let fibIter = (n) => {
   match n {
     0 => { 1; };
     _ => {
-      let a = 1;
       let b = 1;
       let i = 1;
       loop {
@@ -23,16 +25,16 @@ let fibIter = (n) => {
             i = i + 1;
           };
         };
-        print(i);
       };
     };
   };
 };
 
-let i = 0;
+print("a = " + a);
+
 loop {
   match i {
-    10 => { break null; };
+    15 => { break null; };
     _ => {
       print("fibRecur(" + i + ") = " + fibRecur(i));
       print("fibIter(" + i + ") = " + fibIter(i));
