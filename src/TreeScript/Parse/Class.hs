@@ -21,6 +21,7 @@ import           Control.Monad.Reader
 import           Data.AST
 import           Data.Blob
 import qualified Data.ByteString               as B
+import           Data.List
 import qualified Data.Location                 as S
 import qualified Data.Source                   as S
 import qualified Data.Span                     as S
@@ -73,13 +74,14 @@ instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (As '[SrcAnn] h2)), 
     src <- case T.decodeUtf8' $ B.take (epos - spos) $ B.drop spos fullSrc of
       Left  exc  -> mkErr $ pprint exc
       Right src' -> pure src'
-    let ann         = SrcAnn $ SrcInfo rng src
-        allChildren = termOut term
-        children
+    let allChildren = termOut term
+        regChildren
           | ignoreAnon = filter
             ((== Regular) . symbolType . nodeSymbol . termAnnotation)
             allChildren
           | otherwise = allChildren
+        (cmtNodes, children) =
+          partition ((== G.Comment) . nodeSymbol . termAnnotation) regChildren
     unless (egram == agram) $ mkFail Error
       { errorRange = Just rng
       , errorMsg   = "expected " <> pprint egram <> " got " <> pprint agram
@@ -89,6 +91,10 @@ instance (GProduct2 (a :*: b), Head (a :*: b) ~ S1 h1 (Rec0 (As '[SrcAnn] h2)), 
       $   runResultT
       $   gunlinearize
       <$> local (\_ -> (fullSrc, children)) gparse
+    cmts <- traverse
+      (\cmtNode -> local (\_ -> (fullSrc, [cmtNode])) parseComment)
+      cmtNodes
+    let ann = SrcAnn $ SrcInfo rng src cmts
     case bodyRes of
       ResultFail bodyErr -> fail $ T.unpack $ pprint bodyErr
       Result errs body   -> do
@@ -116,6 +122,19 @@ instance (Parseable a) => Parseable [a] where
     (fullSrc, terms) <- ask
     traverse (\term -> local (\_ -> (fullSrc, [term])) parse) terms
 
+parseComment :: ParseM Comment
+parseComment = do
+  (fullSrc, [term]) <- ask
+  let
+    Node G.Comment (S.Location (S.Range spos epos) (S.Span (S.Pos sline scol) (S.Pos eline ecol)))
+      = termAnnotation term
+    rng = Range (Loc spos sline scol) (Loc epos eline ecol)
+    mkErr msg = mkFail Error { errorRange = Just rng, errorMsg = msg }
+  src <- case T.decodeUtf8' $ B.take (epos - spos) $ B.drop spos fullSrc of
+    Left  exc  -> mkErr $ pprint exc
+    Right src' -> pure src'
+  pure $ Comment rng src
+
 parseSpecialSum
   :: (A1 SrcAnn t -> b -> c) -> [(G.Grammar, T.Text -> b)] -> ParseM c
 parseSpecialSum mkTerm opts = do
@@ -128,7 +147,7 @@ parseSpecialSum mkTerm opts = do
   src <- case T.decodeUtf8' $ B.take (epos - spos) $ B.drop spos fullSrc of
     Left  exc  -> mkErr $ pprint exc
     Right src' -> pure src'
-  let ann = mkA1 $ SrcAnn $ SrcInfo rng src
+  let ann = mkA1 $ SrcAnn $ SrcInfo rng src []
   case lookup agram opts of
     Nothing -> mkFail Error
       { errorRange = Just rng

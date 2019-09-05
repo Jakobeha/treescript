@@ -256,7 +256,7 @@ instance Printable LitData where
   pprint LitDataNull           = "null"
 
 instance {-# OVERLAPPING #-} AnnPrintable (SrcAnn :@: rs) where
-  printAnnd (SrcAnn (SrcInfo _ txt) :@: _) _ = pann txt
+  printAnnd (SrcAnn (SrcInfo _ txt _) :@: _) _ = pann txt
 
 instance {-# OVERLAPPABLE #-} (AnnPrintable rs) => AnnPrintable (r :@: rs) where
   printAnnd (_ :@: xs) = printAnnd xs

@@ -120,8 +120,8 @@ spec = do
                 insertVarMapSuccess exampleParseVars file parseSrc
                 assertNoErrors parseErrs
                 denoteFail "reused (with original source) - "
-                  $                       pprint parseSrc
-                  `shouldBeReducePrintOf` srcContents
+                  $          pprint parseSrc
+                  `shouldBe` srcContents
                 denoteFail "generated (without original source) - "
                   $                       pprint rawParseSrc
                   `shouldBeReducePrintOf` srcContents
